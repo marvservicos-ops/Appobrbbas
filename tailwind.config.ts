@@ -8,9 +8,14 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        syne: ['Syne', 'sans-serif'],
+        dm: ['DM Sans', 'sans-serif'],
+      },
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        primary: '#4F7CFF',
+        teal: '#2DD4BF',
+        navy: '#0F172A',
       },
     },
   },
