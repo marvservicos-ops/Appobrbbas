@@ -329,6 +329,7 @@ export default function EstoqueDetalhe() {
 function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoqueProduto; onClose: () => void; onSaved: () => void }) {
   const [nome, setNome] = useState(produto.nome)
   const [codigo, setCodigo] = useState(produto.codigo ?? '')
+  const [codigoBarras, setCodigoBarras] = useState((produto as any).codigo_barras ?? '')
   const [unidade, setUnidade] = useState(produto.unidade)
   const [qtdAtual, setQtdAtual] = useState(String(produto.quantidade_atual))
   const [qtdMin, setQtdMin] = useState(String(produto.quantidade_minima))
@@ -342,6 +343,7 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
     await supabase.from('estoque_produtos').update({
       nome: nome.trim(),
       codigo: codigo.trim() || null,
+      codigo_barras: codigoBarras.trim() || null,
       unidade: unidade.trim() || 'un',
       quantidade_atual: parseFloat(qtdAtual) || 0,
       quantidade_minima: parseFloat(qtdMin) || 0,
@@ -371,6 +373,12 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Unidade</label>
               <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Código de Barras / QR Code</label>
+            <input className="field font-mono" value={codigoBarras} onChange={e => setCodigoBarras(e.target.value)}
+              placeholder="Aponte o leitor ou digite manualmente" />
+            <p className="text-xs text-[#94A3B8] mt-1">Para usar leitor: clique no campo e escaneie o produto.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -468,6 +476,7 @@ function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: 
   const [show, setShow] = useState(false)
   const [nome, setNome] = useState('')
   const [codigo, setCodigo] = useState('')
+  const [codigoBarras, setCodigoBarras] = useState('')
   const [unidade, setUnidade] = useState('un')
   const [qtdMin, setQtdMin] = useState('0')
   const [loading, setLoading] = useState(false)
@@ -477,10 +486,12 @@ function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: 
     setLoading(true)
     const supabase = createClient()
     await supabase.from('estoque_produtos').insert({
-      estoque_id: estoqueId, nome: nome.trim(), codigo: codigo || null,
+      estoque_id: estoqueId, nome: nome.trim(),
+      codigo: codigo || null,
+      codigo_barras: codigoBarras || null,
       unidade, quantidade_minima: parseFloat(qtdMin) || 0,
     })
-    setNome(''); setCodigo(''); setUnidade('un'); setQtdMin('0')
+    setNome(''); setCodigo(''); setCodigoBarras(''); setUnidade('un'); setQtdMin('0')
     setShow(false); setLoading(false)
     onAdded()
   }
@@ -492,26 +503,34 @@ function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: 
   )
 
   return (
-    <div className="card flex flex-wrap gap-3 items-end">
-      <div className="flex-1 min-w-[180px]">
-        <label className="block text-xs font-medium text-[#64748B] mb-1">Nome *</label>
-        <input autoFocus className="field text-sm" value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome do produto" />
+    <div className="card space-y-3">
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="flex-1 min-w-[180px]">
+          <label className="block text-xs font-medium text-[#64748B] mb-1">Nome *</label>
+          <input autoFocus className="field text-sm" value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome do produto" />
+        </div>
+        <div className="w-32">
+          <label className="block text-xs font-medium text-[#64748B] mb-1">Código / Nº CA</label>
+          <input className="field text-sm" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Ex: CA-12345" />
+        </div>
+        <div className="w-24">
+          <label className="block text-xs font-medium text-[#64748B] mb-1">Unidade</label>
+          <input className="field text-sm" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
+        </div>
+        <div className="w-24">
+          <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd Mín.</label>
+          <input type="number" className="field text-sm" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
+        </div>
       </div>
-      <div className="w-32">
-        <label className="block text-xs font-medium text-[#64748B] mb-1">Código</label>
-        <input className="field text-sm" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Ex: CA-12345" />
-      </div>
-      <div className="w-24">
-        <label className="block text-xs font-medium text-[#64748B] mb-1">Unidade</label>
-        <input className="field text-sm" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
-      </div>
-      <div className="w-24">
-        <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd Mín.</label>
-        <input type="number" className="field text-sm" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
-      </div>
-      <div className="flex gap-2">
-        <button onClick={salvar} disabled={loading} className="btn-primary text-sm py-2">{loading ? '...' : 'Salvar'}</button>
-        <button onClick={() => setShow(false)} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
+      <div className="flex gap-3 items-end">
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-[#64748B] mb-1">Código de Barras / QR Code</label>
+          <input className="field text-sm font-mono" value={codigoBarras} onChange={e => setCodigoBarras(e.target.value)} placeholder="Use o leitor ou digite manualmente" />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={salvar} disabled={loading} className="btn-primary text-sm py-2">{loading ? '...' : 'Salvar'}</button>
+          <button onClick={() => setShow(false)} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
+        </div>
       </div>
     </div>
   )
