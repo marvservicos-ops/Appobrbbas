@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, X, Loader2, Camera, Check, Pencil, Upload, Eraser, Printer, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, X, Loader2, Camera, Check, Pencil, Upload, Printer, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, RDO, RDOClima, RDOMaoObra, RDOEquipamento, RDOAtividade, RDOOcorrencia, RDOComentario, RDOFoto, RDOAssinatura } from '@/lib/types'
 import Link from 'next/link'
@@ -198,12 +198,8 @@ export default function RDOPage() {
   }
 
   // ── ASSINATURAS ───────────────────────────────────────
-  async function salvarAssinatura(tipo: string, nome: string, canvasRef: React.RefObject<HTMLCanvasElement>) {
-    const canvas = canvasRef.current
-    if (!canvas) return
+  async function salvarAssinaturaBlob(tipo: string, nome: string, blob: Blob) {
     setSaving(true)
-    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'))
-    if (!blob) { setSaving(false); return }
     const supabase = createClient()
     const path = `rdo/${rdoId}/${tipo}_${Date.now()}.png`
     const { error } = await supabase.storage.from('assinaturas').upload(path, blob, { upsert: true })
@@ -219,6 +215,22 @@ export default function RDOPage() {
       }
     }
     setSaving(false)
+  }
+
+  async function salvarAssinatura(tipo: string, nome: string, canvasRef: React.RefObject<HTMLCanvasElement>) {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'))
+    if (!blob) return
+    await salvarAssinaturaBlob(tipo, nome, blob)
+  }
+
+  async function removerAssinatura(tipo: string) {
+    const existing = assinaturas.find(a => a.tipo === tipo)
+    if (!existing) return
+    const supabase = createClient()
+    await supabase.from('rdo_assinaturas').delete().eq('id', existing.id)
+    setAssinaturas(prev => prev.filter(a => a.tipo !== tipo))
   }
 
   if (loading) return <div className="flex items-center justify-center h-screen"><Loader2 size={28} className="animate-spin text-[#4F7CFF]" /></div>
@@ -472,7 +484,8 @@ export default function RDOPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[{ tipo: 'marv', label: 'Assinatura — MARV' }, { tipo: 'cliente', label: 'Assinatura — Cliente' }, { tipo: 'fiscal', label: 'Assinatura — Fiscal' }].map(({ tipo, label }) => {
                 const ass = assinaturas.find(a => a.tipo === tipo)
-                return <PadAssinatura key={tipo} tipo={tipo} label={label} assinatura={ass} onSalvar={salvarAssinatura} saving={saving} />
+                return <PadAssinatura key={tipo} tipo={tipo} label={label} assinatura={ass}
+                  onSalvar={salvarAssinatura} onSalvarBlob={salvarAssinaturaBlob} onRemover={removerAssinatura} saving={saving} />
               })}
             </div>
           </Section>
@@ -570,12 +583,18 @@ function ListaComAdd<T extends { id: string }>({ items, fields, onAdd, renderIte
 }
 
 // ── Pad de Assinatura ─────────────────────────────────
-function PadAssinatura({ tipo, label, assinatura, onSalvar, saving }: {
-  tipo: string; label: string; assinatura?: RDOAssinatura; onSalvar: (tipo: string, nome: string, ref: React.RefObject<HTMLCanvasElement>) => void; saving: boolean
+function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemover, saving }: {
+  tipo: string; label: string; assinatura?: RDOAssinatura
+  onSalvar: (tipo: string, nome: string, ref: React.RefObject<HTMLCanvasElement>) => void
+  onSalvarBlob: (tipo: string, nome: string, blob: Blob) => void
+  onRemover: (tipo: string) => void
+  saving: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawing = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
+  const [modo, setModo] = useState<'idle' | 'tela'>('idle')
+  const [showMenu, setShowMenu] = useState(false)
   const [temDesenho, setTemDesenho] = useState(false)
   const [nome, setNome] = useState(assinatura?.nome ?? '')
 
@@ -601,32 +620,74 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, saving }: {
   function stopDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = false }
 
   function limpar() {
-    const ctx = canvasRef.current!.getContext('2d')!
-    ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height)
+    const ctx = canvasRef.current?.getContext('2d')
+    if (!ctx || !canvasRef.current) return
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
     setTemDesenho(false)
   }
+
+  async function handleImagem(file: File) {
+    const blob = new Blob([await file.arrayBuffer()], { type: file.type })
+    await onSalvarBlob(tipo, nome, blob)
+    setShowMenu(false)
+  }
+
+  const assinado = !!assinatura?.assinatura_url
 
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-[#64748B]">{label}</p>
-      {assinatura?.assinatura_url && !temDesenho ? (
+
+      {assinado && modo === 'idle' ? (
         <div className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white p-2">
-          <img src={assinatura.assinatura_url} alt="assinatura" className="w-full h-20 object-contain" />
+          <img src={assinatura!.assinatura_url!} alt="assinatura" className="w-full h-20 object-contain" />
         </div>
-      ) : (
-        <div className="border-2 border-[#E2E8F0] rounded-lg overflow-hidden bg-white touch-none" style={{ cursor: 'crosshair' }}>
+      ) : modo === 'tela' ? (
+        <div className="border-2 border-[#4F7CFF] rounded-lg overflow-hidden bg-white touch-none" style={{ cursor: 'crosshair' }}>
           <canvas ref={canvasRef} width={300} height={80} className="w-full"
             onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
             onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
         </div>
+      ) : (
+        <div className="border-2 border-dashed border-[#E2E8F0] rounded-lg bg-[#F8FAFC] h-20 flex items-center justify-center text-xs text-[#94A3B8]">
+          Sem assinatura
+        </div>
       )}
+
       <input className="field text-xs" placeholder="Nome do assinante" value={nome} onChange={e => setNome(e.target.value)} />
+
       <div className="flex gap-2">
-        <button onClick={() => onSalvar(tipo, nome, canvasRef)} disabled={saving}
-          className="flex-1 text-xs font-medium py-1.5 bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D6AE8] transition-colors flex items-center justify-center gap-1">
-          {saving ? <Loader2 size={11} className="animate-spin" /> : <Pencil size={11} />} Assinar
-        </button>
-        {temDesenho && <button onClick={limpar} className="text-xs text-[#64748B] hover:text-red-500 px-2"><Eraser size={13} /></button>}
+        <div className="relative flex-1">
+          <button onClick={() => setShowMenu(s => !s)} disabled={saving}
+            className="w-full text-xs font-medium py-1.5 bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D6AE8] transition-colors flex items-center justify-center gap-1">
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Pencil size={11} />} Assinar
+          </button>
+          {showMenu && (
+            <div className="absolute bottom-full mb-1 left-0 right-0 bg-white border border-[#E2E8F0] rounded-xl shadow-lg z-50 py-1 text-xs min-w-[180px]">
+              <button onClick={() => { setModo('tela'); setShowMenu(false); limpar() }}
+                className="w-full text-left px-3 py-2 hover:bg-[#F8FAFC] text-[#374151]">✏️ Assinatura em tela</button>
+              <label className="w-full text-left px-3 py-2 hover:bg-[#F8FAFC] text-[#374151] flex items-center cursor-pointer">
+                🖼️ Selecionar imagem
+                <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImagem(f) }} />
+              </label>
+              {assinado && (
+                <button onClick={() => { onRemover(tipo); setModo('idle'); setShowMenu(false) }}
+                  className="w-full text-left px-3 py-2 hover:bg-[#F8FAFC] text-red-500">🗑️ Remover assinatura</button>
+              )}
+            </div>
+          )}
+        </div>
+        {modo === 'tela' && (
+          <>
+            {temDesenho && (
+              <button onClick={() => onSalvar(tipo, nome, canvasRef)} disabled={saving}
+                className="text-xs font-medium px-2.5 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-1">
+                <Check size={11} /> Salvar
+              </button>
+            )}
+            <button onClick={() => { limpar(); setModo('idle') }} className="text-xs text-[#64748B] hover:text-red-500 px-2"><X size={13} /></button>
+          </>
+        )}
       </div>
     </div>
   )

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
@@ -175,6 +175,13 @@ export default function ObraDetailPage() {
     const supabase = createClient()
     await supabase.from('doc_pastas').insert({ obra_id: id, nome, ordem: pastas.length })
     load()
+  }
+
+  async function excluirRdo(rdoId: string) {
+    if (!confirm('Excluir este RDO? Todos os dados (clima, mão de obra, fotos, assinaturas) serão apagados permanentemente.')) return
+    const supabase = createClient()
+    await supabase.from('rdos').delete().eq('id', rdoId)
+    setRdos(prev => prev.filter(r => r.id !== rdoId))
   }
 
   async function criarNovoRdo() {
@@ -555,11 +562,17 @@ export default function ObraDetailPage() {
                 <h2 className="font-syne font-semibold text-[#0F172A]">Relatórios Diários de Obra</h2>
                 <p className="text-xs text-[#64748B] mt-0.5">RDO — registre o que aconteceu em cada dia de obra</p>
               </div>
-              <button onClick={criarNovoRdo} disabled={criandoRdo}
-                className="btn-primary text-sm flex items-center gap-2">
-                {criandoRdo ? <Loader2 size={15} className="animate-spin" /> : <PlusCircle size={15} />}
-                Novo RDO
-              </button>
+              <div className="flex items-center gap-2">
+                <Link href={`/obras/${id}/modelos`}
+                  className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors">
+                  <Settings size={14} /> <span className="hidden sm:inline">Personalizar</span>
+                </Link>
+                <button onClick={criarNovoRdo} disabled={criandoRdo}
+                  className="btn-primary text-sm flex items-center gap-2">
+                  {criandoRdo ? <Loader2 size={15} className="animate-spin" /> : <PlusCircle size={15} />}
+                  Novo RDO
+                </button>
+              </div>
             </div>
 
             {rdos.length === 0 ? (
@@ -605,6 +618,10 @@ export default function ObraDetailPage() {
                                 className="text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1 rounded transition-colors">
                                 Abrir
                               </Link>
+                              <button onClick={() => excluirRdo(rdo.id)}
+                                className="text-[#94A3B8] hover:text-red-500 p-1 rounded transition-colors" title="Excluir RDO">
+                                <Trash2 size={14} />
+                              </button>
                             </div>
                           </td>
                         </tr>
