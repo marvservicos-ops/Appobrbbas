@@ -110,9 +110,9 @@ export default function EstoqueDetalhe() {
   )
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-3 md:p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-2 md:gap-4 mb-5">
         <Link href="/estoque" className="w-9 h-9 rounded-xl border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors">
           <ArrowLeft size={16} className="text-[#64748B]" />
         </Link>
@@ -130,13 +130,13 @@ export default function EstoqueDetalhe() {
             {estoque.descricao && <p className="text-xs text-[#64748B]">{estoque.descricao}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Link href={`/estoque/${estoqueId}/importar`}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
+            className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
             <Upload size={14} /> Importar CSV
           </Link>
-          <Link href={`/estoque/${estoqueId}/registrar`} className="btn-primary flex items-center gap-2">
-            <Plus size={14} /> Novo Registro
+          <Link href={`/estoque/${estoqueId}/registrar`} className="btn-primary flex items-center gap-1.5 text-sm px-3 py-2">
+            <Plus size={14} /> <span className="hidden sm:inline">Novo </span>Registro
           </Link>
         </div>
       </div>
@@ -264,23 +264,23 @@ export default function EstoqueDetalhe() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Produto</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Código</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Unidade</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Qtd Atual</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Qtd Mín.</th>
-                    <th className="px-4 py-3" />
+                    <th className="text-left text-xs font-semibold text-[#64748B] px-3 py-3">Produto</th>
+                    <th className="hidden md:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Código</th>
+                    <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Unidade</th>
+                    <th className="text-left text-xs font-semibold text-[#64748B] px-3 py-3">Qtd</th>
+                    <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Mín.</th>
+                    <th className="px-3 py-3 w-16" />
                   </tr>
                 </thead>
                 <tbody>
                   {produtos.map(p => (
                     <tr key={p.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] group">
-                      <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{p.nome}</td>
-                      <td className="px-4 py-3 text-sm text-[#64748B]">{p.codigo ?? '—'}</td>
-                      <td className="px-4 py-3 text-sm text-[#64748B]">{p.unidade}</td>
-                      <td className="px-4 py-3 text-sm text-[#374151]">{p.quantidade_atual}</td>
-                      <td className="px-4 py-3 text-sm text-[#374151]">{p.quantidade_minima}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 text-sm font-medium text-[#0F172A]">{p.nome}</td>
+                      <td className="hidden md:table-cell px-3 py-3 text-sm text-[#64748B]">{p.codigo ?? '—'}</td>
+                      <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.unidade}</td>
+                      <td className="px-3 py-3 text-sm text-[#374151]">{p.quantidade_atual}</td>
+                      <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#374151]">{p.quantidade_minima}</td>
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button onClick={() => setEditandoProduto(p)} className="text-[#94A3B8] hover:text-[#4F7CFF]">
                             <Pencil size={14} />

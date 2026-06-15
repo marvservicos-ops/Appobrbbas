@@ -32,17 +32,17 @@ export default function ClientesPage() {
   return (
     <div>
       <Topbar />
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="font-syne text-2xl font-bold text-[#0F172A]">Clientes</h1>
-          <button onClick={() => setShowModal(true)} className="btn-primary"><Plus size={16} /> Novo Cliente</button>
+          <h1 className="font-syne text-xl md:text-2xl font-bold text-[#0F172A]">Clientes</h1>
+          <button onClick={() => setShowModal(true)} className="btn-primary text-sm px-3 py-2"><Plus size={15} /> <span className="hidden sm:inline">Novo </span>Cliente</button>
         </div>
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full">
+        <div className="card p-0 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[320px]">
             <thead>
               <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nome</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">E-mail</th>
+                <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-4 py-3">E-mail</th>
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Telefone</th>
               </tr>
             </thead>
@@ -52,7 +52,7 @@ export default function ClientesPage() {
               ) : clientes.map(c => (
                 <tr key={c.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
                   <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{c.nome}</td>
-                  <td className="px-4 py-3 text-sm text-[#64748B]">{c.email || '—'}</td>
+                  <td className="hidden sm:table-cell px-4 py-3 text-sm text-[#64748B]">{c.email || '—'}</td>
                   <td className="px-4 py-3 text-sm text-[#64748B]">{c.telefone || '—'}</td>
                 </tr>
               ))}

@@ -61,21 +61,21 @@ export default function ObrasPage() {
     <div className="flex flex-col h-full">
       <Topbar searchPlaceholder="Buscar obra ou cliente..." onSearch={setSearch} />
 
-      <div className="p-6 flex-1 overflow-y-auto">
+      <div className="p-4 md:p-6 flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="font-syne text-2xl font-bold text-[#0F172A]">Gestão de Obras</h1>
-            <p className="text-sm text-[#64748B] mt-0.5">Monitore o progresso técnico e financeiro de todos os projetos em tempo real</p>
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex-1 min-w-0 pr-3">
+            <h1 className="font-syne text-xl md:text-2xl font-bold text-[#0F172A]">Gestão de Obras</h1>
+            <p className="text-xs md:text-sm text-[#64748B] mt-0.5 hidden sm:block">Monitore o progresso técnico e financeiro de todos os projetos em tempo real</p>
           </div>
-          <button onClick={() => setShowModal(true)} className="btn-primary">
-            <Plus size={16} />
-            Nova Obra
+          <button onClick={() => setShowModal(true)} className="btn-primary shrink-0 text-sm px-3 py-2">
+            <Plus size={15} />
+            <span className="hidden sm:inline">Nova </span>Obra
           </button>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <div className="card">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm text-[#64748B]">Total de Projetos</span>

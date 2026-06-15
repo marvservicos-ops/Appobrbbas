@@ -127,13 +127,12 @@ export default function ObraDetailPage() {
   return (
     <div className="flex flex-col h-full min-h-screen">
       {/* Topbar */}
-      <header className="h-16 bg-white border-b border-[#E2E8F0] flex items-center px-6 gap-4 sticky top-0 z-10">
-        <button onClick={() => router.push('/obras')} className="flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F172A] transition-colors">
+      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-3 md:px-6 gap-3 sticky top-14 md:top-0 z-10">
+        <button onClick={() => router.push('/obras')} className="shrink-0 flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F172A] transition-colors">
           <ArrowLeft size={16} />
         </button>
-        <h1 className="font-syne font-semibold text-[#0F172A] text-base truncate">{obra.titulo}</h1>
-
-        <div className="ml-auto flex items-center gap-3">
+        <h1 className="font-syne font-semibold text-[#0F172A] text-sm md:text-base truncate flex-1 min-w-0">{obra.titulo}</h1>
+        <div className="ml-auto hidden md:flex items-center gap-3">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
             <input placeholder="Buscar..." className="pl-9 pr-4 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-sm w-52 focus:outline-none focus:border-[#4F7CFF] transition-colors" />
@@ -166,18 +165,18 @@ export default function ObraDetailPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-3 md:p-6">
         {/* ===== VISÃO GERAL ===== */}
         {tab === 'visao-geral' && (
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left: Info */}
-            <div className="col-span-2 space-y-4">
+            <div className="lg:col-span-2 space-y-4">
               <div className="card">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-syne font-semibold text-[#0F172A]">Informações do Projeto</h2>
                   <StatusChip status={obra.status} />
                 </div>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                   <InfoRow icon={<Wrench size={14} />} label="Tipo de Serviço" value={obra.tipo_servico} />
                   <InfoRow icon={<User size={14} />} label="Responsável Técnico" value={obra.engenheiro_responsavel} />
                   <InfoRow icon={<Calendar size={14} />} label="Início" value={formatDate(obra.data_inicio)} />
@@ -408,7 +407,7 @@ export default function ObraDetailPage() {
 
         {/* ===== CRONOGRAMA ===== */}
         {tab === 'cronograma' && (
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left */}
             <div className="space-y-4">
               <div className="card">
@@ -442,7 +441,7 @@ export default function ObraDetailPage() {
             </div>
 
             {/* Right: Etapas */}
-            <div className="col-span-2">
+            <div className="lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-syne font-semibold text-[#0F172A]">Cronograma de Execução</h2>
                 <button onClick={() => setShowNovaEtapa(true)} className="btn-primary text-sm">
