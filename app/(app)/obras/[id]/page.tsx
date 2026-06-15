@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa } from '@/lib/types'
+import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
 
@@ -35,24 +35,30 @@ export default function ObraDetailPage() {
   const [obra, setObra] = useState<Obra | null>(null)
   const [etapas, setEtapas] = useState<CronogramaEtapa[]>([])
   const [docs, setDocs] = useState<Documento[]>([])
+  const [pastas, setPastas] = useState<DocPasta[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterCat, setFilterCat] = useState<string>('Todas')
+  const [pastaAtiva, setPastaAtiva] = useState<string>('__todas__')
+  const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
 
   // Modals
   const [showNovaEtapa, setShowNovaEtapa] = useState(false)
   const [showAddDoc, setShowAddDoc] = useState(false)
+  const [showNovaPasta, setShowNovaPasta] = useState(false)
+  const [pastaParaDoc, setPastaParaDoc] = useState<string>('Geral')
 
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const [obraRes, etapasRes, docsRes] = await Promise.all([
+    const [obraRes, etapasRes, docsRes, pastasRes] = await Promise.all([
       supabase.from('obras').select('*, cliente:clientes(*)').eq('id', id).single(),
       supabase.from('cronograma_etapas').select('*').eq('obra_id', id).order('ordem'),
-      supabase.from('documentos').select('*').eq('obra_id', id).order('created_at', { ascending: false }),
+      supabase.from('documentos').select('*').eq('obra_id', id).order('pasta').order('created_at', { ascending: false }),
+      supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
     ])
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (etapasRes.data) setEtapas(etapasRes.data as CronogramaEtapa[])
     if (docsRes.data) setDocs(docsRes.data as Documento[])
+    if (pastasRes.data) setPastas(pastasRes.data as DocPasta[])
     setLoading(false)
   }
 
@@ -86,9 +92,37 @@ export default function ObraDetailPage() {
   const progressoGeral = totalEtapas > 0 ? Math.round(etapas.reduce((s, e) => s + e.progresso, 0) / totalEtapas) : 0
 
   // Docs
-  const filteredDocs = filterCat === 'Todas' ? docs : docs.filter(d => d.categoria === filterCat)
+  const todasPastasNomes = ['Geral', ...pastas.map(p => p.nome), ...Array.from(new Set(docs.map(d => d.pasta || 'Geral').filter(p => p !== 'Geral' && !pastas.find(pp => pp.nome === p))))]
+  const docsFiltrados = pastaAtiva === '__todas__' ? docs : docs.filter(d => (d.pasta || 'Geral') === pastaAtiva)
   const totalFinanceiro = docs.filter(d => d.categoria === 'Financeiro').reduce((s, d) => s + (d.valor || 0), 0)
   const totalTecnico = docs.filter(d => d.categoria === 'Técnico').reduce((s, d) => s + (d.valor || 0), 0)
+
+  function togglePasta(nome: string) {
+    setPastasAbertas(prev => ({ ...prev, [nome]: !prev[nome] }))
+  }
+
+  async function excluirDoc(docId: string, arquivoPath?: string) {
+    if (!confirm('Excluir este documento?')) return
+    const supabase = createClient()
+    if (arquivoPath) await supabase.storage.from('documentos').remove([arquivoPath])
+    await supabase.from('documentos').delete().eq('id', docId)
+    load()
+  }
+
+  async function criarPasta(nome: string) {
+    const supabase = createClient()
+    await supabase.from('doc_pastas').insert({ obra_id: id, nome, ordem: pastas.length })
+    load()
+  }
+
+  async function excluirPasta(pastaId: string, nomePasta: string) {
+    if (!confirm(`Excluir a pasta "${nomePasta}"? Os documentos dentro dela serão movidos para Geral.`)) return
+    const supabase = createClient()
+    await supabase.from('documentos').update({ pasta: 'Geral' }).eq('obra_id', id).eq('pasta', nomePasta)
+    await supabase.from('doc_pastas').delete().eq('id', pastaId)
+    if (pastaAtiva === nomePasta) setPastaAtiva('__todas__')
+    load()
+  }
 
   return (
     <div className="flex flex-col h-full min-h-screen">
@@ -223,136 +257,151 @@ export default function ObraDetailPage() {
 
         {/* ===== DOCUMENTOS ===== */}
         {tab === 'documentos' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="font-syne text-xl font-bold text-[#0F172A]">Repositório de Documentos</h2>
-                <p className="text-sm text-[#64748B] mt-0.5">Gerencie certificados, notas fiscais e especificações técnicas</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <select
-                  value={filterCat}
-                  onChange={e => setFilterCat(e.target.value)}
-                  className="field w-auto"
+          <div className="flex gap-6">
+            {/* Sidebar de pastas */}
+            <div className="w-56 shrink-0">
+              <div className="card p-3">
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wide">Pastas</span>
+                  <button onClick={() => setShowNovaPasta(true)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EEF2FF] transition-colors" title="Nova pasta">
+                    <Plus size={14} className="text-[#4F7CFF]" />
+                  </button>
+                </div>
+
+                {/* Todas */}
+                <button
+                  onClick={() => setPastaAtiva('__todas__')}
+                  className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-0.5 ${pastaAtiva === '__todas__' ? 'bg-[#EEF2FF] text-[#4F7CFF] font-medium' : 'text-[#374151] hover:bg-[#F1F5F9]'}`}
                 >
-                  <option value="Todas">Todas Categorias</option>
-                  <option value="Financeiro">Financeiro</option>
-                  <option value="Técnico">Técnico</option>
-                  <option value="Jurídico">Jurídico</option>
-                  <option value="Outros">Outros</option>
-                </select>
-                <button onClick={() => setShowAddDoc(true)} className="btn-primary">
-                  <Upload size={16} />
-                  Adicionar Documento
+                  <FolderOpen size={15} />
+                  <span className="flex-1 text-left">Todos</span>
+                  <span className="text-xs text-[#94A3B8]">{docs.length}</span>
+                </button>
+
+                {/* Pastas dinâmicas */}
+                {todasPastasNomes.map(nomePasta => {
+                  const qtd = docs.filter(d => (d.pasta || 'Geral') === nomePasta).length
+                  const pastaObj = pastas.find(p => p.nome === nomePasta)
+                  const ativa = pastaAtiva === nomePasta
+                  return (
+                    <div key={nomePasta} className="group relative">
+                      <button
+                        onClick={() => setPastaAtiva(nomePasta)}
+                        className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-0.5 ${ativa ? 'bg-[#EEF2FF] text-[#4F7CFF] font-medium' : 'text-[#374151] hover:bg-[#F1F5F9]'}`}
+                      >
+                        <Folder size={15} className={ativa ? 'text-[#4F7CFF]' : 'text-[#94A3B8]'} />
+                        <span className="flex-1 text-left truncate">{nomePasta}</span>
+                        <span className="text-xs text-[#94A3B8]">{qtd}</span>
+                      </button>
+                      {pastaObj && (
+                        <button
+                          onClick={() => excluirPasta(pastaObj.id, nomePasta)}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 transition-all"
+                        >
+                          <Trash2 size={11} className="text-red-400" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+
+                {/* Nova pasta inline */}
+                {showNovaPasta && (
+                  <NovaPastaInline
+                    onConfirm={nome => { criarPasta(nome); setShowNovaPasta(false) }}
+                    onCancel={() => setShowNovaPasta(false)}
+                  />
+                )}
+              </div>
+
+              {/* Custos */}
+              <div className="card mt-4">
+                <h3 className="font-syne font-semibold text-xs text-[#0F172A] mb-3">Distribuição de Custos</h3>
+                <div className="space-y-2.5">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-[#374151]">Financeiro</span>
+                      <span className="text-[#4F7CFF] font-semibold">{formatCurrency(totalFinanceiro) !== '—' ? formatCurrency(totalFinanceiro) : 'R$ 0'}</span>
+                    </div>
+                    <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-[#4F7CFF] rounded-full" style={{ width: totalFinanceiro + totalTecnico > 0 ? `${(totalFinanceiro / (totalFinanceiro + totalTecnico)) * 100}%` : '0%' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-[#374151]">Técnico</span>
+                      <span className="text-[#2DD4BF] font-semibold">{formatCurrency(totalTecnico) !== '—' ? formatCurrency(totalTecnico) : 'R$ 0'}</span>
+                    </div>
+                    <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-[#2DD4BF] rounded-full" style={{ width: totalFinanceiro + totalTecnico > 0 ? `${(totalTecnico / (totalFinanceiro + totalTecnico)) * 100}%` : '0%' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Área principal */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-syne text-lg font-bold text-[#0F172A]">
+                    {pastaAtiva === '__todas__' ? 'Todos os Documentos' : pastaAtiva}
+                  </h2>
+                  <p className="text-xs text-[#64748B]">{docsFiltrados.length} documento{docsFiltrados.length !== 1 ? 's' : ''}</p>
+                </div>
+                <button
+                  onClick={() => { setPastaParaDoc(pastaAtiva === '__todas__' ? 'Geral' : pastaAtiva); setShowAddDoc(true) }}
+                  className="btn-primary"
+                >
+                  <Upload size={16} /> Adicionar Documentos
                 </button>
               </div>
-            </div>
 
-            {/* Table */}
-            <div className="card p-0 overflow-hidden mb-4">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nome</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Categoria</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">NF</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Fornecedor</th>
-                    <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-3">Valor</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
-                    <th className="text-center text-xs font-semibold text-[#64748B] px-4 py-3">Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDocs.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center py-10 text-sm text-[#94A3B8]">
-                        Nenhum documento encontrado.{' '}
-                        <button onClick={() => setShowAddDoc(true)} className="text-[#4F7CFF] hover:underline">Adicionar documento</button>
-                      </td>
-                    </tr>
-                  ) : filteredDocs.map(doc => {
-                    const cat = categoriaConfig[doc.categoria] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+              {/* Visualização por pasta (modo todas) ou lista */}
+              {pastaAtiva === '__todas__' ? (
+                <div className="space-y-4">
+                  {todasPastasNomes.map(nomePasta => {
+                    const docsNaPasta = docs.filter(d => (d.pasta || 'Geral') === nomePasta)
+                    if (docsNaPasta.length === 0) return null
+                    const aberta = pastasAbertas[nomePasta] !== false
                     return (
-                      <tr key={doc.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 bg-[#F1F5F9] rounded-lg flex items-center justify-center">
-                              <FileText size={14} className="text-[#64748B]" />
-                            </div>
-                            <span className="text-sm text-[#0F172A] font-medium">{doc.nome}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cat.bg} ${cat.text}`}>{doc.categoria}</span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-[#64748B]">{doc.numero_nf || '—'}</td>
-                        <td className="px-4 py-3 text-sm text-[#64748B]">{doc.fornecedor || '—'}</td>
-                        <td className="px-4 py-3 text-sm text-[#0F172A] font-medium text-right">{formatCurrency(doc.valor)}</td>
-                        <td className="px-4 py-3 text-sm text-[#64748B]">{formatDate(doc.data_documento)}</td>
-                        <td className="px-4 py-3 text-center">
-                          {doc.arquivo_url ? (
-                            <a href={doc.arquivo_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#4F7CFF] hover:underline flex items-center gap-1 justify-center">
-                              <ExternalLink size={12} /> Abrir
-                            </a>
-                          ) : <span className="text-xs text-[#CBD5E1]">—</span>}
-                        </td>
-                      </tr>
+                      <div key={nomePasta} className="card p-0 overflow-hidden">
+                        <button
+                          onClick={() => togglePasta(nomePasta)}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0] hover:bg-[#F1F5F9] transition-colors"
+                        >
+                          {aberta ? <ChevronDown size={15} className="text-[#64748B]" /> : <ChevronRight size={15} className="text-[#64748B]" />}
+                          <FolderOpen size={16} className="text-[#4F7CFF]" />
+                          <span className="font-syne font-semibold text-sm text-[#0F172A]">{nomePasta}</span>
+                          <span className="text-xs text-[#94A3B8] ml-auto">{docsNaPasta.length} arquivo{docsNaPasta.length !== 1 ? 's' : ''}</span>
+                        </button>
+                        {aberta && <DocTable docs={docsNaPasta} onDelete={excluirDoc} />}
+                      </div>
                     )
                   })}
-                </tbody>
-              </table>
-              <div className="px-4 py-3 text-xs text-[#64748B] border-t border-[#F1F5F9]">
-                Mostrando {filteredDocs.length} de {docs.length} documentos
-              </div>
-            </div>
-
-            {/* Bottom cards */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="card">
-                <h3 className="font-syne font-semibold text-sm text-[#0F172A] mb-4">Distribuição de Custos</h3>
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-[#374151]">Financeiro</span>
-                      <span className="text-[#4F7CFF] font-semibold">{formatCurrency(totalFinanceiro)}</span>
+                  {docs.length === 0 && (
+                    <div className="card text-center py-12">
+                      <FolderOpen size={32} className="text-[#CBD5E1] mx-auto mb-3" />
+                      <p className="text-sm text-[#94A3B8] mb-3">Nenhum documento cadastrado ainda.</p>
+                      <button onClick={() => setShowAddDoc(true)} className="btn-primary mx-auto">
+                        <Upload size={15} /> Adicionar primeiro documento
+                      </button>
                     </div>
-                    <div className="h-2 bg-[#F1F5F9] rounded-full overflow-hidden">
-                      <div className="h-2 bg-[#4F7CFF] rounded-full" style={{ width: totalFinanceiro + totalTecnico > 0 ? `${(totalFinanceiro/(totalFinanceiro+totalTecnico))*100}%` : '0%' }} />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-[#374151]">Técnico/Serviços</span>
-                      <span className="text-[#2DD4BF] font-semibold">{formatCurrency(totalTecnico)}</span>
-                    </div>
-                    <div className="h-2 bg-[#F1F5F9] rounded-full overflow-hidden">
-                      <div className="h-2 bg-[#2DD4BF] rounded-full" style={{ width: totalFinanceiro + totalTecnico > 0 ? `${(totalTecnico/(totalFinanceiro+totalTecnico))*100}%` : '0%' }} />
-                    </div>
-                  </div>
+                  )}
                 </div>
-              </div>
-
-              <div className="card bg-gradient-to-br from-[#0F172A] to-[#1E3A5F] text-white border-0">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-syne font-semibold text-sm">Análise Industrial</h3>
-                  <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">IA</span>
-                </div>
-                <p className="text-xs text-white/60 mb-4">Sistema de detecção inteligente de pendências técnicas</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-white/10 rounded-lg p-3">
-                    <div className="text-2xl font-bold font-syne">
-                      {docs.filter(d => !d.arquivo_url).length}
+              ) : (
+                <div className="card p-0 overflow-hidden">
+                  <DocTable docs={docsFiltrados} onDelete={excluirDoc} />
+                  {docsFiltrados.length === 0 && (
+                    <div className="text-center py-10">
+                      <p className="text-sm text-[#94A3B8] mb-3">Nenhum documento nesta pasta.</p>
+                      <button onClick={() => { setPastaParaDoc(pastaAtiva); setShowAddDoc(true) }} className="btn-primary mx-auto">
+                        <Upload size={15} /> Adicionar documento aqui
+                      </button>
                     </div>
-                    <div className="text-xs text-white/60 mt-0.5">Documentos Pendentes</div>
-                  </div>
-                  <div className="bg-white/10 rounded-lg p-3">
-                    <div className="text-2xl font-bold font-syne text-[#2DD4BF]">
-                      {endDate ? `${endDate.getDate()} ${endDate.toLocaleString('pt-BR', { month: 'short' })}` : '—'}
-                    </div>
-                    <div className="text-xs text-white/60 mt-0.5">Próxima Revisão</div>
-                  </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -433,6 +482,8 @@ export default function ObraDetailPage() {
       {showAddDoc && (
         <ModalAddDoc
           obraId={id}
+          pastaInicial={pastaParaDoc}
+          pastasDisponiveis={todasPastasNomes}
           onClose={() => setShowAddDoc(false)}
           onCreated={() => { setShowAddDoc(false); load() }}
         />
@@ -578,42 +629,52 @@ function ModalNovaEtapa({ obraId, ordem, onClose, onCreated }: { obraId: string;
   )
 }
 
-function ModalAddDoc({ obraId, onClose, onCreated }: { obraId: string; onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ nome: '', categoria: 'Financeiro' as CategoriaDoc, numero_nf: '', fornecedor: '', valor: '', data_documento: '' })
-  const [file, setFile] = useState<File | null>(null)
+function ModalAddDoc({ obraId, pastaInicial, pastasDisponiveis, onClose, onCreated }: {
+  obraId: string; pastaInicial: string; pastasDisponiveis: string[]; onClose: () => void; onCreated: () => void
+}) {
+  const [pasta, setPasta] = useState(pastaInicial)
+  const [categoria, setCategoria] = useState<CategoriaDoc>('Financeiro')
+  const [fornecedor, setFornecedor] = useState('')
+  const [dataDoc, setDataDoc] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [loading, setLoading] = useState(false)
+  const [progresso, setProgresso] = useState(0)
   const [error, setError] = useState('')
+
+  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files) setFiles(Array.from(e.target.files))
+  }
+
+  function removeFile(idx: number) {
+    setFiles(f => f.filter((_, i) => i !== idx))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (files.length === 0) { setError('Selecione ao menos um arquivo.'); return }
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    let arquivo_url = null
-    let arquivo_path = null
-
-    if (file) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      setProgresso(Math.round(((i) / files.length) * 100))
       const path = `${obraId}/${Date.now()}_${file.name}`
       const { error: uploadError } = await supabase.storage.from('documentos').upload(path, file)
       if (uploadError) { setError(uploadError.message); setLoading(false); return }
-      arquivo_path = path
       const { data: urlData } = supabase.storage.from('documentos').getPublicUrl(path)
-      arquivo_url = urlData.publicUrl
+      await supabase.from('documentos').insert({
+        obra_id: obraId,
+        nome: file.name.replace(/\.[^/.]+$/, ''),
+        categoria,
+        pasta,
+        fornecedor: fornecedor || null,
+        data_documento: dataDoc || null,
+        arquivo_url: urlData.publicUrl,
+        arquivo_path: path,
+      })
     }
-
-    const { error: insertError } = await supabase.from('documentos').insert({
-      obra_id: obraId,
-      nome: form.nome,
-      categoria: form.categoria,
-      numero_nf: form.numero_nf || null,
-      fornecedor: form.fornecedor || null,
-      valor: form.valor ? parseFloat(form.valor) : null,
-      data_documento: form.data_documento || null,
-      arquivo_url,
-      arquivo_path,
-    })
-    if (insertError) { setError(insertError.message); setLoading(false); return }
+    setProgresso(100)
     onCreated()
   }
 
@@ -621,58 +682,168 @@ function ModalAddDoc({ obraId, onClose, onCreated }: { obraId: string; onClose: 
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
-          <h2 className="font-syne font-semibold text-[#0F172A]">Adicionar Documento</h2>
+          <h2 className="font-syne font-semibold text-[#0F172A]">Adicionar Documentos</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Drop zone */}
           <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome do Documento *</label>
-            <input required className="field" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Nota Fiscal Tubulações" />
+            <label className="block text-sm font-medium text-[#374151] mb-2">Arquivos *</label>
+            <label className="flex flex-col items-center justify-center gap-2 w-full h-32 border-2 border-dashed border-[#E2E8F0] rounded-xl cursor-pointer hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-colors">
+              <Upload size={24} className="text-[#94A3B8]" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-[#374151]">Clique para selecionar</p>
+                <p className="text-xs text-[#94A3B8]">PDF, DOC, XLS, imagens — múltiplos arquivos permitidos</p>
+              </div>
+              <input type="file" multiple className="hidden" onChange={handleFiles} />
+            </label>
+            {/* Lista de arquivos selecionados */}
+            {files.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {files.map((f, idx) => (
+                  <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <FileText size={14} className="text-[#4F7CFF] shrink-0" />
+                    <span className="text-xs text-[#374151] flex-1 truncate">{f.name}</span>
+                    <span className="text-xs text-[#94A3B8] shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                    <button type="button" onClick={() => removeFile(idx)} className="text-[#94A3B8] hover:text-red-400">
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+                <p className="text-xs text-[#64748B] pl-1">{files.length} arquivo{files.length !== 1 ? 's' : ''} selecionado{files.length !== 1 ? 's' : ''}</p>
+              </div>
+            )}
           </div>
+
+          {/* Pasta de destino */}
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Pasta de destino</label>
+              <select className="field" value={pasta} onChange={e => setPasta(e.target.value)}>
+                {pastasDisponiveis.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Categoria</label>
-              <select className="field" value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value as CategoriaDoc }))}>
+              <select className="field" value={categoria} onChange={e => setCategoria(e.target.value as CategoriaDoc)}>
                 <option value="Financeiro">Financeiro</option>
                 <option value="Técnico">Técnico</option>
                 <option value="Jurídico">Jurídico</option>
                 <option value="Outros">Outros</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">Nº NF</label>
-              <input className="field" value={form.numero_nf} onChange={e => setForm(f => ({ ...f, numero_nf: e.target.value }))} placeholder="0000" />
-            </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Fornecedor</label>
-              <input className="field" value={form.fornecedor} onChange={e => setForm(f => ({ ...f, fornecedor: e.target.value }))} placeholder="Nome do fornecedor" />
+              <input className="field" value={fornecedor} onChange={e => setFornecedor(e.target.value)} placeholder="Opcional" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor (R$)</label>
-              <input type="number" className="field" value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="0,00" />
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Data do Documento</label>
+              <input type="date" className="field" value={dataDoc} onChange={e => setDataDoc(e.target.value)} />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Data do Documento</label>
-            <input type="date" className="field" value={form.data_documento} onChange={e => setForm(f => ({ ...f, data_documento: e.target.value }))} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Arquivo (opcional)</label>
-            <input
-              type="file"
-              onChange={e => setFile(e.target.files?.[0] || null)}
-              className="w-full text-sm text-[#64748B] file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border file:border-[#E2E8F0] file:text-xs file:font-medium file:text-[#374151] file:bg-[#F8FAFC] hover:file:bg-[#F1F5F9] cursor-pointer"
-            />
-          </div>
+
+          {loading && (
+            <div>
+              <div className="h-2 bg-[#F1F5F9] rounded-full overflow-hidden">
+                <div className="h-2 bg-[#4F7CFF] rounded-full transition-all" style={{ width: `${progresso}%` }} />
+              </div>
+              <p className="text-xs text-[#64748B] mt-1">Enviando arquivos... {progresso}%</p>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-500">{error}</p>}
+
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
-            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar Documento'}</button>
+            <button type="submit" disabled={loading} className="btn-primary">
+              {loading ? `Enviando ${progresso}%...` : `Enviar ${files.length > 0 ? files.length + ' arquivo' + (files.length !== 1 ? 's' : '') : 'Arquivos'}`}
+            </button>
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// Tabela de documentos reutilizável
+function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string, path?: string) => void }) {
+  const categoriaConfig: Record<string, { bg: string; text: string }> = {
+    Financeiro: { bg: 'bg-blue-50', text: 'text-blue-700' },
+    Técnico: { bg: 'bg-teal-50', text: 'text-teal-700' },
+    Jurídico: { bg: 'bg-purple-50', text: 'text-purple-700' },
+    Outros: { bg: 'bg-gray-100', text: 'text-gray-600' },
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Nome</th>
+          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Categoria</th>
+          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Fornecedor</th>
+          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Data</th>
+          <th className="text-center text-xs font-semibold text-[#64748B] px-4 py-2.5">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {docs.map(doc => {
+          const cat = categoriaConfig[doc.categoria] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+          return (
+            <tr key={doc.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 bg-[#F1F5F9] rounded-lg flex items-center justify-center shrink-0">
+                    <FileText size={13} className="text-[#64748B]" />
+                  </div>
+                  <span className="text-sm text-[#0F172A] font-medium">{doc.nome}</span>
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cat.bg} ${cat.text}`}>{doc.categoria}</span>
+              </td>
+              <td className="px-4 py-3 text-sm text-[#64748B]">{doc.fornecedor || '—'}</td>
+              <td className="px-4 py-3 text-sm text-[#64748B]">{doc.data_documento ? new Date(doc.data_documento + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+              <td className="px-4 py-3">
+                <div className="flex items-center justify-center gap-2">
+                  {doc.arquivo_url && (
+                    <a href={doc.arquivo_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#4F7CFF] hover:underline flex items-center gap-1">
+                      <ExternalLink size={12} /> Abrir
+                    </a>
+                  )}
+                  <button
+                    onClick={() => onDelete(doc.id, doc.arquivo_path)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-[#94A3B8] hover:text-red-500"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+// Input inline de nova pasta
+function NovaPastaInline({ onConfirm, onCancel }: { onConfirm: (nome: string) => void; onCancel: () => void }) {
+  const [nome, setNome] = useState('')
+  return (
+    <div className="mt-2 flex items-center gap-1">
+      <Folder size={14} className="text-[#94A3B8] shrink-0" />
+      <input
+        autoFocus
+        className="flex-1 text-sm px-2 py-1 border border-[#4F7CFF] rounded-lg focus:outline-none"
+        placeholder="Nome da pasta"
+        value={nome}
+        onChange={e => setNome(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && nome.trim()) onConfirm(nome.trim()); if (e.key === 'Escape') onCancel() }}
+      />
+      <button type="button" onClick={() => nome.trim() && onConfirm(nome.trim())} className="text-[#4F7CFF] hover:text-[#3D68F0]"><CheckCircle2 size={16} /></button>
+      <button type="button" onClick={onCancel} className="text-[#94A3B8] hover:text-[#64748B]"><X size={14} /></button>
     </div>
   )
 }

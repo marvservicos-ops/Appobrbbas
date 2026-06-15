@@ -49,12 +49,22 @@ export interface Documento {
   obra_id: string
   nome: string
   categoria: CategoriaDoc
+  pasta?: string
   numero_nf?: string
   fornecedor?: string
   valor?: number
   data_documento?: string
   arquivo_url?: string
   arquivo_path?: string
+  created_at: string
+}
+
+export interface DocPasta {
+  id: string
+  obra_id: string
+  nome: string
+  cor: string
+  ordem: number
   created_at: string
 }
 
