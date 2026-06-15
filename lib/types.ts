@@ -133,6 +133,25 @@ export interface EstoqueRegistro {
 }
 // ──────────────────────────────────────────────────────
 
+// ── RDO ──────────────────────────────────────────────
+export interface RDO {
+  id: string; obra_id: string; numero: number; data: string
+  status: 'preenchendo' | 'revisando' | 'aprovado'
+  indice_pluviometrico?: string; created_at: string
+}
+export interface RDOClima {
+  id: string; rdo_id: string; periodo: 'manha' | 'tarde' | 'noite'
+  ativo: boolean; tempo?: string; condicao?: string
+}
+export interface RDOMaoObra { id: string; rdo_id: string; funcao: string; tipo: string; quantidade: number }
+export interface RDOEquipamento { id: string; rdo_id: string; nome: string; quantidade: number }
+export interface RDOAtividade { id: string; rdo_id: string; descricao: string; progresso: number; status_ativ: string; ordem: number }
+export interface RDOOcorrencia { id: string; rdo_id: string; descricao: string; created_at: string }
+export interface RDOComentario { id: string; rdo_id: string; autor: string; texto: string; created_at: string }
+export interface RDOFoto { id: string; rdo_id: string; url: string; path?: string; legenda?: string; ordem: number; created_at: string }
+export interface RDOAssinatura { id: string; rdo_id: string; tipo: string; nome?: string; assinatura_url?: string; assinado_em?: string }
+// ──────────────────────────────────────────────────────
+
 export type TipoMovimentacao = 'entrada' | 'saida' | 'devolucao' | 'ajuste'
 export type StatusMovimentacao = 'concluido' | 'pendente_devolucao' | 'devolvido_parcial' | 'devolvido_total'
 

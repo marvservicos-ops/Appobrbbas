@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta } from '@/lib/types'
+import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
 
-type Tab = 'visao-geral' | 'documentos' | 'cronograma'
+type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios'
 
 function formatDate(d?: string | null) {
   if (!d) return '—'
@@ -36,6 +36,8 @@ export default function ObraDetailPage() {
   const [etapas, setEtapas] = useState<CronogramaEtapa[]>([])
   const [docs, setDocs] = useState<Documento[]>([])
   const [pastas, setPastas] = useState<DocPasta[]>([])
+  const [rdos, setRdos] = useState<RDO[]>([])
+  const [criandoRdo, setCriandoRdo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pastaAtiva, setPastaAtiva] = useState<string>('__todas__')
   const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
@@ -107,16 +109,18 @@ export default function ObraDetailPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const [obraRes, etapasRes, docsRes, pastasRes] = await Promise.all([
+    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes] = await Promise.all([
       supabase.from('obras').select('*, cliente:clientes(*)').eq('id', id).single(),
       supabase.from('cronograma_etapas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('documentos').select('*').eq('obra_id', id).order('pasta').order('created_at', { ascending: false }),
       supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
+      supabase.from('rdos').select('*').eq('obra_id', id).order('numero', { ascending: false }),
     ])
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (etapasRes.data) setEtapas(etapasRes.data as CronogramaEtapa[])
     if (docsRes.data) setDocs(docsRes.data as Documento[])
     if (pastasRes.data) setPastas(pastasRes.data as DocPasta[])
+    if (rdosRes.data) setRdos(rdosRes.data as RDO[])
     setLoading(false)
   }
 
@@ -173,6 +177,24 @@ export default function ObraDetailPage() {
     load()
   }
 
+  async function criarNovoRdo() {
+    setCriandoRdo(true)
+    const supabase = createClient()
+    const proximoNumero = rdos.length > 0 ? Math.max(...rdos.map(r => r.numero)) + 1 : 1
+    const { data: rdo } = await supabase.from('rdos').insert({
+      obra_id: id, numero: proximoNumero, data: new Date().toISOString().split('T')[0], status: 'preenchendo',
+    }).select().single()
+    if (rdo) {
+      await supabase.from('rdo_clima').insert([
+        { rdo_id: rdo.id, periodo: 'manha', ativo: true, tempo: 'claro', condicao: 'praticavel' },
+        { rdo_id: rdo.id, periodo: 'tarde', ativo: true, tempo: 'claro', condicao: 'praticavel' },
+        { rdo_id: rdo.id, periodo: 'noite', ativo: false },
+      ])
+      router.push(`/obras/${id}/rdo/${rdo.id}`)
+    }
+    setCriandoRdo(false)
+  }
+
   async function excluirPasta(pastaId: string, nomePasta: string) {
     if (!confirm(`Excluir a pasta "${nomePasta}"? Os documentos dentro dela serão movidos para Geral.`)) return
     const supabase = createClient()
@@ -205,18 +227,11 @@ export default function ObraDetailPage() {
 
       {/* Tabs */}
       <div className="bg-white border-b border-[#E2E8F0] px-6">
-        <div className="flex gap-0">
-          {(['visao-geral', 'documentos', 'cronograma'] as Tab[]).map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${
-                tab === t
-                  ? 'border-[#4F7CFF] text-[#4F7CFF]'
-                  : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              {t === 'visao-geral' ? 'Visão Geral' : t === 'documentos' ? 'Documentos' : 'Cronograma'}
+        <div className="flex gap-0 overflow-x-auto">
+          {(['visao-geral', 'relatorios', 'documentos', 'cronograma'] as Tab[]).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
+              {t === 'visao-geral' ? 'Visão Geral' : t === 'documentos' ? 'Documentos' : t === 'cronograma' ? 'Cronograma' : `Relatórios (${rdos.length})`}
             </button>
           ))}
         </div>
@@ -529,6 +544,76 @@ export default function ObraDetailPage() {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ===== RELATÓRIOS ===== */}
+        {tab === 'relatorios' && (
+          <div>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="font-syne font-semibold text-[#0F172A]">Relatórios Diários de Obra</h2>
+                <p className="text-xs text-[#64748B] mt-0.5">RDO — registre o que aconteceu em cada dia de obra</p>
+              </div>
+              <button onClick={criarNovoRdo} disabled={criandoRdo}
+                className="btn-primary text-sm flex items-center gap-2">
+                {criandoRdo ? <Loader2 size={15} className="animate-spin" /> : <PlusCircle size={15} />}
+                Novo RDO
+              </button>
+            </div>
+
+            {rdos.length === 0 ? (
+              <div className="card text-center py-16">
+                <FileText size={36} className="text-[#CBD5E1] mx-auto mb-3" />
+                <p className="font-medium text-[#374151]">Nenhum relatório ainda</p>
+                <p className="text-sm text-[#94A3B8] mt-1 mb-4">Crie o primeiro RDO para registrar as atividades do dia</p>
+                <button onClick={criarNovoRdo} disabled={criandoRdo} className="btn-primary mx-auto text-sm">
+                  <PlusCircle size={14} /> Criar primeiro RDO
+                </button>
+              </div>
+            ) : (
+              <div className="card p-0 overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
+                      <th className="px-4 py-3 w-24" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rdos.map(rdo => {
+                      const statusCor = rdo.status === 'aprovado' ? 'bg-emerald-50 text-emerald-700' : rdo.status === 'revisando' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+                      const statusLabel = rdo.status === 'aprovado' ? 'Aprovado' : rdo.status === 'revisando' ? 'Revisando' : 'Preenchendo'
+                      return (
+                        <tr key={rdo.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
+                          <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{rdo.numero}</td>
+                          <td className="px-4 py-3 text-sm text-[#374151]">
+                            {new Date(rdo.data + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusCor}`}>{statusLabel}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2 justify-end">
+                              <Link href={`/obras/${id}/rdo/${rdo.id}/imprimir`} target="_blank"
+                                className="text-xs text-[#64748B] hover:text-[#4F7CFF] px-2 py-1 rounded border border-[#E2E8F0] hover:border-[#4F7CFF] transition-colors">
+                                PDF
+                              </Link>
+                              <Link href={`/obras/${id}/rdo/${rdo.id}`}
+                                className="text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1 rounded transition-colors">
+                                Abrir
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>
