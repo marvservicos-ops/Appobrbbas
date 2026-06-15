@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera } from 'lucide-react'
+import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
 import Link from 'next/link'
@@ -334,6 +335,7 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
   const [qtdAtual, setQtdAtual] = useState(String(produto.quantidade_atual))
   const [qtdMin, setQtdMin] = useState(String(produto.quantidade_minima))
   const [loading, setLoading] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
@@ -376,10 +378,22 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Código de Barras / QR Code</label>
-            <input className="field font-mono" value={codigoBarras} onChange={e => setCodigoBarras(e.target.value)}
-              placeholder="Aponte o leitor ou digite manualmente" />
-            <p className="text-xs text-[#94A3B8] mt-1">Para usar leitor: clique no campo e escaneie o produto.</p>
+            <div className="flex gap-2">
+              <input className="field font-mono flex-1" value={codigoBarras} onChange={e => setCodigoBarras(e.target.value)}
+                placeholder="Escaneie ou digite manualmente" />
+              <button type="button" onClick={() => setShowScanner(true)}
+                className="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-[#E2E8F0] hover:bg-[#EEF2FF] hover:border-[#4F7CFF] transition-colors text-[#64748B] hover:text-[#4F7CFF]"
+                title="Escanear com câmera">
+                <Camera size={18} />
+              </button>
+            </div>
           </div>
+          {showScanner && (
+            <BarcodeScannerModal
+              onScanned={code => { setCodigoBarras(code); setShowScanner(false) }}
+              onClose={() => setShowScanner(false)}
+            />
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd Atual</label>
@@ -480,6 +494,7 @@ function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: 
   const [unidade, setUnidade] = useState('un')
   const [qtdMin, setQtdMin] = useState('0')
   const [loading, setLoading] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
 
   async function salvar() {
     if (!nome.trim()) return
@@ -525,13 +540,26 @@ function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: 
       <div className="flex gap-3 items-end">
         <div className="flex-1">
           <label className="block text-xs font-medium text-[#64748B] mb-1">Código de Barras / QR Code</label>
-          <input className="field text-sm font-mono" value={codigoBarras} onChange={e => setCodigoBarras(e.target.value)} placeholder="Use o leitor ou digite manualmente" />
+          <div className="flex gap-2">
+            <input className="field text-sm font-mono flex-1" value={codigoBarras} onChange={e => setCodigoBarras(e.target.value)} placeholder="Escaneie ou digite manualmente" />
+            <button type="button" onClick={() => setShowScanner(true)}
+              className="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-[#E2E8F0] hover:bg-[#EEF2FF] hover:border-[#4F7CFF] transition-colors text-[#64748B] hover:text-[#4F7CFF]"
+              title="Escanear com câmera">
+              <Camera size={16} />
+            </button>
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={salvar} disabled={loading} className="btn-primary text-sm py-2">{loading ? '...' : 'Salvar'}</button>
           <button onClick={() => setShow(false)} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
         </div>
       </div>
+      {showScanner && (
+        <BarcodeScannerModal
+          onScanned={code => { setCodigoBarras(code); setShowScanner(false) }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </div>
   )
 }
