@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, BarChart2, Users, FileText, Settings, User } from 'lucide-react'
+import { Wrench, BarChart2, Users, FileText, Settings, User, Package } from 'lucide-react'
 
 const navItems = [
   { href: '/obras', label: 'Obras', icon: Wrench },
+  { href: '/estoque', label: 'Estoque', icon: Package },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/documentos', label: 'Documentos', icon: FileText },

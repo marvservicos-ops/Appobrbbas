@@ -65,3 +65,53 @@ export interface Perfil {
   avatar_url?: string
   cargo?: string
 }
+
+export type TipoMovimentacao = 'entrada' | 'saida' | 'devolucao' | 'ajuste'
+export type StatusMovimentacao = 'concluido' | 'pendente_devolucao' | 'devolvido_parcial' | 'devolvido_total'
+
+export interface EstoqueCategoria {
+  id: string
+  nome: string
+  cor: string
+  icone: string
+  created_at: string
+}
+
+export interface EstoqueItem {
+  id: string
+  nome: string
+  descricao?: string
+  categoria_id?: string
+  categoria?: EstoqueCategoria
+  unidade: string
+  quantidade_atual: number
+  quantidade_minima: number
+  quantidade_maxima?: number
+  codigo_barras?: string
+  codigo_interno?: string
+  foto_url?: string
+  foto_path?: string
+  localizacao?: string
+  preco_unitario?: number
+  ativo: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface EstoqueMovimentacao {
+  id: string
+  item_id: string
+  item?: EstoqueItem
+  tipo: TipoMovimentacao
+  quantidade: number
+  quantidade_devolvida: number
+  responsavel: string
+  obra_id?: string
+  obra?: Obra
+  motivo?: string
+  observacoes?: string
+  status: StatusMovimentacao
+  data_prevista_devolucao?: string
+  data_devolucao?: string
+  created_at: string
+}
