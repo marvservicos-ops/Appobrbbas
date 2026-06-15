@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa } from '@/lib/types'
@@ -27,8 +27,9 @@ const categoriaConfig: Record<CategoriaDoc, { bg: string; text: string }> = {
   Outros: { bg: 'bg-gray-100', text: 'text-gray-600' },
 }
 
-export default function ObraDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function ObraDetailPage() {
+  const params = useParams()
+  const id = params.id as string
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
   const [obra, setObra] = useState<Obra | null>(null)
