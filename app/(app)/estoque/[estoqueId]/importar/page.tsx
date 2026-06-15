@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { ArrowLeft, Upload, Check, AlertCircle, Loader2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto } from '@/lib/types'
@@ -22,9 +22,12 @@ const CAMPOS_FIXOS = [
 
 function parseCSV(text: string): { headers: string[]; rows: CsvRow[] } {
   const lines = text.trim().split(/\r?\n/)
-  const headers = lines[0].split(/[,;|\t]/).map(h => h.trim().replace(/^"|"$/g, ''))
+  // detect separator
+  const firstLine = lines[0]
+  const sep = firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : firstLine.includes('|') ? '|' : ','
+  const headers = firstLine.split(sep).map(h => h.trim().replace(/^"|"$/g, ''))
   const rows = lines.slice(1).map(line => {
-    const vals = line.split(/[,;|\t]/).map(v => v.trim().replace(/^"|"$/g, ''))
+    const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''))
     const row: CsvRow = {}
     headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
     return row
@@ -34,17 +37,14 @@ function parseCSV(text: string): { headers: string[]; rows: CsvRow[] } {
 
 function parseDate(str: string): string | null {
   if (!str) return null
-  // DD/MM/YYYY
   const br = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
   if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`
-  // YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
   return null
 }
 
 export default function ImportarPage() {
   const { estoqueId } = useParams<{ estoqueId: string }>()
-  const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [estoque, setEstoque] = useState<Estoque | null>(null)
@@ -54,9 +54,10 @@ export default function ImportarPage() {
 
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [csvRows, setCsvRows] = useState<CsvRow[]>([])
-  const [mapeamento, setMapeamento] = useState<Record<string, string>>({}) // csvHeader → campo destino
+  const [mapeamento, setMapeamento] = useState<Record<string, string>>({})
+  const [cadastrarProdutos, setCadastrarProdutos] = useState(true)
   const [importing, setImporting] = useState(false)
-  const [resultado, setResultado] = useState<{ ok: number; erros: string[] } | null>(null)
+  const [resultado, setResultado] = useState<{ ok: number; produtosCriados: number; erros: string[] } | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -83,11 +84,10 @@ export default function ImportarPage() {
       const { headers, rows } = parseCSV(text)
       setCsvHeaders(headers)
       setCsvRows(rows)
-      // Auto-mapear por nome similar
       const autoMap: Record<string, string> = {}
       const destinos = [...CAMPOS_FIXOS, ...campos.map(c => ({ key: `campo_${c.id}`, label: c.nome }))]
       headers.forEach(h => {
-        const hl = h.toLowerCase()
+        const hl = h.toLowerCase().trim()
         const match = destinos.find(d =>
           d.label.toLowerCase().includes(hl) || hl.includes(d.label.toLowerCase()) ||
           d.key.toLowerCase().includes(hl)
@@ -105,23 +105,27 @@ export default function ImportarPage() {
     const supabase = createClient()
     const erros: string[] = []
     let ok = 0
+    let produtosCriados = 0
 
+    // Mapa de produtos existentes
     const produtoMap: Record<string, string> = {}
-    for (const p of produtos) produtoMap[p.nome.toLowerCase()] = p.id
+    for (const p of produtos) produtoMap[p.nome.toLowerCase().trim()] = p.id
 
     for (let i = 0; i < csvRows.length; i++) {
       const row = csvRows[i]
       try {
         const get = (key: string) => {
           const col = Object.entries(mapeamento).find(([, v]) => v === key)?.[0]
-          return col ? row[col]?.trim() : ''
+          return col ? (row[col] ?? '').trim() : ''
         }
 
         const produto_nome = get('produto_nome')
         if (!produto_nome) { erros.push(`Linha ${i + 2}: produto vazio`); continue }
 
-        const quantidade = parseFloat(get('quantidade') || '0')
-        if (!quantidade) { erros.push(`Linha ${i + 2}: quantidade inválida`); continue }
+        const qtdStr = get('quantidade').replace(',', '.')
+        const quantidade = parseFloat(qtdStr)
+        // Aceita 0 e vazios (considera 0)
+        if (isNaN(quantidade)) { erros.push(`Linha ${i + 2}: quantidade inválida ("${qtdStr}")`); continue }
 
         const responsavel = get('responsavel') || 'Importado'
         const dataStr = parseDate(get('data')) ?? new Date().toISOString().split('T')[0]
@@ -129,7 +133,18 @@ export default function ImportarPage() {
         const unidade = get('unidade') || 'un'
         const observacoes = get('observacoes') || null
 
-        const produto_id = produtoMap[produto_nome.toLowerCase()] ?? null
+        // Criar produto se não existir e opção ligada
+        let produto_id = produtoMap[produto_nome.toLowerCase().trim()] ?? null
+        if (!produto_id && cadastrarProdutos) {
+          const { data: novoProd } = await supabase.from('estoque_produtos').insert({
+            estoque_id: estoqueId, nome: produto_nome, unidade,
+          }).select().single()
+          if (novoProd) {
+            produto_id = novoProd.id
+            produtoMap[produto_nome.toLowerCase().trim()] = novoProd.id
+            produtosCriados++
+          }
+        }
 
         const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
           estoque_id: estoqueId, produto_id, produto_nome, tipo, quantidade, unidade,
@@ -138,10 +153,9 @@ export default function ImportarPage() {
 
         if (regErr) { erros.push(`Linha ${i + 2}: ${regErr.message}`); continue }
 
-        // Campos customizados
         const valores = campos.map(c => {
           const col = Object.entries(mapeamento).find(([, v]) => v === `campo_${c.id}`)?.[0]
-          const valor = col ? row[col]?.trim() : ''
+          const valor = col ? (row[col] ?? '').trim() : ''
           return valor ? { registro_id: reg.id, campo_id: c.id, valor } : null
         }).filter((v): v is { registro_id: string; campo_id: string; valor: string } => v !== null)
 
@@ -150,12 +164,12 @@ export default function ImportarPage() {
         }
 
         ok++
-      } catch (err) {
+      } catch {
         erros.push(`Linha ${i + 2}: erro inesperado`)
       }
     }
 
-    setResultado({ ok, erros })
+    setResultado({ ok, produtosCriados, erros })
     setImporting(false)
   }
 
@@ -182,30 +196,27 @@ export default function ImportarPage() {
         </div>
       </div>
 
-      {/* Instruções */}
       <div className="card bg-[#F0F9FF] border-[#BAE6FD] mb-6">
         <p className="text-sm text-[#0369A1] font-medium mb-1">Como importar</p>
         <ul className="text-xs text-[#0369A1] space-y-0.5 list-disc list-inside">
-          <li>Exporte a planilha do seu sistema atual como CSV (separado por vírgula, ponto e vírgula ou tab)</li>
-          <li>O sistema detecta automaticamente as colunas — você pode ajustar o mapeamento abaixo</li>
+          <li>Exporte a planilha do seu sistema atual como CSV</li>
+          <li>O sistema detecta automaticamente as colunas — você pode ajustar o mapeamento</li>
           <li>Datas aceitas: DD/MM/AAAA ou AAAA-MM-DD</li>
-          <li>Tipo: se a coluna tipo contiver &quot;entrada&quot; será importado como Entrada, caso contrário como Saída</li>
+          <li>Linhas com quantidade 0 são aceitas normalmente</li>
         </ul>
       </div>
 
-      {/* Upload */}
       {csvRows.length === 0 && (
         <label className="flex flex-col items-center justify-center gap-3 w-full h-44 border-2 border-dashed border-[#E2E8F0] rounded-2xl cursor-pointer hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-colors">
           <Upload size={28} className="text-[#94A3B8]" />
           <div className="text-center">
             <p className="text-sm font-medium text-[#374151]">Clique para selecionar o arquivo CSV</p>
-            <p className="text-xs text-[#94A3B8] mt-0.5">Formatos: .csv, .txt — separadores: vírgula, ponto e vírgula ou tab</p>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Separadores aceitos: vírgula, ponto e vírgula ou tab</p>
           </div>
           <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleFile} />
         </label>
       )}
 
-      {/* Mapeamento de colunas */}
       {csvRows.length > 0 && !resultado && (
         <div className="space-y-5">
           <div className="flex items-center justify-between">
@@ -214,12 +225,21 @@ export default function ImportarPage() {
               className="text-xs text-[#94A3B8] hover:text-[#64748B] flex items-center gap-1"><X size={12} /> Trocar arquivo</button>
           </div>
 
+          {/* Opção: cadastrar produtos */}
+          <label className="flex items-center gap-3 px-4 py-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] cursor-pointer">
+            <input type="checkbox" checked={cadastrarProdutos} onChange={e => setCadastrarProdutos(e.target.checked)} className="w-4 h-4 accent-[#4F7CFF]" />
+            <div>
+              <p className="text-sm font-medium text-[#374151]">Cadastrar produtos automaticamente</p>
+              <p className="text-xs text-[#94A3B8]">Cria os produtos na aba Produtos para cada nome único encontrado no CSV</p>
+            </div>
+          </label>
+
           <div className="card p-0 overflow-hidden">
             <table className="w-full">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Coluna no CSV</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Exemplo de dado</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Exemplo</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Mapear para</th>
                 </tr>
               </thead>
@@ -229,9 +249,7 @@ export default function ImportarPage() {
                     <td className="px-4 py-2.5 text-sm font-medium text-[#0F172A]">{h}</td>
                     <td className="px-4 py-2.5 text-xs text-[#64748B] max-w-[200px] truncate">{csvRows[0]?.[h] ?? ''}</td>
                     <td className="px-4 py-2.5">
-                      <select
-                        className="field text-sm py-1.5"
-                        value={mapeamento[h] ?? '__ignorar__'}
+                      <select className="field text-sm py-1.5" value={mapeamento[h] ?? '__ignorar__'}
                         onChange={e => setMapeamento(m => ({ ...m, [h]: e.target.value }))}>
                         {todasDestinos.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
                       </select>
@@ -260,9 +278,7 @@ export default function ImportarPage() {
                 <tbody>
                   {csvRows.slice(0, 3).map((row, i) => (
                     <tr key={i} className="border-b border-[#F1F5F9]">
-                      {csvHeaders.map(h => (
-                        <td key={h} className="px-3 py-2 text-[#374151] max-w-[160px] truncate">{row[h]}</td>
-                      ))}
+                      {csvHeaders.map(h => <td key={h} className="px-3 py-2 text-[#374151] max-w-[160px] truncate">{row[h]}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -271,12 +287,10 @@ export default function ImportarPage() {
           </div>
 
           <div className="flex gap-3">
-            <Link href={`/estoque/${estoqueId}`}
-              className="px-5 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            <Link href={`/estoque/${estoqueId}`} className="px-5 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
               Cancelar
             </Link>
-            <button onClick={importar} disabled={importing}
-              className="btn-primary flex items-center gap-2 px-6">
+            <button onClick={importar} disabled={importing} className="btn-primary flex items-center gap-2 px-6">
               {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
               {importing ? 'Importando...' : `Importar ${csvRows.length} registros`}
             </button>
@@ -284,21 +298,23 @@ export default function ImportarPage() {
         </div>
       )}
 
-      {/* Resultado */}
       {resultado && (
         <div className="space-y-4">
           <div className={`card border-2 ${resultado.erros.length === 0 ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
             <div className="flex items-center gap-3 mb-2">
-              {resultado.erros.length === 0
-                ? <Check size={20} className="text-green-600" />
-                : <AlertCircle size={20} className="text-yellow-600" />}
-              <p className="font-semibold text-[#0F172A]">
-                {resultado.ok} registro{resultado.ok !== 1 ? 's' : ''} importado{resultado.ok !== 1 ? 's' : ''} com sucesso
-                {resultado.erros.length > 0 ? `, ${resultado.erros.length} com erro` : ''}
-              </p>
+              {resultado.erros.length === 0 ? <Check size={20} className="text-green-600" /> : <AlertCircle size={20} className="text-yellow-600" />}
+              <div>
+                <p className="font-semibold text-[#0F172A]">
+                  {resultado.ok} registro{resultado.ok !== 1 ? 's' : ''} importado{resultado.ok !== 1 ? 's' : ''}
+                  {resultado.erros.length > 0 ? `, ${resultado.erros.length} com erro` : ' com sucesso'}
+                </p>
+                {resultado.produtosCriados > 0 && (
+                  <p className="text-sm text-green-700 mt-0.5">+ {resultado.produtosCriados} produto{resultado.produtosCriados !== 1 ? 's' : ''} criado{resultado.produtosCriados !== 1 ? 's' : ''} automaticamente</p>
+                )}
+              </div>
             </div>
             {resultado.erros.length > 0 && (
-              <ul className="text-xs text-yellow-700 space-y-0.5 list-disc list-inside">
+              <ul className="text-xs text-yellow-700 space-y-0.5 list-disc list-inside mt-2">
                 {resultado.erros.slice(0, 10).map((e, i) => <li key={i}>{e}</li>)}
                 {resultado.erros.length > 10 && <li>...e mais {resultado.erros.length - 10} erros</li>}
               </ul>

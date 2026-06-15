@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Upload, Settings, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { useParams } from 'next/navigation'
+import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
 import Link from 'next/link'
@@ -12,12 +12,13 @@ const ICONE_MAP: Record<string, React.ReactNode> = {
   thermometer: <Thermometer size={18} />, shirt: <Shirt size={18} />,
   droplets: <Droplets size={18} />, package: <Package size={18} />,
 }
+const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets']
+const CORES = ['#4F7CFF', '#F59E0B', '#2DD4BF', '#8B5CF6', '#06B6D4', '#EF4444', '#10B981', '#F97316']
 
 type Tab = 'registros' | 'produtos' | 'configurar'
 
 export default function EstoqueDetalhe() {
   const { estoqueId } = useParams<{ estoqueId: string }>()
-  const router = useRouter()
   const [estoque, setEstoque] = useState<Estoque | null>(null)
   const [campos, setCampos] = useState<EstoqueCampo[]>([])
   const [produtos, setProdutos] = useState<EstoqueProduto[]>([])
@@ -25,6 +26,11 @@ export default function EstoqueDetalhe() {
   const [tab, setTab] = useState<Tab>('registros')
   const [loading, setLoading] = useState(true)
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
+  const [showEdit, setShowEdit] = useState(false)
+
+  // Seleção em lote
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [excluindoLote, setExcluindoLote] = useState(false)
 
   async function load() {
     const supabase = createClient()
@@ -38,6 +44,7 @@ export default function EstoqueDetalhe() {
     setCampos(cam ?? [])
     setProdutos(prod ?? [])
     setRegistros(regs ?? [])
+    setSelecionados(new Set())
     setLoading(false)
   }
 
@@ -50,6 +57,17 @@ export default function EstoqueDetalhe() {
     setRegistros(r => r.filter(x => x.id !== id))
   }
 
+  async function excluirSelecionados() {
+    if (selecionados.size === 0) return
+    if (!confirm(`Excluir ${selecionados.size} registro(s) selecionado(s)?`)) return
+    setExcluindoLote(true)
+    const supabase = createClient()
+    await supabase.from('estoque_registros').delete().in('id', Array.from(selecionados))
+    setRegistros(r => r.filter(x => !selecionados.has(x.id)))
+    setSelecionados(new Set())
+    setExcluindoLote(false)
+  }
+
   async function excluirProduto(id: string) {
     if (!confirm('Desativar este produto?')) return
     const supabase = createClient()
@@ -57,10 +75,28 @@ export default function EstoqueDetalhe() {
     setProdutos(p => p.filter(x => x.id !== id))
   }
 
+  function toggleSelecionado(id: string) {
+    setSelecionados(s => {
+      const next = new Set(s)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleTodos() {
+    if (selecionados.size === registrosOrdenados.length) {
+      setSelecionados(new Set())
+    } else {
+      setSelecionados(new Set(registrosOrdenados.map(r => r.id)))
+    }
+  }
+
   const registrosOrdenados = [...registros].sort((a, b) => {
     const da = new Date(a.data).getTime(), db = new Date(b.data).getTime()
     return sortDir === 'desc' ? db - da : da - db
   })
+
+  const todosSelec = registrosOrdenados.length > 0 && selecionados.size === registrosOrdenados.length
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen">
@@ -84,7 +120,12 @@ export default function EstoqueDetalhe() {
             {ICONE_MAP[estoque.icone] ?? <Package size={18} />}
           </div>
           <div>
-            <h1 className="font-syne font-bold text-xl text-[#0F172A]">{estoque.nome}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-syne font-bold text-xl text-[#0F172A]">{estoque.nome}</h1>
+              <button onClick={() => setShowEdit(true)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+                <Pencil size={14} />
+              </button>
+            </div>
             {estoque.descricao && <p className="text-xs text-[#64748B]">{estoque.descricao}</p>}
           </div>
         </div>
@@ -93,8 +134,7 @@ export default function EstoqueDetalhe() {
             className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
             <Upload size={14} /> Importar CSV
           </Link>
-          <Link href={`/estoque/${estoqueId}/registrar`}
-            className="btn-primary flex items-center gap-2">
+          <Link href={`/estoque/${estoqueId}/registrar`} className="btn-primary flex items-center gap-2">
             <Plus size={14} /> Novo Registro
           </Link>
         </div>
@@ -112,71 +152,103 @@ export default function EstoqueDetalhe() {
 
       {/* Tab: Registros */}
       {tab === 'registros' && (
-        <div className="card p-0 overflow-hidden">
-          {registros.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-[#F1F5F9] flex items-center justify-center">
-                <Package size={24} className="text-[#94A3B8]" />
-              </div>
-              <p className="font-medium text-[#374151]">Nenhum registro ainda</p>
-              <p className="text-sm text-[#94A3B8]">Clique em "Novo Registro" para começar</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">
-                      <button className="flex items-center gap-1" onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}>
-                        Data {sortDir === 'desc' ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-                      </button>
-                    </th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Tipo</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Produto</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Qtd</th>
-                    {campos.map(c => (
-                      <th key={c.id} className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">{c.nome}</th>
-                    ))}
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Responsável</th>
-                    <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Assinatura</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {registrosOrdenados.map(reg => (
-                    <tr key={reg.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
-                      <td className="px-4 py-3 text-sm text-[#374151] whitespace-nowrap">
-                        {new Date(reg.data + 'T00:00:00').toLocaleDateString('pt-BR')}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${reg.tipo === 'saida' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                          {reg.tipo === 'saida' ? 'Saída' : 'Entrada'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{reg.produto_nome}</td>
-                      <td className="px-4 py-3 text-sm text-[#374151]">{reg.quantidade} {reg.unidade ?? ''}</td>
-                      {campos.map(c => {
-                        const val = reg.valores?.find(v => v.campo_id === c.id)
-                        return <td key={c.id} className="px-4 py-3 text-sm text-[#374151]">{val?.valor ?? '—'}</td>
-                      })}
-                      <td className="px-4 py-3 text-sm text-[#374151]">{reg.responsavel}</td>
-                      <td className="px-4 py-3">
-                        {reg.assinatura_url
-                          ? <img src={reg.assinatura_url} alt="assinatura" className="h-8 object-contain border border-[#E2E8F0] rounded" />
-                          : <span className="text-xs text-[#94A3B8]">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => excluirRegistro(reg.id)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#94A3B8] hover:text-red-500">
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="space-y-3">
+          {/* Barra de ação em lote */}
+          {selecionados.size > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-[#EEF2FF] rounded-xl border border-[#C7D2FE]">
+              <span className="text-sm font-medium text-[#4F7CFF]">{selecionados.size} selecionado{selecionados.size !== 1 ? 's' : ''}</span>
+              <button onClick={excluirSelecionados} disabled={excluindoLote}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors ml-auto">
+                {excluindoLote ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                Excluir selecionados
+              </button>
+              <button onClick={() => setSelecionados(new Set())} className="text-[#64748B] hover:text-[#374151]">
+                <X size={16} />
+              </button>
             </div>
           )}
+
+          <div className="card p-0 overflow-hidden">
+            {registros.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-[#F1F5F9] flex items-center justify-center">
+                  <Package size={24} className="text-[#94A3B8]" />
+                </div>
+                <p className="font-medium text-[#374151]">Nenhum registro ainda</p>
+                <p className="text-sm text-[#94A3B8]">Clique em &quot;Novo Registro&quot; para começar</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                      <th className="px-4 py-3 w-8">
+                        <button onClick={toggleTodos} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+                          {todosSelec ? <CheckSquare size={16} className="text-[#4F7CFF]" /> : <Square size={16} />}
+                        </button>
+                      </th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">
+                        <button className="flex items-center gap-1" onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}>
+                          Data {sortDir === 'desc' ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+                        </button>
+                      </th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Tipo</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Produto</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Qtd</th>
+                      {campos.map(c => (
+                        <th key={c.id} className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">{c.nome}</th>
+                      ))}
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Responsável</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Assinatura</th>
+                      <th className="px-4 py-3 w-8" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {registrosOrdenados.map(reg => {
+                      const selec = selecionados.has(reg.id)
+                      return (
+                        <tr key={reg.id}
+                          className={`border-b border-[#F1F5F9] transition-colors group cursor-pointer ${selec ? 'bg-[#F5F7FF]' : 'hover:bg-[#F8FAFC]'}`}
+                          onClick={() => toggleSelecionado(reg.id)}>
+                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => toggleSelecionado(reg.id)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+                              {selec ? <CheckSquare size={16} className="text-[#4F7CFF]" /> : <Square size={16} />}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-[#374151] whitespace-nowrap">
+                            {new Date(reg.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${reg.tipo === 'saida' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                              {reg.tipo === 'saida' ? 'Saída' : 'Entrada'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{reg.produto_nome}</td>
+                          <td className="px-4 py-3 text-sm text-[#374151]">{reg.quantidade} {reg.unidade ?? ''}</td>
+                          {campos.map(c => {
+                            const val = reg.valores?.find(v => v.campo_id === c.id)
+                            return <td key={c.id} className="px-4 py-3 text-sm text-[#374151]">{val?.valor ?? '—'}</td>
+                          })}
+                          <td className="px-4 py-3 text-sm text-[#374151]">{reg.responsavel}</td>
+                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                            {reg.assinatura_url
+                              ? <img src={reg.assinatura_url} alt="assinatura" className="h-8 object-contain border border-[#E2E8F0] rounded" />
+                              : <span className="text-xs text-[#94A3B8]">—</span>}
+                          </td>
+                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => excluirRegistro(reg.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-[#94A3B8] hover:text-red-500">
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -226,6 +298,86 @@ export default function EstoqueDetalhe() {
       {tab === 'configurar' && (
         <ConfigurarCampos estoqueId={estoqueId} campos={campos} onUpdated={load} />
       )}
+
+      {/* Modal editar estoque */}
+      {showEdit && estoque && (
+        <ModalEditarEstoque
+          estoque={estoque}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); load() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal editar estoque ──────────────────────────────
+function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; onClose: () => void; onSaved: () => void }) {
+  const [nome, setNome] = useState(estoque.nome)
+  const [descricao, setDescricao] = useState(estoque.descricao ?? '')
+  const [cor, setCor] = useState(estoque.cor)
+  const [icone, setIcone] = useState(estoque.icone)
+  const [loading, setLoading] = useState(false)
+
+  const ICONE_MAP_FULL: Record<string, React.ReactNode> = {
+    shield: <Shield size={20} />, sparkles: <Sparkles size={20} />,
+    thermometer: <Thermometer size={20} />, shirt: <Shirt size={20} />,
+    droplets: <Droplets size={20} />, package: <Package size={20} />,
+  }
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    const supabase = createClient()
+    await supabase.from('estoques').update({ nome, descricao: descricao || null, cor, icone }).eq('id', estoque.id)
+    setLoading(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
+          <h2 className="font-syne font-semibold text-[#0F172A]">Editar Estoque</h2>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <form onSubmit={salvar} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
+            <input required className="field" value={nome} onChange={e => setNome(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Descrição</label>
+            <input className="field" value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Opcional" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-2">Ícone</label>
+            <div className="flex gap-2 flex-wrap">
+              {ICONES.map(ic => (
+                <button key={ic} type="button" onClick={() => setIcone(ic)}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center border-2 transition-colors ${icone === ic ? 'border-[#4F7CFF] bg-[#EEF2FF]' : 'border-[#E2E8F0]'}`}
+                  style={{ color: icone === ic ? '#4F7CFF' : '#64748B' }}>
+                  {ICONE_MAP_FULL[ic]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-2">Cor</label>
+            <div className="flex gap-2 flex-wrap">
+              {CORES.map(c => (
+                <button key={c} type="button" onClick={() => setCor(c)}
+                  className={`w-8 h-8 rounded-full border-4 transition-all ${cor === c ? 'border-white ring-2 ring-offset-1 ring-[#4F7CFF] scale-110' : 'border-white'}`}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
+            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar'}</button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -253,8 +405,7 @@ function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: 
   }
 
   if (!show) return (
-    <button onClick={() => setShow(true)}
-      className="flex items-center gap-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-3 py-2 rounded-lg transition-colors">
+    <button onClick={() => setShow(true)} className="flex items-center gap-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-3 py-2 rounded-lg transition-colors">
       <Plus size={14} /> Adicionar produto
     </button>
   )
@@ -316,7 +467,6 @@ function ConfigurarCampos({ estoqueId, campos, onUpdated }: { estoqueId: string;
       <div className="card">
         <h3 className="font-syne font-semibold text-[#0F172A] mb-1">Campos customizados</h3>
         <p className="text-xs text-[#64748B] mb-4">Campos extras que aparecem em cada registro deste estoque. Data, Produto, Qtd, Responsável e Assinatura são sempre incluídos.</p>
-
         <div className="space-y-2">
           {campos.length === 0 && <p className="text-sm text-[#94A3B8]">Nenhum campo extra configurado.</p>}
           {campos.map(c => (
@@ -331,12 +481,11 @@ function ConfigurarCampos({ estoqueId, campos, onUpdated }: { estoqueId: string;
             </div>
           ))}
         </div>
-
         {showAdd ? (
           <div className="mt-4 pt-4 border-t border-[#E2E8F0] space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-[#64748B] mb-1">Nome do campo *</label>
+                <label className="block text-xs font-medium text-[#64748B] mb-1">Nome *</label>
                 <input autoFocus className="field text-sm" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Nº CA" />
               </div>
               <div>
