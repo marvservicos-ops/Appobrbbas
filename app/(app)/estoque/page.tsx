@@ -1,297 +1,176 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Package, AlertTriangle, TrendingDown, TrendingUp, ArrowUpCircle, ArrowDownCircle, RefreshCw, Plus, Search, Filter } from 'lucide-react'
+import { Plus, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, ChevronRight, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { EstoqueItem, EstoqueMovimentacao } from '@/lib/types'
-import Topbar from '@/components/Topbar'
+import { Estoque } from '@/lib/types'
 import Link from 'next/link'
 
-function nivelEstoque(item: EstoqueItem): 'critico' | 'baixo' | 'ok' {
-  if (item.quantidade_atual <= 0) return 'critico'
-  if (item.quantidade_atual <= item.quantidade_minima) return 'baixo'
-  return 'ok'
-}
-
-function formatCurrency(v?: number | null) {
-  if (!v) return null
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+const ICONE_MAP: Record<string, React.ReactNode> = {
+  shield: <Shield size={22} />,
+  sparkles: <Sparkles size={22} />,
+  thermometer: <Thermometer size={22} />,
+  shirt: <Shirt size={22} />,
+  droplets: <Droplets size={22} />,
+  package: <Package size={22} />,
 }
 
 export default function EstoquePage() {
-  const [itens, setItens] = useState<EstoqueItem[]>([])
-  const [movs, setMovs] = useState<EstoqueMovimentacao[]>([])
-  const [search, setSearch] = useState('')
+  const [estoques, setEstoques] = useState<Estoque[]>([])
   const [loading, setLoading] = useState(true)
+  const [showNovo, setShowNovo] = useState(false)
+  const [contagens, setContagens] = useState<Record<string, number>>({})
 
   async function load() {
-    setLoading(true)
     const supabase = createClient()
-    const [itensRes, movsRes] = await Promise.all([
-      supabase.from('estoque_itens').select('*, categoria:estoque_categorias(*)').eq('ativo', true).order('nome'),
-      supabase.from('estoque_movimentacoes').select('*, item:estoque_itens(nome, unidade)').order('created_at', { ascending: false }).limit(10),
-    ])
-    if (itensRes.data) setItens(itensRes.data as EstoqueItem[])
-    if (movsRes.data) setMovs(movsRes.data as EstoqueMovimentacao[])
+    const { data } = await supabase.from('estoques').select('*').order('created_at')
+    setEstoques(data ?? [])
+
+    if (data && data.length > 0) {
+      const ids = data.map(e => e.id)
+      const { data: regs } = await supabase
+        .from('estoque_registros')
+        .select('estoque_id')
+        .in('estoque_id', ids)
+      const map: Record<string, number> = {}
+      for (const r of regs ?? []) {
+        map[r.estoque_id] = (map[r.estoque_id] ?? 0) + 1
+      }
+      setContagens(map)
+    }
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
-  const criticos = itens.filter(i => nivelEstoque(i) === 'critico')
-  const baixos = itens.filter(i => nivelEstoque(i) === 'baixo')
-  const pendentesDevolucao = movs.filter(m => m.status === 'pendente_devolucao')
-  const filtered = itens.filter(i => i.nome.toLowerCase().includes(search.toLowerCase()))
+  return (
+    <div className="p-8 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="font-syne font-bold text-2xl text-[#0F172A]">Estoques</h1>
+          <p className="text-sm text-[#64748B] mt-1">Gerencie cada estoque separadamente</p>
+        </div>
+        <button onClick={() => setShowNovo(true)} className="btn-primary flex items-center gap-2">
+          <Plus size={16} /> Novo Estoque
+        </button>
+      </div>
 
-  const valorTotal = itens.reduce((s, i) => s + (i.quantidade_atual * (i.preco_unitario || 0)), 0)
+      {loading ? (
+        <div className="flex items-center justify-center h-48">
+          <Loader2 size={24} className="animate-spin text-[#4F7CFF]" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {estoques.map(e => (
+            <Link key={e.id} href={`/estoque/${e.id}`}
+              className="card hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group block">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white"
+                    style={{ backgroundColor: e.cor }}>
+                    {ICONE_MAP[e.icone] ?? <Package size={22} />}
+                  </div>
+                  <div>
+                    <h3 className="font-syne font-semibold text-[#0F172A]">{e.nome}</h3>
+                    {e.descricao && <p className="text-xs text-[#64748B] mt-0.5">{e.descricao}</p>}
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-[#94A3B8] group-hover:text-[#4F7CFF] transition-colors mt-1" />
+              </div>
+              <div className="mt-4 pt-4 border-t border-[#F1F5F9] flex items-center justify-between">
+                <span className="text-xs text-[#64748B]">{contagens[e.id] ?? 0} registros</span>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: e.cor }}>
+                  Ver →
+                </span>
+              </div>
+            </Link>
+          ))}
+
+          <button onClick={() => setShowNovo(true)}
+            className="card border-2 border-dashed border-[#E2E8F0] hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-all flex flex-col items-center justify-center gap-2 min-h-[120px] text-[#94A3B8] hover:text-[#4F7CFF]">
+            <Plus size={24} />
+            <span className="text-sm font-medium">Criar novo estoque</span>
+          </button>
+        </div>
+      )}
+
+      {showNovo && <ModalNovoEstoque onClose={() => setShowNovo(false)} onCreated={() => { setShowNovo(false); load() }} />}
+    </div>
+  )
+}
+
+const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets']
+const CORES = ['#4F7CFF', '#F59E0B', '#2DD4BF', '#8B5CF6', '#06B6D4', '#EF4444', '#10B981', '#F97316']
+
+function ModalNovoEstoque({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [nome, setNome] = useState('')
+  const [descricao, setDescricao] = useState('')
+  const [cor, setCor] = useState('#4F7CFF')
+  const [icone, setIcone] = useState('package')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!nome.trim()) return
+    setLoading(true)
+    const supabase = createClient()
+    const { error: err } = await supabase.from('estoques').insert({ nome: nome.trim(), descricao: descricao || null, cor, icone })
+    if (err) { setError(err.message); setLoading(false); return }
+    onCreated()
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      <Topbar searchPlaceholder="Buscar item no estoque..." onSearch={setSearch} />
-
-      <div className="p-6 flex-1">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
+          <h2 className="font-syne font-semibold text-[#0F172A]">Novo Estoque</h2>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <h1 className="font-syne text-2xl font-bold text-[#0F172A]">Controle de Estoque</h1>
-            <p className="text-sm text-[#64748B] mt-0.5">Gerencie materiais, EPIs, ferramentas e equipamentos</p>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
+            <input required className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Material de Refrigeração" />
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/estoque/movimentacao?tipo=saida" className="btn-secondary">
-              <ArrowDownCircle size={16} className="text-red-500" />
-              Saída
-            </Link>
-            <Link href="/estoque/movimentacao?tipo=entrada" className="btn-secondary">
-              <ArrowUpCircle size={16} className="text-emerald-500" />
-              Entrada
-            </Link>
-            <Link href="/estoque/itens/novo" className="btn-primary">
-              <Plus size={16} />
-              Novo Item
-            </Link>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Descrição</label>
+            <input className="field" value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Opcional" />
           </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Total de Itens</span>
-              <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
-                <Package size={16} className="text-[#4F7CFF]" />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-2">Ícone</label>
+            <div className="flex gap-2 flex-wrap">
+              {ICONES.map(ic => (
+                <button key={ic} type="button"
+                  onClick={() => setIcone(ic)}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center border-2 transition-colors ${icone === ic ? 'border-[#4F7CFF] bg-[#EEF2FF]' : 'border-[#E2E8F0] hover:border-[#CBD5E1]'}`}
+                  style={{ color: icone === ic ? '#4F7CFF' : '#64748B' }}>
+                  {ICONE_MAP[ic]}
+                </button>
+              ))}
             </div>
-            <div className="font-syne text-3xl font-bold text-[#0F172A]">{itens.length}</div>
-            <div className="text-xs text-[#64748B] mt-1">{itens.filter(i => i.ativo).length} ativos</div>
           </div>
-
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Estoque Crítico</span>
-              <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center">
-                <AlertTriangle size={16} className="text-red-500" />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-2">Cor</label>
+            <div className="flex gap-2 flex-wrap">
+              {CORES.map(c => (
+                <button key={c} type="button" onClick={() => setCor(c)}
+                  className={`w-8 h-8 rounded-full border-4 transition-all ${cor === c ? 'border-white ring-2 ring-offset-1 ring-[#4F7CFF] scale-110' : 'border-white'}`}
+                  style={{ backgroundColor: c }} />
+              ))}
             </div>
-            <div className="font-syne text-3xl font-bold text-red-500">{criticos.length + baixos.length}</div>
-            <div className="text-xs text-red-500 mt-1">{criticos.length} zerados · {baixos.length} abaixo do mínimo</div>
           </div>
-
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Devoluções Pendentes</span>
-              <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center">
-                <RefreshCw size={16} className="text-amber-500" />
-              </div>
+          <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: cor }}>
+              {ICONE_MAP[icone]}
             </div>
-            <div className="font-syne text-3xl font-bold text-amber-500">{pendentesDevolucao.length}</div>
-            <div className="text-xs text-amber-500 mt-1">ferramentas/materiais fora</div>
+            <span className="font-syne font-semibold text-[#0F172A]">{nome || 'Nome do estoque'}</span>
           </div>
-
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Valor em Estoque</span>
-              <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center">
-                <TrendingUp size={16} className="text-emerald-500" />
-              </div>
-            </div>
-            <div className="font-syne text-2xl font-bold text-emerald-600">
-              {valorTotal > 0 ? formatCurrency(valorTotal) : '—'}
-            </div>
-            <div className="text-xs text-[#64748B] mt-1">custo estimado total</div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
+            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Criando...' : 'Criar Estoque'}</button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-6">
-          {/* Lista de itens */}
-          <div className="col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-syne font-semibold text-[#0F172A]">Itens em Estoque</h2>
-              <Link href="/estoque/itens" className="text-sm text-[#4F7CFF] hover:underline">Ver todos →</Link>
-            </div>
-
-            {loading ? (
-              <div className="space-y-2">
-                {[...Array(5)].map((_, i) => <div key={i} className="card h-16 animate-pulse bg-[#F1F5F9]" />)}
-              </div>
-            ) : (
-              <div className="card p-0 overflow-hidden">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Item</th>
-                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Categoria</th>
-                      <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-3">Quantidade</th>
-                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.slice(0, 15).map(item => {
-                      const nivel = nivelEstoque(item)
-                      const cat = item.categoria as any
-                      return (
-                        <tr key={item.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
-                          <td className="px-4 py-3">
-                            <Link href={`/estoque/itens/${item.id}`} className="flex items-center gap-3 group">
-                              {item.foto_url ? (
-                                <img src={item.foto_url} alt={item.nome} className="w-8 h-8 rounded-lg object-cover border border-[#E2E8F0]" />
-                              ) : (
-                                <div className="w-8 h-8 bg-[#F1F5F9] rounded-lg flex items-center justify-center">
-                                  <Package size={14} className="text-[#94A3B8]" />
-                                </div>
-                              )}
-                              <div>
-                                <div className="text-sm font-medium text-[#0F172A] group-hover:text-[#4F7CFF]">{item.nome}</div>
-                                {item.localizacao && <div className="text-xs text-[#94A3B8]">{item.localizacao}</div>}
-                              </div>
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3">
-                            {cat && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: cat.cor + '20', color: cat.cor }}>
-                                {cat.nome}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={`font-semibold text-sm ${nivel === 'critico' ? 'text-red-500' : nivel === 'baixo' ? 'text-amber-500' : 'text-[#0F172A]'}`}>
-                              {item.quantidade_atual} {item.unidade}
-                            </span>
-                            <div className="text-xs text-[#94A3B8]">mín: {item.quantidade_minima}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {nivel === 'critico' && (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded-full">
-                                <span className="w-1.5 h-1.5 bg-red-500 rounded-full" /> Zerado
-                              </span>
-                            )}
-                            {nivel === 'baixo' && (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" /> Baixo
-                              </span>
-                            )}
-                            {nivel === 'ok' && (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" /> OK
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {filtered.length === 0 && (
-                      <tr><td colSpan={4} className="text-center py-10 text-sm text-[#94A3B8]">
-                        Nenhum item cadastrado. <Link href="/estoque/itens/novo" className="text-[#4F7CFF] hover:underline">Adicionar item</Link>
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar direita */}
-          <div className="space-y-4">
-            {/* Alertas */}
-            {(criticos.length > 0 || baixos.length > 0) && (
-              <div className="card border-red-100 bg-red-50/50">
-                <h3 className="font-syne font-semibold text-sm text-[#0F172A] mb-3 flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-red-500" /> Alertas de Estoque
-                </h3>
-                <div className="space-y-2">
-                  {[...criticos, ...baixos].slice(0, 5).map(item => (
-                    <Link key={item.id} href={`/estoque/itens/${item.id}`}>
-                      <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-[#E2E8F0] hover:border-red-200 transition-colors">
-                        <div className="text-sm font-medium text-[#0F172A] truncate">{item.nome}</div>
-                        <span className={`text-xs font-bold ml-2 shrink-0 ${item.quantidade_atual <= 0 ? 'text-red-500' : 'text-amber-500'}`}>
-                          {item.quantidade_atual} {item.unidade}
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Últimas movimentações */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-syne font-semibold text-sm text-[#0F172A]">Últimas Movimentações</h3>
-                <Link href="/estoque/movimentacoes" className="text-xs text-[#4F7CFF] hover:underline">Ver todas</Link>
-              </div>
-              <div className="space-y-2">
-                {movs.slice(0, 6).map(mov => {
-                  const item = mov.item as any
-                  return (
-                    <div key={mov.id} className="flex items-center gap-3 py-2 border-b border-[#F1F5F9] last:border-0">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                        mov.tipo === 'entrada' ? 'bg-emerald-100' :
-                        mov.tipo === 'devolucao' ? 'bg-blue-100' :
-                        'bg-red-100'
-                      }`}>
-                        {mov.tipo === 'entrada' ? <TrendingUp size={12} className="text-emerald-600" /> :
-                         mov.tipo === 'devolucao' ? <RefreshCw size={12} className="text-blue-600" /> :
-                         <TrendingDown size={12} className="text-red-600" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-[#0F172A] truncate">{item?.nome || '—'}</div>
-                        <div className="text-xs text-[#94A3B8]">{mov.responsavel}</div>
-                      </div>
-                      <div className={`text-xs font-bold shrink-0 ${mov.tipo === 'entrada' || mov.tipo === 'devolucao' ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {mov.tipo === 'saida' ? '-' : '+'}{mov.quantidade} {item?.unidade}
-                      </div>
-                    </div>
-                  )
-                })}
-                {movs.length === 0 && <p className="text-xs text-[#94A3B8] text-center py-4">Nenhuma movimentação ainda.</p>}
-              </div>
-            </div>
-
-            {/* Devoluções pendentes */}
-            {pendentesDevolucao.length > 0 && (
-              <div className="card border-amber-100">
-                <h3 className="font-syne font-semibold text-sm text-[#0F172A] mb-3 flex items-center gap-2">
-                  <RefreshCw size={16} className="text-amber-500" /> Devoluções Pendentes
-                </h3>
-                <div className="space-y-2">
-                  {pendentesDevolucao.slice(0, 4).map(mov => {
-                    const item = mov.item as any
-                    return (
-                      <div key={mov.id} className="p-2 bg-amber-50 rounded-lg border border-amber-100">
-                        <div className="text-xs font-medium text-[#0F172A]">{item?.nome}</div>
-                        <div className="text-xs text-[#64748B]">{mov.responsavel} · {mov.quantidade} {item?.unidade}</div>
-                        {mov.data_prevista_devolucao && (
-                          <div className="text-xs text-amber-600 mt-0.5">
-                            Previsto: {new Date(mov.data_prevista_devolucao + 'T00:00:00').toLocaleDateString('pt-BR')}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        </form>
       </div>
     </div>
   )

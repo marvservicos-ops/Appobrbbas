@@ -76,6 +76,61 @@ export interface Perfil {
   cargo?: string
 }
 
+// ── Estoque V2 ────────────────────────────────────────
+export interface Estoque {
+  id: string
+  nome: string
+  descricao?: string
+  cor: string
+  icone: string
+  created_at: string
+}
+
+export interface EstoqueCampo {
+  id: string
+  estoque_id: string
+  nome: string
+  tipo: 'text' | 'number' | 'date' | 'unit'
+  obrigatorio: boolean
+  ordem: number
+}
+
+export interface EstoqueProduto {
+  id: string
+  estoque_id: string
+  nome: string
+  codigo?: string
+  unidade: string
+  quantidade_atual: number
+  quantidade_minima: number
+  ativo: boolean
+  created_at: string
+}
+
+export interface EstoqueRegistroValor {
+  id: string
+  registro_id: string
+  campo_id: string
+  valor: string
+}
+
+export interface EstoqueRegistro {
+  id: string
+  estoque_id: string
+  produto_id?: string
+  produto_nome: string
+  tipo: 'entrada' | 'saida'
+  quantidade: number
+  unidade?: string
+  responsavel: string
+  assinatura_url?: string
+  data: string
+  observacoes?: string
+  created_at: string
+  valores?: EstoqueRegistroValor[]
+}
+// ──────────────────────────────────────────────────────
+
 export type TipoMovimentacao = 'entrada' | 'saida' | 'devolucao' | 'ajuste'
 export type StatusMovimentacao = 'concluido' | 'pendente_devolucao' | 'devolvido_parcial' | 'devolvido_total'
 
