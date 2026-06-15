@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Eraser, Check, Loader2 } from 'lucide-react'
+import { ArrowLeft, Eraser, Check, Loader2, Camera, ScanLine } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto } from '@/lib/types'
 import Link from 'next/link'
+import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 
 export default function RegistrarPage() {
   const { estoqueId } = useParams<{ estoqueId: string }>()
@@ -28,6 +29,8 @@ export default function RegistrarPage() {
   const [observacoes, setObservacoes] = useState('')
   const [valoresCampos, setValoresCampos] = useState<Record<string, string>>({})
   const [temAssinatura, setTemAssinatura] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
+  const [scanMsg, setScanMsg] = useState('')
 
   // Canvas signature
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -58,6 +61,24 @@ export default function RegistrarPage() {
       setProdutoNome(prod.nome)
     }
   }, [produtoId, produtos])
+
+  function handleScanned(code: string) {
+    setShowScanner(false)
+    // Busca produto pelo codigo_barras ou codigo
+    const found = produtos.find(p =>
+      (p as any).codigo_barras === code || p.codigo === code
+    )
+    if (found) {
+      setProdutoId(found.id)
+      setProdutoNome(found.nome)
+      setScanMsg(`✓ Produto encontrado: ${found.nome}`)
+    } else {
+      setProdutoId('__outro__')
+      setProdutoNome(code)
+      setScanMsg(`Produto não cadastrado. Código: ${code}`)
+    }
+    setTimeout(() => setScanMsg(''), 4000)
+  }
 
   // ── Canvas signature handlers ─────────────────────────
   function getPos(e: React.MouseEvent | React.TouchEvent) {
@@ -209,7 +230,18 @@ export default function RegistrarPage() {
 
         {/* Produto */}
         <div>
-          <label className="block text-sm font-medium text-[#374151] mb-1.5">Produto *</label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-[#374151]">Produto *</label>
+            <button type="button" onClick={() => setShowScanner(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-2.5 py-1.5 rounded-lg transition-colors border border-[#C7D2FE]">
+              <ScanLine size={13} /> Escanear código
+            </button>
+          </div>
+          {scanMsg && (
+            <p className={`text-xs px-3 py-2 rounded-lg mb-2 ${scanMsg.startsWith('✓') ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+              {scanMsg}
+            </p>
+          )}
           {produtos.length > 0 ? (
             <select className="field" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
               <option value="">Selecionar produto cadastrado...</option>
@@ -222,6 +254,10 @@ export default function RegistrarPage() {
               placeholder="Nome do produto" required={!produtoId || produtoId === '__outro__'} />
           )}
         </div>
+
+        {showScanner && (
+          <BarcodeScannerModal onScanned={handleScanned} onClose={() => setShowScanner(false)} />
+        )}
 
         {/* Quantidade e Unidade */}
         <div className="grid grid-cols-2 gap-3">
