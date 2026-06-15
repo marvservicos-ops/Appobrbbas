@@ -53,14 +53,24 @@ export default function RegistrarPage() {
     load()
   }, [estoqueId])
 
-  // Atualiza unidade quando produto muda
+  // Atualiza unidade e auto-preenche campos quando produto muda
   useEffect(() => {
     const prod = produtos.find(p => p.id === produtoId)
     if (prod) {
       setUnidade(prod.unidade)
       setProdutoNome(prod.nome)
+      // Auto-preenche campos customizados com o código do produto (ex: Nº CA)
+      if (prod.codigo && campos.length > 0) {
+        const campoCA = campos.find(c => {
+          const n = c.nome.toLowerCase().replace(/\s/g, '')
+          return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
+        })
+        if (campoCA) {
+          setValoresCampos(v => ({ ...v, [campoCA.id]: prod.codigo! }))
+        }
+      }
     }
-  }, [produtoId, produtos])
+  }, [produtoId, produtos, campos])
 
   function handleScanned(code: string) {
     setShowScanner(false)

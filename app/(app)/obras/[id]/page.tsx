@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
@@ -45,6 +45,64 @@ export default function ObraDetailPage() {
   const [showAddDoc, setShowAddDoc] = useState(false)
   const [showNovaPasta, setShowNovaPasta] = useState(false)
   const [pastaParaDoc, setPastaParaDoc] = useState<string>('Geral')
+  const [importandoExcel, setImportandoExcel] = useState(false)
+
+  async function importarExcelCronograma(file: File) {
+    setImportandoExcel(true)
+    try {
+      const { read, utils } = await import('xlsx')
+      const buffer = await file.arrayBuffer()
+      const wb = read(buffer)
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows: any[] = utils.sheet_to_json(ws, { defval: '' })
+
+      const supabase = createClient()
+      const etapasParaInserir = rows
+        .filter(r => r['Etapa'] || r['Nome'] || r['Titulo'] || r['título'] || r['etapa'])
+        .map((r, i) => {
+          const titulo = r['Etapa'] || r['Nome'] || r['Titulo'] || r['título'] || r['etapa'] || `Etapa ${i + 1}`
+          const responsavel = r['Responsável'] || r['Responsavel'] || r['responsavel'] || ''
+          const parseDate = (v: any) => {
+            if (!v) return null
+            if (typeof v === 'number') {
+              // Excel serial date
+              const d = new Date(Math.round((v - 25569) * 86400 * 1000))
+              return d.toISOString().split('T')[0]
+            }
+            const s = String(v).trim()
+            if (!s) return null
+            const parts = s.split(/[/\-.]/)
+            if (parts.length === 3) {
+              // dd/mm/yyyy
+              if (parts[0].length <= 2) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+              return `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`
+            }
+            return null
+          }
+          return {
+            obra_id: id,
+            titulo: String(titulo).trim(),
+            responsavel: responsavel ? String(responsavel).trim() : null,
+            data_inicio: parseDate(r['Início'] || r['Inicio'] || r['Data Início'] || r['Data Inicio'] || r['inicio']),
+            data_fim: parseDate(r['Fim'] || r['Término'] || r['Termino'] || r['Data Fim'] || r['fim']),
+            progresso: parseInt(r['Progresso'] || r['%'] || '0') || 0,
+            status: 'Pendente' as const,
+            ordem: etapas.length + i + 1,
+          }
+        })
+
+      if (etapasParaInserir.length > 0) {
+        await supabase.from('cronograma_etapas').insert(etapasParaInserir)
+        await load()
+        alert(`${etapasParaInserir.length} etapas importadas com sucesso!`)
+      } else {
+        alert('Nenhuma etapa encontrada. Verifique se o arquivo tem a coluna "Etapa" ou "Nome".')
+      }
+    } catch (e) {
+      alert('Erro ao ler o arquivo Excel.')
+    }
+    setImportandoExcel(false)
+  }
 
   async function load() {
     setLoading(true)
@@ -444,10 +502,18 @@ export default function ObraDetailPage() {
             <div className="lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-syne font-semibold text-[#0F172A]">Cronograma de Execução</h2>
-                <button onClick={() => setShowNovaEtapa(true)} className="btn-primary text-sm">
-                  <PlusCircle size={16} />
-                  Nova Etapa
-                </button>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors cursor-pointer">
+                    {importandoExcel ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                    <span className="hidden sm:inline">Importar Excel</span>
+                    <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={importandoExcel}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) importarExcelCronograma(f); e.target.value = '' }} />
+                  </label>
+                  <button onClick={() => setShowNovaEtapa(true)} className="btn-primary text-sm">
+                    <PlusCircle size={16} />
+                    <span className="hidden sm:inline">Nova </span>Etapa
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-3">

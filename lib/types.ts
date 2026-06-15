@@ -100,9 +100,11 @@ export interface EstoqueProduto {
   estoque_id: string
   nome: string
   codigo?: string
+  codigo_barras?: string
   unidade: string
   quantidade_atual: number
   quantidade_minima: number
+  foto_url?: string
   ativo: boolean
   created_at: string
 }

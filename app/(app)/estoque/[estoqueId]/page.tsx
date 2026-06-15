@@ -265,6 +265,7 @@ export default function EstoqueDetalhe() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                    <th className="px-3 py-3 w-10 hidden sm:table-cell" />
                     <th className="text-left text-xs font-semibold text-[#64748B] px-3 py-3">Produto</th>
                     <th className="hidden md:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Código</th>
                     <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Unidade</th>
@@ -276,6 +277,12 @@ export default function EstoqueDetalhe() {
                 <tbody>
                   {produtos.map(p => (
                     <tr key={p.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] group">
+                      <td className="px-3 py-2 hidden sm:table-cell">
+                        {p.foto_url
+                          ? <img src={p.foto_url} alt="" className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0]" />
+                          : <div className="w-9 h-9 rounded-lg bg-[#F1F5F9] flex items-center justify-center"><Package size={14} className="text-[#CBD5E1]" /></div>
+                        }
+                      </td>
                       <td className="px-3 py-3 text-sm font-medium text-[#0F172A]">{p.nome}</td>
                       <td className="hidden md:table-cell px-3 py-3 text-sm text-[#64748B]">{p.codigo ?? '—'}</td>
                       <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.unidade}</td>
@@ -330,12 +337,26 @@ export default function EstoqueDetalhe() {
 function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoqueProduto; onClose: () => void; onSaved: () => void }) {
   const [nome, setNome] = useState(produto.nome)
   const [codigo, setCodigo] = useState(produto.codigo ?? '')
-  const [codigoBarras, setCodigoBarras] = useState((produto as any).codigo_barras ?? '')
+  const [codigoBarras, setCodigoBarras] = useState(produto.codigo_barras ?? '')
   const [unidade, setUnidade] = useState(produto.unidade)
   const [qtdAtual, setQtdAtual] = useState(String(produto.quantidade_atual))
   const [qtdMin, setQtdMin] = useState(String(produto.quantidade_minima))
+  const [fotoUrl, setFotoUrl] = useState(produto.foto_url ?? '')
+  const [uploadingFoto, setUploadingFoto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+
+  async function uploadFoto(file: File) {
+    setUploadingFoto(true)
+    const supabase = createClient()
+    const path = `produtos/${produto.id}/${Date.now()}_${file.name}`
+    const { error } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
+    if (!error) {
+      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
+      setFotoUrl(data.publicUrl)
+    }
+    setUploadingFoto(false)
+  }
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
@@ -349,6 +370,7 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
       unidade: unidade.trim() || 'un',
       quantidade_atual: parseFloat(qtdAtual) || 0,
       quantidade_minima: parseFloat(qtdMin) || 0,
+      foto_url: fotoUrl || null,
     }).eq('id', produto.id)
     setLoading(false)
     onSaved()
@@ -402,6 +424,28 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd Mínima</label>
               <input type="number" step="any" className="field" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto do Produto</label>
+            <div className="flex items-center gap-3">
+              {fotoUrl
+                ? <img src={fotoUrl} alt="foto" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
+                : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
+                    <Package size={20} className="text-[#94A3B8]" />
+                  </div>
+              }
+              <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
+                {uploadingFoto ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {uploadingFoto ? 'Enviando...' : fotoUrl ? 'Trocar foto' : 'Adicionar foto'}
+                <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
+              </label>
+              {fotoUrl && (
+                <button type="button" onClick={() => setFotoUrl('')} className="text-[#94A3B8] hover:text-red-500 transition-colors">
+                  <X size={16} />
+                </button>
+              )}
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
