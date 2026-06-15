@@ -52,6 +52,7 @@ export default function ImportarPage() {
   const [produtos, setProdutos] = useState<EstoqueProduto[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [tipoImport, setTipoImport] = useState<'registros' | 'produtos'>('registros')
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [csvRows, setCsvRows] = useState<CsvRow[]>([])
   const [mapeamento, setMapeamento] = useState<Record<string, string>>({})
@@ -100,7 +101,47 @@ export default function ImportarPage() {
     reader.readAsText(file, 'UTF-8')
   }
 
+  async function importarProdutos() {
+    setImporting(true)
+    const supabase = createClient()
+    const erros: string[] = []
+    let ok = 0
+
+    const produtosExistentes = new Set(produtos.map(p => p.nome.toLowerCase().trim()))
+
+    for (let i = 0; i < csvRows.length; i++) {
+      const row = csvRows[i]
+      try {
+        const get = (key: string) => {
+          const col = Object.entries(mapeamento).find(([, v]) => v === key)?.[0]
+          return col ? (row[col] ?? '').trim() : ''
+        }
+        const nome = get('produto_nome')
+        if (!nome) { erros.push(`Linha ${i + 2}: nome vazio`); continue }
+        if (produtosExistentes.has(nome.toLowerCase())) { erros.push(`Linha ${i + 2}: "${nome}" já existe`); continue }
+
+        const { error: err } = await supabase.from('estoque_produtos').insert({
+          estoque_id: estoqueId,
+          nome,
+          codigo: get('codigo') || null,
+          unidade: get('unidade') || 'un',
+          quantidade_atual: parseFloat(get('quantidade').replace(',', '.')) || 0,
+          quantidade_minima: parseFloat(get('qtd_min').replace(',', '.')) || 0,
+        })
+        if (err) { erros.push(`Linha ${i + 2}: ${err.message}`); continue }
+        produtosExistentes.add(nome.toLowerCase())
+        ok++
+      } catch {
+        erros.push(`Linha ${i + 2}: erro inesperado`)
+      }
+    }
+
+    setResultado({ ok, produtosCriados: 0, erros })
+    setImporting(false)
+  }
+
   async function importar() {
+    if (tipoImport === 'produtos') { await importarProdutos(); return }
     setImporting(true)
     const supabase = createClient()
     const erros: string[] = []
@@ -173,10 +214,18 @@ export default function ImportarPage() {
     setImporting(false)
   }
 
-  const todasDestinos = [
-    ...CAMPOS_FIXOS,
-    ...campos.map(c => ({ key: `campo_${c.id}`, label: c.nome })),
+  const CAMPOS_PRODUTO = [
+    { key: 'produto_nome', label: 'Nome do produto' },
+    { key: 'codigo', label: 'Código / Nº CA' },
+    { key: 'unidade', label: 'Unidade de medida' },
+    { key: 'quantidade', label: 'Qtd Atual' },
+    { key: 'qtd_min', label: 'Qtd Mínima' },
+    { key: '__ignorar__', label: '— Ignorar coluna —' },
   ]
+
+  const todasDestinos = tipoImport === 'produtos'
+    ? CAMPOS_PRODUTO
+    : [...CAMPOS_FIXOS, ...campos.map(c => ({ key: `campo_${c.id}`, label: c.nome }))]
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen">
@@ -204,6 +253,21 @@ export default function ImportarPage() {
           <li>Datas aceitas: DD/MM/AAAA ou AAAA-MM-DD</li>
           <li>Linhas com quantidade 0 são aceitas normalmente</li>
         </ul>
+      </div>
+
+      {/* Seletor de tipo */}
+      <div className="flex gap-2 mb-6">
+        {([
+          { key: 'registros', label: '📋 Importar Registros', desc: 'Entradas e saídas do estoque' },
+          { key: 'produtos', label: '📦 Importar Produtos', desc: 'Cadastro de itens do estoque' },
+        ] as const).map(op => (
+          <button key={op.key} type="button"
+            onClick={() => { setTipoImport(op.key); setCsvRows([]); setCsvHeaders([]); setResultado(null); if (fileRef.current) fileRef.current.value = '' }}
+            className={`flex-1 px-4 py-3 rounded-xl border-2 text-left transition-all ${tipoImport === op.key ? 'border-[#4F7CFF] bg-[#EEF2FF]' : 'border-[#E2E8F0] hover:border-[#CBD5E1]'}`}>
+            <p className={`text-sm font-semibold ${tipoImport === op.key ? 'text-[#4F7CFF]' : 'text-[#374151]'}`}>{op.label}</p>
+            <p className="text-xs text-[#94A3B8] mt-0.5">{op.desc}</p>
+          </button>
+        ))}
       </div>
 
       {csvRows.length === 0 && (
@@ -292,7 +356,7 @@ export default function ImportarPage() {
             </Link>
             <button onClick={importar} disabled={importing} className="btn-primary flex items-center gap-2 px-6">
               {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-              {importing ? 'Importando...' : `Importar ${csvRows.length} registros`}
+              {importing ? 'Importando...' : `Importar ${csvRows.length} ${tipoImport === 'produtos' ? 'produtos' : 'registros'}`}
             </button>
           </div>
         </div>

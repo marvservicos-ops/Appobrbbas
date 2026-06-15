@@ -27,6 +27,7 @@ export default function EstoqueDetalhe() {
   const [loading, setLoading] = useState(true)
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [showEdit, setShowEdit] = useState(false)
+  const [editandoProduto, setEditandoProduto] = useState<EstoqueProduto | null>(null)
 
   // Seleção em lote
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
@@ -280,10 +281,14 @@ export default function EstoqueDetalhe() {
                       <td className="px-4 py-3 text-sm text-[#374151]">{p.quantidade_atual}</td>
                       <td className="px-4 py-3 text-sm text-[#374151]">{p.quantidade_minima}</td>
                       <td className="px-4 py-3">
-                        <button onClick={() => excluirProduto(p.id)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#94A3B8] hover:text-red-500">
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => setEditandoProduto(p)} className="text-[#94A3B8] hover:text-[#4F7CFF]">
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => excluirProduto(p.id)} className="text-[#94A3B8] hover:text-red-500">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -299,6 +304,15 @@ export default function EstoqueDetalhe() {
         <ConfigurarCampos estoqueId={estoqueId} campos={campos} onUpdated={load} />
       )}
 
+      {/* Modal editar produto */}
+      {editandoProduto && (
+        <ModalEditarProduto
+          produto={editandoProduto}
+          onClose={() => setEditandoProduto(null)}
+          onSaved={() => { setEditandoProduto(null); load() }}
+        />
+      )}
+
       {/* Modal editar estoque */}
       {showEdit && estoque && (
         <ModalEditarEstoque
@@ -307,6 +321,73 @@ export default function EstoqueDetalhe() {
           onSaved={() => { setShowEdit(false); load() }}
         />
       )}
+    </div>
+  )
+}
+
+// ── Modal editar produto ──────────────────────────────
+function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoqueProduto; onClose: () => void; onSaved: () => void }) {
+  const [nome, setNome] = useState(produto.nome)
+  const [codigo, setCodigo] = useState(produto.codigo ?? '')
+  const [unidade, setUnidade] = useState(produto.unidade)
+  const [qtdAtual, setQtdAtual] = useState(String(produto.quantidade_atual))
+  const [qtdMin, setQtdMin] = useState(String(produto.quantidade_minima))
+  const [loading, setLoading] = useState(false)
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!nome.trim()) return
+    setLoading(true)
+    const supabase = createClient()
+    await supabase.from('estoque_produtos').update({
+      nome: nome.trim(),
+      codigo: codigo.trim() || null,
+      unidade: unidade.trim() || 'un',
+      quantidade_atual: parseFloat(qtdAtual) || 0,
+      quantidade_minima: parseFloat(qtdMin) || 0,
+    }).eq('id', produto.id)
+    setLoading(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
+          <h2 className="font-syne font-semibold text-[#0F172A]">Editar Produto</h2>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <form onSubmit={salvar} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
+            <input required className="field" value={nome} onChange={e => setNome(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Código / Nº CA</label>
+              <input className="field" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Opcional" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Unidade</label>
+              <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd Atual</label>
+              <input type="number" step="any" className="field" value={qtdAtual} onChange={e => setQtdAtual(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd Mínima</label>
+              <input type="number" step="any" className="field" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
+            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar'}</button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
