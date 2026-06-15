@@ -597,7 +597,7 @@ export default function ObraDetailPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2 justify-end">
-                              <Link href={`/obras/${id}/rdo/${rdo.id}/imprimir`} target="_blank"
+                              <Link href={`/print/rdo/${rdo.id}`} target="_blank"
                                 className="text-xs text-[#64748B] hover:text-[#4F7CFF] px-2 py-1 rounded border border-[#E2E8F0] hover:border-[#4F7CFF] transition-colors">
                                 PDF
                               </Link>

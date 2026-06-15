@@ -264,7 +264,7 @@ export default function RDOPage() {
               </div>
             )}
           </div>
-          <Link href={`/obras/${obraId}/rdo/${rdoId}/imprimir`} target="_blank"
+          <Link href={`/print/rdo/${rdoId}`} target="_blank"
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors">
             <Printer size={14} /> <span className="hidden sm:inline">PDF</span>
           </Link>
