@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Eraser, Check, Loader2, Camera, ScanLine } from 'lucide-react'
+import { ArrowLeft, Eraser, Check, Loader2, Camera, ScanLine, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto } from '@/lib/types'
 import Link from 'next/link'
@@ -31,6 +31,8 @@ export default function RegistrarPage() {
   const [temAssinatura, setTemAssinatura] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scanMsg, setScanMsg] = useState('')
+  const [obraId, setObraId] = useState('')
+  const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
 
   // Canvas signature
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -40,14 +42,16 @@ export default function RegistrarPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: est }, { data: cam }, { data: prod }] = await Promise.all([
+      const [{ data: est }, { data: cam }, { data: prod }, { data: obrasData }] = await Promise.all([
         supabase.from('estoques').select('*').eq('id', estoqueId).single(),
         supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
         supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
+        supabase.from('obras').select('id, titulo, status').in('status', ['Em andamento', 'Paralisada']).order('titulo'),
       ])
       setEstoque(est)
       setCampos(cam ?? [])
       setProdutos(prod ?? [])
+      setObras(obrasData ?? [])
       setLoading(false)
     }
     load()
@@ -145,6 +149,16 @@ export default function RegistrarPage() {
     if (!quantidade || parseFloat(quantidade) <= 0) { setError('Informe a quantidade.'); return }
     if (!responsavel.trim()) { setError('Informe o responsável.'); return }
 
+    // Bloqueio de estoque negativo
+    if (tipo === 'saida' && produtoId && produtoId !== '__outro__') {
+      const prod = produtos.find(p => p.id === produtoId)
+      if (prod && prod.quantidade_atual - parseFloat(quantidade) < 0) {
+        setError(`Saldo insuficiente! Estoque atual: ${prod.quantidade_atual} ${prod.unidade}. Você está tentando dar saída de ${quantidade} ${prod.unidade}.`)
+        setSaving(false)
+        return
+      }
+    }
+
     setSaving(true)
     setError('')
     const supabase = createClient()
@@ -176,6 +190,7 @@ export default function RegistrarPage() {
       assinatura_url,
       data,
       observacoes: observacoes || null,
+      obra_id: obraId || null,
     }).select().single()
 
     if (regErr) { setError(regErr.message); setSaving(false); return }
@@ -269,6 +284,31 @@ export default function RegistrarPage() {
           <BarcodeScannerModal onScanned={handleScanned} onClose={() => setShowScanner(false)} />
         )}
 
+        {/* Aviso de saldo ao selecionar produto */}
+        {produtoId && produtoId !== '__outro__' && (() => {
+          const prod = produtos.find(p => p.id === produtoId)
+          if (!prod) return null
+          const qtd = parseFloat(quantidade) || 0
+          const saldoApos = tipo === 'saida' ? prod.quantidade_atual - qtd : prod.quantidade_atual + qtd
+          if (tipo === 'saida' && saldoApos < 0) {
+            return (
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <span><strong>Saldo insuficiente!</strong> Estoque atual: {prod.quantidade_atual} {prod.unidade}. Não é possível dar saída de {qtd} {prod.unidade}.</span>
+              </div>
+            )
+          }
+          if (tipo === 'saida' && prod.quantidade_atual <= prod.quantidade_minima) {
+            return (
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <span>Este produto está no estoque mínimo ({prod.quantidade_atual} {prod.unidade}). Considere reabastecer.</span>
+              </div>
+            )
+          }
+          return null
+        })()}
+
         {/* Quantidade e Unidade */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -303,6 +343,17 @@ export default function RegistrarPage() {
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome do responsável *</label>
           <input required className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
         </div>
+
+        {/* Destino / Obra */}
+        {tipo === 'saida' && obras.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Destino / Obra (Centro de Custo)</label>
+            <select className="field" value={obraId} onChange={e => setObraId(e.target.value)}>
+              <option value="">Sem vínculo com obra</option>
+              {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+            </select>
+          </div>
+        )}
 
         {/* Assinatura */}
         <div>

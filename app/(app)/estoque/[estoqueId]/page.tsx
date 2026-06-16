@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine } from 'lucide-react'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
@@ -33,6 +33,13 @@ export default function EstoqueDetalhe() {
   // Seleção em lote
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [excluindoLote, setExcluindoLote] = useState(false)
+
+  // Busca e filtros
+  const [buscaProduto, setBuscaProduto] = useState('')
+  const [showScannerBusca, setShowScannerBusca] = useState(false)
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'entrada' | 'saida'>('todos')
+  const [filtroDataInicio, setFiltroDataInicio] = useState('')
+  const [filtroDataFim, setFiltroDataFim] = useState('')
 
   async function load() {
     const supabase = createClient()
@@ -93,10 +100,27 @@ export default function EstoqueDetalhe() {
     }
   }
 
-  const registrosOrdenados = [...registros].sort((a, b) => {
-    const da = new Date(a.data).getTime(), db = new Date(b.data).getTime()
-    return sortDir === 'desc' ? db - da : da - db
+  const registrosOrdenados = [...registros]
+    .filter(r => {
+      if (filtroTipo !== 'todos' && r.tipo !== filtroTipo) return false
+      if (filtroDataInicio && r.data < filtroDataInicio) return false
+      if (filtroDataFim && r.data > filtroDataFim) return false
+      return true
+    })
+    .sort((a, b) => {
+      const da = new Date(a.data).getTime(), db = new Date(b.data).getTime()
+      return sortDir === 'desc' ? db - da : da - db
+    })
+
+  const produtosFiltrados = produtos.filter(p => {
+    if (!buscaProduto.trim()) return true
+    const q = buscaProduto.toLowerCase()
+    return p.nome.toLowerCase().includes(q)
+      || (p.codigo ?? '').toLowerCase().includes(q)
+      || ((p as any).codigo_barras ?? '').toLowerCase().includes(q)
   })
+
+  const produtosAbaixoMinimo = produtos.filter(p => p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0)
 
   const todosSelec = registrosOrdenados.length > 0 && selecionados.size === registrosOrdenados.length
 
@@ -155,6 +179,29 @@ export default function EstoqueDetalhe() {
       {/* Tab: Registros */}
       {tab === 'registros' && (
         <div className="space-y-3">
+          {/* Filtros */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1 bg-[#F1F5F9] p-1 rounded-lg">
+              {(['todos', 'entrada', 'saida'] as const).map(t => (
+                <button key={t} onClick={() => setFiltroTipo(t)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${filtroTipo === t ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#374151]'}`}>
+                  {t === 'todos' ? 'Todos' : t === 'entrada' ? 'Entradas' : 'Saídas'}
+                </button>
+              ))}
+            </div>
+            <input type="date" className="field text-sm py-1.5 w-auto" value={filtroDataInicio}
+              onChange={e => setFiltroDataInicio(e.target.value)} title="Data inicial" />
+            <span className="text-[#94A3B8] text-xs">até</span>
+            <input type="date" className="field text-sm py-1.5 w-auto" value={filtroDataFim}
+              onChange={e => setFiltroDataFim(e.target.value)} title="Data final" />
+            {(filtroTipo !== 'todos' || filtroDataInicio || filtroDataFim) && (
+              <button onClick={() => { setFiltroTipo('todos'); setFiltroDataInicio(''); setFiltroDataFim('') }}
+                className="text-xs text-[#64748B] hover:text-red-500 flex items-center gap-1">
+                <X size={12} /> Limpar
+              </button>
+            )}
+          </div>
+
           {/* Barra de ação em lote */}
           {selecionados.size > 0 && (
             <div className="flex items-center gap-3 px-4 py-2.5 bg-[#EEF2FF] rounded-xl border border-[#C7D2FE]">
@@ -258,9 +305,52 @@ export default function EstoqueDetalhe() {
       {tab === 'produtos' && (
         <div className="space-y-4">
           <AddProdutoInline estoqueId={estoqueId} onAdded={load} />
+
+          {/* Alerta de estoque mínimo */}
+          {produtosAbaixoMinimo.length > 0 && (
+            <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">{produtosAbaixoMinimo.length} produto{produtosAbaixoMinimo.length > 1 ? 's' : ''} abaixo do estoque mínimo</p>
+                <p className="text-xs text-amber-700 mt-0.5">{produtosAbaixoMinimo.map(p => p.nome).join(', ')}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Busca */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+              <input
+                className="field pl-9 text-sm"
+                placeholder="Buscar por nome, código ou código de barras..."
+                value={buscaProduto}
+                onChange={e => setBuscaProduto(e.target.value)}
+              />
+              {buscaProduto && (
+                <button onClick={() => setBuscaProduto('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#374151]">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <button onClick={() => setShowScannerBusca(true)}
+              className="flex items-center gap-1.5 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#EEF2FF] hover:border-[#4F7CFF] text-[#64748B] hover:text-[#4F7CFF] transition-colors text-sm">
+              <ScanLine size={15} /> <span className="hidden sm:inline">Escanear</span>
+            </button>
+          </div>
+
+          {showScannerBusca && (
+            <BarcodeScannerModal
+              onScanned={code => { setBuscaProduto(code); setShowScannerBusca(false) }}
+              onClose={() => setShowScannerBusca(false)}
+            />
+          )}
+
           <div className="card p-0 overflow-hidden">
             {produtos.length === 0 ? (
               <div className="py-12 text-center text-[#94A3B8] text-sm">Nenhum produto cadastrado.</div>
+            ) : produtosFiltrados.length === 0 ? (
+              <div className="py-12 text-center text-[#94A3B8] text-sm">Nenhum produto encontrado para &quot;{buscaProduto}&quot;.</div>
             ) : (
               <table className="w-full">
                 <thead>
@@ -275,31 +365,43 @@ export default function EstoqueDetalhe() {
                   </tr>
                 </thead>
                 <tbody>
-                  {produtos.map(p => (
-                    <tr key={p.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] group">
-                      <td className="px-3 py-2 hidden sm:table-cell">
-                        {p.foto_url
-                          ? <img src={p.foto_url} alt="" className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0]" />
-                          : <div className="w-9 h-9 rounded-lg bg-[#F1F5F9] flex items-center justify-center"><Package size={14} className="text-[#CBD5E1]" /></div>
-                        }
-                      </td>
-                      <td className="px-3 py-3 text-sm font-medium text-[#0F172A]">{p.nome}</td>
-                      <td className="hidden md:table-cell px-3 py-3 text-sm text-[#64748B]">{p.codigo ?? '—'}</td>
-                      <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.unidade}</td>
-                      <td className="px-3 py-3 text-sm text-[#374151]">{p.quantidade_atual}</td>
-                      <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#374151]">{p.quantidade_minima}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => setEditandoProduto(p)} className="text-[#94A3B8] hover:text-[#4F7CFF]">
-                            <Pencil size={14} />
-                          </button>
-                          <button onClick={() => excluirProduto(p.id)} className="text-[#94A3B8] hover:text-red-500">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {produtosFiltrados.map(p => {
+                    const abaixoMin = p.quantidade_minima > 0 && p.quantidade_atual <= p.quantidade_minima
+                    const negativo = p.quantidade_atual < 0
+                    return (
+                      <tr key={p.id} className={`border-b border-[#F1F5F9] group transition-colors ${negativo ? 'bg-red-50 hover:bg-red-100' : abaixoMin ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-[#F8FAFC]'}`}>
+                        <td className="px-3 py-2 hidden sm:table-cell">
+                          {p.foto_url
+                            ? <img src={p.foto_url} alt="" className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0]" />
+                            : <div className="w-9 h-9 rounded-lg bg-[#F1F5F9] flex items-center justify-center"><Package size={14} className="text-[#CBD5E1]" /></div>
+                          }
+                        </td>
+                        <td className="px-3 py-3 text-sm font-medium text-[#0F172A]">
+                          <div className="flex items-center gap-2">
+                            {p.nome}
+                            {negativo && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Negativo</span>}
+                            {!negativo && abaixoMin && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Crítico</span>}
+                          </div>
+                        </td>
+                        <td className="hidden md:table-cell px-3 py-3 text-sm text-[#64748B]">{p.codigo ?? '—'}</td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.unidade}</td>
+                        <td className={`px-3 py-3 text-sm font-semibold ${negativo ? 'text-red-600' : abaixoMin ? 'text-amber-700' : 'text-[#374151]'}`}>
+                          {p.quantidade_atual}
+                        </td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#374151]">{p.quantidade_minima}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => setEditandoProduto(p)} className="text-[#94A3B8] hover:text-[#4F7CFF]">
+                              <Pencil size={14} />
+                            </button>
+                            <button onClick={() => excluirProduto(p.id)} className="text-[#94A3B8] hover:text-red-500">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
@@ -345,6 +447,8 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const [motivoAjuste, setMotivoAjuste] = useState('')
+  const qtdOriginal = produto.quantidade_atual
 
   async function uploadFoto(file: File) {
     setUploadingFoto(true)
@@ -363,15 +467,29 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
     if (!nome.trim()) return
     setLoading(true)
     const supabase = createClient()
+    const novaQtd = parseFloat(qtdAtual) || 0
     await supabase.from('estoque_produtos').update({
       nome: nome.trim(),
       codigo: codigo.trim() || null,
       codigo_barras: codigoBarras.trim() || null,
       unidade: unidade.trim() || 'un',
-      quantidade_atual: parseFloat(qtdAtual) || 0,
+      quantidade_atual: novaQtd,
       quantidade_minima: parseFloat(qtdMin) || 0,
       foto_url: fotoUrl || null,
     }).eq('id', produto.id)
+
+    // Log de auditoria quando a quantidade muda manualmente
+    if (novaQtd !== produto.quantidade_atual) {
+      await supabase.from('estoque_logs').insert({
+        produto_id: produto.id,
+        estoque_id: produto.estoque_id,
+        tipo: 'ajuste_manual',
+        quantidade_anterior: produto.quantidade_atual,
+        quantidade_nova: novaQtd,
+        motivo: motivoAjuste || 'Ajuste manual via edição de produto',
+      }).select()
+    }
+
     setLoading(false)
     onSaved()
   }
@@ -426,6 +544,15 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
               <input type="number" step="any" className="field" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
             </div>
           </div>
+          {parseFloat(qtdAtual) !== qtdOriginal && (
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">
+                Motivo do ajuste <span className="text-[#94A3B8] font-normal">(de {qtdOriginal} → {qtdAtual || 0})</span>
+              </label>
+              <input className="field" placeholder="Ex: Ajuste após inventário físico"
+                value={motivoAjuste} onChange={e => setMotivoAjuste(e.target.value)} />
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto do Produto</label>
             <div className="flex items-center gap-3">
