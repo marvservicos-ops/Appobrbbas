@@ -21,6 +21,9 @@ export default function RDOPrintPage() {
   const [fotos, setFotos] = useState<RDOFoto[]>([])
   const [assinaturas, setAssinaturas] = useState<RDOAssinatura[]>([])
   const [loading, setLoading] = useState(true)
+  const [modelo, setModelo] = useState<{
+    logo_empresa_url?: string; logo_relatorio_url?: string; logo_relatorio2_url?: string; nome?: string
+  } | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -30,7 +33,7 @@ export default function RDOPrintPage() {
       const rdoData = rdoRes.data as RDO
       setRdo(rdoData)
 
-      const [obraRes, climaRes, maoRes, eqRes, atRes, ocRes, comRes, fotosRes, assRes] = await Promise.all([
+      const [obraRes, climaRes, maoRes, eqRes, atRes, ocRes, comRes, fotosRes, assRes, modeloRes] = await Promise.all([
         supabase.from('obras').select('*, cliente:clientes(*)').eq('id', rdoData.obra_id).single(),
         supabase.from('rdo_clima').select('*').eq('rdo_id', rdoId).order('periodo'),
         supabase.from('rdo_mao_obra').select('*').eq('rdo_id', rdoId),
@@ -40,6 +43,7 @@ export default function RDOPrintPage() {
         supabase.from('rdo_comentarios').select('*').eq('rdo_id', rdoId).order('created_at'),
         supabase.from('rdo_fotos').select('*').eq('rdo_id', rdoId).order('ordem'),
         supabase.from('rdo_assinaturas').select('*').eq('rdo_id', rdoId),
+        supabase.from('rdo_modelos').select('nome,logo_empresa_url,logo_relatorio_url,logo_relatorio2_url').eq('obra_id', rdoData.obra_id).eq('ativo', true).limit(1).maybeSingle(),
       ])
       if (obraRes.data) setObra(obraRes.data as Obra)
       if (climaRes.data) setClima(climaRes.data as RDOClima[])
@@ -50,6 +54,7 @@ export default function RDOPrintPage() {
       if (comRes.data) setComentarios(comRes.data as RDOComentario[])
       if (fotosRes.data) setFotos(fotosRes.data as RDOFoto[])
       if (assRes.data) setAssinaturas(assRes.data as RDOAssinatura[])
+      if (modeloRes.data) setModelo(modeloRes.data)
       setLoading(false)
     }
     load()
@@ -124,15 +129,28 @@ export default function RDOPrintPage() {
         <table style={{ ...s.table, marginBottom: 10 }}>
           <tbody>
             <tr>
-              <td style={{ width: '33%', border: '1px solid #ccc', padding: '10px 12px', verticalAlign: 'middle' }}>
-                <div style={{ fontSize: 18, fontWeight: 800 }}>MARV</div>
-                <div style={{ fontSize: 9, color: '#666' }}>Manutenção e Serviços Ltda.</div>
+              <td style={{ width: '33%', border: '1px solid #ccc', padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                {modelo?.logo_empresa_url
+                  ? <img src={modelo.logo_empresa_url} alt="Logo empresa" style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }} />
+                  : <><div style={{ fontSize: 18, fontWeight: 800 }}>MARV</div><div style={{ fontSize: 9, color: '#666' }}>Manutenção e Serviços Ltda.</div></>
+                }
               </td>
               <td style={{ width: '34%', border: '1px solid #ccc', padding: 10, textAlign: 'center', verticalAlign: 'middle' }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>Relatório Diário de Obra</div>
-                <div style={{ fontSize: 11, color: '#555' }}>(RDO)</div>
+                {modelo?.logo_relatorio_url
+                  ? <>
+                      <img src={modelo.logo_relatorio_url} alt="Logo relatório" style={{ maxHeight: 50, maxWidth: '100%', objectFit: 'contain', display: 'block', margin: '0 auto 4px' }} />
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>Relatório Diário de Obra</div>
+                      <div style={{ fontSize: 10, color: '#555' }}>(RDO)</div>
+                    </>
+                  : <><div style={{ fontSize: 14, fontWeight: 700 }}>Relatório Diário de Obra</div><div style={{ fontSize: 11, color: '#555' }}>(RDO)</div></>
+                }
               </td>
               <td style={{ width: '33%', border: '1px solid #ccc', padding: 0, verticalAlign: 'top' }}>
+                {modelo?.logo_relatorio2_url && (
+                  <div style={{ padding: '6px 8px', borderBottom: '1px solid #ccc', textAlign: 'center' }}>
+                    <img src={modelo.logo_relatorio2_url} alt="Logo relatório 2" style={{ maxHeight: 40, maxWidth: '100%', objectFit: 'contain' }} />
+                  </div>
+                )}
                 <table style={{ ...s.table }}>
                   <tbody>
                     {[
