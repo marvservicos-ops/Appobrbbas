@@ -2,13 +2,36 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings } from 'lucide-react'
+import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
 
-type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios'
+type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais'
+
+interface ObraMaterial {
+  id: string
+  obra_id: string
+  descricao: string
+  tipo_compra: 'interna' | 'cliente'
+  fornecedor?: string
+  comprador?: string
+  data_compra?: string
+  data_prevista_chegada?: string
+  data_chegada?: string
+  local_chegada?: string
+  destino?: string
+  quantidade?: number
+  unidade?: string
+  valor_unitario?: number
+  valor_total?: number
+  status: 'pendente' | 'em_transito' | 'recebido' | 'instalado'
+  nota_fiscal_url?: string
+  nota_fiscal_path?: string
+  observacoes?: string
+  created_at: string
+}
 
 function formatDate(d?: string | null) {
   if (!d) return '—'
@@ -37,8 +60,11 @@ export default function ObraDetailPage() {
   const [docs, setDocs] = useState<Documento[]>([])
   const [pastas, setPastas] = useState<DocPasta[]>([])
   const [rdos, setRdos] = useState<RDO[]>([])
+  const [materiais, setMateriais] = useState<ObraMaterial[]>([])
   const [criandoRdo, setCriandoRdo] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [showNovoMaterial, setShowNovoMaterial] = useState(false)
+  const [editandoMaterial, setEditandoMaterial] = useState<ObraMaterial | null>(null)
   const [pastaAtiva, setPastaAtiva] = useState<string>('__todas__')
   const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
 
@@ -109,19 +135,28 @@ export default function ObraDetailPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes] = await Promise.all([
+    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes] = await Promise.all([
       supabase.from('obras').select('*, cliente:clientes(*)').eq('id', id).single(),
       supabase.from('cronograma_etapas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('documentos').select('*').eq('obra_id', id).order('pasta').order('created_at', { ascending: false }),
       supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('rdos').select('*').eq('obra_id', id).order('numero', { ascending: false }),
+      supabase.from('obra_materiais').select('*').eq('obra_id', id).order('created_at', { ascending: false }),
     ])
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (etapasRes.data) setEtapas(etapasRes.data as CronogramaEtapa[])
     if (docsRes.data) setDocs(docsRes.data as Documento[])
     if (pastasRes.data) setPastas(pastasRes.data as DocPasta[])
     if (rdosRes.data) setRdos(rdosRes.data as RDO[])
+    if (materiaisRes.data) setMateriais(materiaisRes.data as ObraMaterial[])
     setLoading(false)
+  }
+
+  async function excluirMaterial(materialId: string) {
+    if (!confirm('Excluir este material?')) return
+    const supabase = createClient()
+    await supabase.from('obra_materiais').delete().eq('id', materialId)
+    setMateriais(prev => prev.filter(m => m.id !== materialId))
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,10 +270,14 @@ export default function ObraDetailPage() {
       {/* Tabs */}
       <div className="bg-white border-b border-[#E2E8F0] px-6">
         <div className="flex gap-0 overflow-x-auto">
-          {(['visao-geral', 'relatorios', 'documentos', 'cronograma'] as Tab[]).map(t => (
+          {(['visao-geral', 'relatorios', 'materiais', 'documentos', 'cronograma'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
-              {t === 'visao-geral' ? 'Visão Geral' : t === 'documentos' ? 'Documentos' : t === 'cronograma' ? 'Cronograma' : `Relatórios (${rdos.length})`}
+              {t === 'visao-geral' ? 'Visão Geral'
+                : t === 'documentos' ? 'Documentos'
+                : t === 'cronograma' ? 'Cronograma'
+                : t === 'relatorios' ? `Relatórios (${rdos.length})`
+                : `Materiais (${materiais.length})`}
             </button>
           ))}
         </div>
@@ -633,7 +672,65 @@ export default function ObraDetailPage() {
             )}
           </div>
         )}
+
+        {/* ===== MATERIAIS ===== */}
+        {tab === 'materiais' && (
+          <div>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="font-syne font-semibold text-[#0F172A]">Materiais da Obra</h2>
+                <p className="text-xs text-[#64748B] mt-0.5">Controle de compras, chegada e destino dos materiais</p>
+              </div>
+              <button onClick={() => { setShowNovoMaterial(true); setEditandoMaterial(null) }}
+                className="btn-primary text-sm flex items-center gap-2">
+                <PlusCircle size={15} /> Novo Material
+              </button>
+            </div>
+
+            {/* Sumário rápido */}
+            {materiais.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                {[
+                  { label: 'Total', val: materiais.length, color: 'text-[#0F172A]', bg: 'bg-[#F1F5F9]' },
+                  { label: 'Pendentes', val: materiais.filter(m => m.status === 'pendente').length, color: 'text-amber-700', bg: 'bg-amber-50' },
+                  { label: 'Em trânsito', val: materiais.filter(m => m.status === 'em_transito').length, color: 'text-blue-700', bg: 'bg-blue-50' },
+                  { label: 'Recebidos', val: materiais.filter(m => m.status === 'recebido' || m.status === 'instalado').length, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                ].map(s => (
+                  <div key={s.label} className={`card py-3 text-center ${s.bg}`}>
+                    <div className={`text-2xl font-syne font-bold ${s.color}`}>{s.val}</div>
+                    <div className="text-xs text-[#64748B] mt-0.5">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {materiais.length === 0 ? (
+              <div className="card text-center py-16">
+                <ShoppingCart size={36} className="text-[#CBD5E1] mx-auto mb-3" />
+                <p className="font-medium text-[#374151]">Nenhum material cadastrado</p>
+                <p className="text-sm text-[#94A3B8] mt-1 mb-4">Registre compras de materiais para esta obra</p>
+                <button onClick={() => setShowNovoMaterial(true)} className="btn-primary mx-auto text-sm">
+                  <PlusCircle size={14} /> Adicionar primeiro material
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {materiais.map(m => <MaterialCard key={m.id} material={m} onEdit={() => { setEditandoMaterial(m); setShowNovoMaterial(true) }} onDelete={() => excluirMaterial(m.id)} />)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Modal Material */}
+      {showNovoMaterial && (
+        <ModalMaterial
+          obraId={id}
+          material={editandoMaterial}
+          onClose={() => { setShowNovoMaterial(false); setEditandoMaterial(null) }}
+          onSaved={() => { setShowNovoMaterial(false); setEditandoMaterial(null); load() }}
+        />
+      )}
 
       {/* Modal Nova Etapa */}
       {showNovaEtapa && (
@@ -1011,6 +1108,273 @@ function NovaPastaInline({ onConfirm, onCancel }: { onConfirm: (nome: string) =>
       />
       <button type="button" onClick={() => nome.trim() && onConfirm(nome.trim())} className="text-[#4F7CFF] hover:text-[#3D68F0]"><CheckCircle2 size={16} /></button>
       <button type="button" onClick={onCancel} className="text-[#94A3B8] hover:text-[#64748B]"><X size={14} /></button>
+    </div>
+  )
+}
+
+// ── STATUS CONFIG MATERIAL ────────────────────────────
+const STATUS_MATERIAL: Record<string, { label: string; cls: string }> = {
+  pendente:    { label: 'Pendente',    cls: 'bg-amber-50 text-amber-700' },
+  em_transito: { label: 'Em trânsito', cls: 'bg-blue-50 text-blue-700' },
+  recebido:    { label: 'Recebido',    cls: 'bg-emerald-50 text-emerald-700' },
+  instalado:   { label: 'Instalado',   cls: 'bg-purple-50 text-purple-700' },
+}
+
+// ── MaterialCard ──────────────────────────────────────
+function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMaterial; onEdit: () => void; onDelete: () => void }) {
+  const st = STATUS_MATERIAL[m.status] ?? STATUS_MATERIAL.pendente
+  const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
+  const fmtMoeda = (v?: number) => v != null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : null
+
+  return (
+    <div className="card hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className={`mt-0.5 shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${m.tipo_compra === 'cliente' ? 'bg-purple-50' : 'bg-blue-50'}`}>
+            <ShoppingCart size={15} className={m.tipo_compra === 'cliente' ? 'text-purple-600' : 'text-blue-600'} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-syne font-semibold text-[#0F172A] text-sm">{m.descricao}</h3>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.tipo_compra === 'cliente' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
+                {m.tipo_compra === 'cliente' ? 'Compra Cliente' : 'Compra Interna'}
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+            </div>
+            {m.fornecedor && <p className="text-xs text-[#64748B] mt-0.5">Fornecedor: {m.fornecedor}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button onClick={onEdit} className="text-[#94A3B8] hover:text-[#4F7CFF] p-1.5 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={13} /></button>
+          <button onClick={onDelete} className="text-[#94A3B8] hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+        {m.comprador && <div><span className="text-[#94A3B8] block">Comprador</span><span className="font-medium text-[#374151]">{m.comprador}</span></div>}
+        {m.data_compra && <div><span className="text-[#94A3B8] block">Data compra</span><span className="font-medium text-[#374151]">{fmt(m.data_compra)}</span></div>}
+        {m.data_prevista_chegada && <div><span className="text-[#94A3B8] block">Prev. chegada</span><span className="font-medium text-[#374151]">{fmt(m.data_prevista_chegada)}</span></div>}
+        {m.data_chegada && <div><span className="text-[#94A3B8] block">Chegada real</span><span className="font-medium text-emerald-700">{fmt(m.data_chegada)}</span></div>}
+        {m.local_chegada && <div><span className="text-[#94A3B8] block">Local chegada</span><span className="font-medium text-[#374151]">{m.local_chegada}</span></div>}
+        {m.destino && <div><span className="text-[#94A3B8] block">Destino</span><span className="font-medium text-[#374151]">{m.destino}</span></div>}
+        {m.quantidade != null && <div><span className="text-[#94A3B8] block">Quantidade</span><span className="font-medium text-[#374151]">{m.quantidade} {m.unidade ?? ''}</span></div>}
+        {m.valor_total != null && <div><span className="text-[#94A3B8] block">Valor total</span><span className="font-medium text-[#374151]">{fmtMoeda(m.valor_total)}</span></div>}
+      </div>
+
+      {(m.observacoes || m.nota_fiscal_url) && (
+        <div className="mt-3 pt-3 border-t border-[#F1F5F9] flex items-center gap-3 flex-wrap">
+          {m.nota_fiscal_url && (
+            <a href={m.nota_fiscal_url} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] hover:text-[#3D6AE8] bg-[#EEF2FF] px-2.5 py-1 rounded-lg transition-colors">
+              <FileText size={12} /> Ver Nota Fiscal
+            </a>
+          )}
+          {m.observacoes && <p className="text-xs text-[#64748B] flex-1">{m.observacoes}</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── ModalMaterial ─────────────────────────────────────
+function ModalMaterial({ obraId, material, onClose, onSaved }: {
+  obraId: string; material: ObraMaterial | null; onClose: () => void; onSaved: () => void
+}) {
+  const [descricao, setDescricao] = useState(material?.descricao ?? '')
+  const [tipCompra, setTipCompra] = useState<'interna' | 'cliente'>(material?.tipo_compra ?? 'interna')
+  const [fornecedor, setFornecedor] = useState(material?.fornecedor ?? '')
+  const [comprador, setComprador] = useState(material?.comprador ?? '')
+  const [dataCompra, setDataCompra] = useState(material?.data_compra ?? '')
+  const [dataPrevista, setDataPrevista] = useState(material?.data_prevista_chegada ?? '')
+  const [dataChegada, setDataChegada] = useState(material?.data_chegada ?? '')
+  const [localChegada, setLocalChegada] = useState(material?.local_chegada ?? '')
+  const [destino, setDestino] = useState(material?.destino ?? '')
+  const [quantidade, setQuantidade] = useState(material?.quantidade != null ? String(material.quantidade) : '')
+  const [unidade, setUnidade] = useState(material?.unidade ?? 'un')
+  const [valorUnitario, setValorUnitario] = useState(material?.valor_unitario != null ? String(material.valor_unitario) : '')
+  const [valorTotal, setValorTotal] = useState(material?.valor_total != null ? String(material.valor_total) : '')
+  const [status, setStatus] = useState<ObraMaterial['status']>(material?.status ?? 'pendente')
+  const [observacoes, setObservacoes] = useState(material?.observacoes ?? '')
+  const [nfUrl, setNfUrl] = useState(material?.nota_fiscal_url ?? '')
+  const [nfPath, setNfPath] = useState(material?.nota_fiscal_path ?? '')
+  const [uploadingNf, setUploadingNf] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  async function uploadNF(file: File) {
+    setUploadingNf(true)
+    const supabase = createClient()
+    const path = `nf/${obraId}/${Date.now()}_${file.name}`
+    const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+    if (!error) {
+      const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+      setNfUrl(data.publicUrl)
+      setNfPath(path)
+    }
+    setUploadingNf(false)
+  }
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!descricao.trim()) return
+    setSaving(true)
+    const supabase = createClient()
+    const payload = {
+      obra_id: obraId,
+      descricao: descricao.trim(),
+      tipo_compra: tipCompra,
+      fornecedor: fornecedor.trim() || null,
+      comprador: comprador.trim() || null,
+      data_compra: dataCompra || null,
+      data_prevista_chegada: dataPrevista || null,
+      data_chegada: dataChegada || null,
+      local_chegada: localChegada.trim() || null,
+      destino: destino.trim() || null,
+      quantidade: quantidade ? parseFloat(quantidade) : null,
+      unidade: unidade.trim() || null,
+      valor_unitario: valorUnitario ? parseFloat(valorUnitario) : null,
+      valor_total: valorTotal ? parseFloat(valorTotal) : null,
+      status,
+      nota_fiscal_url: nfUrl || null,
+      nota_fiscal_path: nfPath || null,
+      observacoes: observacoes.trim() || null,
+    }
+    if (material?.id) {
+      await supabase.from('obra_materiais').update(payload).eq('id', material.id)
+    } else {
+      await supabase.from('obra_materiais').insert(payload)
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  const F = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div><label className="block text-xs font-medium text-[#64748B] mb-1">{label}</label>{children}</div>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
+          <h2 className="font-syne font-semibold text-[#0F172A]">{material ? 'Editar Material' : 'Novo Material'}</h2>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        <form onSubmit={salvar} className="p-6 space-y-4">
+          {/* Tipo de compra */}
+          <div className="flex gap-3">
+            {(['interna', 'cliente'] as const).map(t => (
+              <button key={t} type="button" onClick={() => setTipCompra(t)}
+                className={`flex-1 py-2.5 rounded-xl font-medium text-sm border-2 transition-all ${tipCompra === t
+                  ? t === 'interna' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-purple-400 bg-purple-50 text-purple-700'
+                  : 'border-[#E2E8F0] text-[#64748B] hover:border-[#CBD5E1]'}`}>
+                {t === 'interna' ? '🏢 Compra Interna' : '👤 Compra Cliente'}
+              </button>
+            ))}
+          </div>
+
+          {/* Status */}
+          <F label="Status">
+            <div className="flex gap-2 flex-wrap">
+              {(Object.entries(STATUS_MATERIAL) as [ObraMaterial['status'], { label: string; cls: string }][]).map(([key, cfg]) => (
+                <button key={key} type="button" onClick={() => setStatus(key)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border-2 transition-all ${status === key ? cfg.cls + ' border-current' : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                  {cfg.label}
+                </button>
+              ))}
+            </div>
+          </F>
+
+          {/* Descrição */}
+          <F label="Descrição do material *">
+            <input required className="field" value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Ex: Tubo de cobre 1/2 pol" />
+          </F>
+
+          <div className="grid grid-cols-2 gap-3">
+            <F label="Fornecedor">
+              <input className="field" value={fornecedor} onChange={e => setFornecedor(e.target.value)} placeholder="Nome da empresa" />
+            </F>
+            <F label="Comprador">
+              <input className="field" value={comprador} onChange={e => setComprador(e.target.value)} placeholder="Nome de quem comprou" />
+            </F>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <F label="Data da compra">
+              <input type="date" className="field" value={dataCompra} onChange={e => setDataCompra(e.target.value)} />
+            </F>
+            <F label="Prev. chegada">
+              <input type="date" className="field" value={dataPrevista} onChange={e => setDataPrevista(e.target.value)} />
+            </F>
+            <F label="Data chegada real">
+              <input type="date" className="field" value={dataChegada} onChange={e => setDataChegada(e.target.value)} />
+            </F>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <F label="Local de chegada">
+              <input className="field" value={localChegada} onChange={e => setLocalChegada(e.target.value)} placeholder="Ex: Almoxarifado MARV" />
+            </F>
+            <F label="Destino / Para onde foi">
+              <input className="field" value={destino} onChange={e => setDestino(e.target.value)} placeholder="Ex: Obra Projac" />
+            </F>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <F label="Quantidade">
+              <input type="number" step="any" min="0" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
+            </F>
+            <F label="Unidade">
+              <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
+            </F>
+            <F label="Valor unitário (R$)">
+              <input type="number" step="any" min="0" className="field" value={valorUnitario}
+                onChange={e => {
+                  setValorUnitario(e.target.value)
+                  if (quantidade && e.target.value) setValorTotal(String((parseFloat(quantidade) * parseFloat(e.target.value)).toFixed(2)))
+                }} placeholder="0,00" />
+            </F>
+          </div>
+
+          <F label="Valor total (R$)">
+            <input type="number" step="any" min="0" className="field" value={valorTotal} onChange={e => setValorTotal(e.target.value)} placeholder="Calculado automaticamente ou preencha manualmente" />
+          </F>
+
+          {/* Nota Fiscal */}
+          <F label="Nota Fiscal (PDF ou imagem)">
+            <div className="flex items-center gap-3 flex-wrap">
+              {nfUrl && (
+                <a href={nfUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg">
+                  <FileText size={13} /> Ver NF anexada
+                </a>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
+                {uploadingNf ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {uploadingNf ? 'Enviando...' : nfUrl ? 'Trocar NF' : 'Anexar NF'}
+                <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadNF(f) }} />
+              </label>
+              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+            </div>
+          </F>
+
+          <F label="Observações">
+            <textarea className="field resize-none" rows={2} value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Informações adicionais..." />
+          </F>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+              Cancelar
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              {saving ? 'Salvando...' : material ? 'Salvar alterações' : 'Adicionar material'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
