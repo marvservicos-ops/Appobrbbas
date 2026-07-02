@@ -111,15 +111,18 @@ function parseDANFE(text: string) {
     if (m) valorTotal = parseBRNum(m[1]) ?? undefined
   }
 
-  // Produtos: busca no texto flat por padrão NCM (8 dígitos) + CST + CFOP + UNID + QTY + VALS
-  // Formato DANFE: "... DESCRIÇÃO NCM CST CFOP UN QTY VU VT BC ICMS IPI ALICMS ALIPI"
+  // Produtos: extrai só a seção entre "DADOS DO PRODUTO" e "DADOS ADICIONAIS"
   const produtos: { descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }[] = []
-  const prodRe = /(\d{3,4})\s+([\w\s\/\-\.()ÃÇÁÉÍÓÚãçáéíóú]+?)\s+(\d{8})\s+\d{3}\s+\d{4}\s+(UN|PC|KG|MT?|CX|RL|JG|L\b|KIT)\s+([\d,]+)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/gi
+  const secM = flat.match(/DADOS DO PRODUTO\/SERVI[ÇC]O\s+(.+?)(?:DADOS ADICIONAIS|CONTINUAÇÃO|TRANSPORTADOR)/i)
+  const secao = secM ? secM[1] : flat
+
+  // \b garante que \d{3,4} seja um número isolado (não parte de "1501072501")
+  const prodRe = /\b(\d{3,4})\b\s+([\w\s\/\-\.()ÃÇÁÉÍÓÚãçáéíóú]+?)\s+(\d{8})\s+\d{3}\s+\d{4}\s+(UN|PC|KG|MT?|CX|RL|JG|L\b|KIT)\s+([\d,]+)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/gi
   let m: RegExpExecArray | null
-  while ((m = prodRe.exec(flat)) !== null) {
-    // Evita capturar duplicatas por overlap
+  while ((m = prodRe.exec(secao)) !== null) {
     const descricao = m[2].trim().replace(/\s+/g, ' ')
-    if (descricao.length > 3 && !produtos.find(p => p.descricao === descricao)) {
+    // Filtra cabeçalhos da tabela e duplicatas
+    if (descricao.length > 3 && !/NCM|CÓDIGO|DESCRI[ÇC]|PRODUTO\/SERVI/i.test(descricao) && !produtos.find(p => p.descricao === descricao)) {
       produtos.push({
         descricao,
         unidade: m[4].toUpperCase(),
@@ -127,22 +130,6 @@ function parseDANFE(text: string) {
         valorUnitario: parseBRNum(m[6]) ?? 0,
         valorTotal: parseBRNum(m[7]) ?? 0,
       })
-    }
-  }
-
-  // Fallback linha a linha para produtos (caso flat não funcione)
-  if (produtos.length === 0) {
-    for (const linha of linhas) {
-      const lm = linha.match(/^\d+\s+(.+?)\s+\d{8}\s+\d+\s+\d+\s+(UN|PC|KG|MT?|CX|RL|JG|L|KIT)\s+([\d.,]+)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i)
-      if (lm) {
-        produtos.push({
-          descricao: lm[1].trim(),
-          unidade: lm[2].toUpperCase(),
-          quantidade: parseBRNum(lm[3]) ?? 1,
-          valorUnitario: parseBRNum(lm[4]) ?? 0,
-          valorTotal: parseBRNum(lm[5]) ?? 0,
-        })
-      }
     }
   }
 
