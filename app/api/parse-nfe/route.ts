@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import pdfParse from 'pdf-parse'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 function parseBRDate(s: string): string | null {
   const m = s.match(/(\d{2})\/(\d{2})\/(\d{4})/)
@@ -22,9 +24,6 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer())
 
-    // Dynamic import to avoid edge runtime issues
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse')
     const data = await pdfParse(buffer)
     const text: string = data.text
 

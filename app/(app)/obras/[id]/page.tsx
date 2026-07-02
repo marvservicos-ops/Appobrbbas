@@ -694,17 +694,14 @@ export default function ObraDetailPage() {
                       try {
                         const fd = new FormData(); fd.append('file', f)
                         const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
-                        if (res.ok) {
-                          const parsed = await res.json()
-                          if (parsed && (parsed.produtos?.length || parsed.emitente)) {
-                            // store parsed in sessionStorage and open modal
-                            sessionStorage.setItem('nf_import', JSON.stringify({ ...parsed, fileName: f.name, file: null }))
-                            setShowImportNF(true)
-                          } else {
-                            alert('Não foi possível extrair dados desta NF. Tente adicionar manualmente.')
-                          }
+                        const parsed = await res.json()
+                        if (res.ok && parsed && (parsed.produtos?.length || parsed.emitente)) {
+                          sessionStorage.setItem('nf_import', JSON.stringify({ ...parsed, fileName: f.name }))
+                          setShowImportNF(true)
+                        } else {
+                          alert(parsed?.error ?? 'Não foi possível extrair dados desta NF. Verifique se é um PDF de DANFE válido.')
                         }
-                      } catch { alert('Erro ao ler o PDF.') }
+                      } catch (err) { alert('Erro ao conectar com a API: ' + String(err)) }
                       setImportandoNF(false)
                       e.target.value = ''
                     }} />

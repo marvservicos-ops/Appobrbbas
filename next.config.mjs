@@ -6,6 +6,14 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // pdf-parse tries to load test files via fs; ignore them
+      config.resolve.alias['./test/unit/helpers/consolidate.js'] = false
+    }
+    return config
+  },
+  serverExternalPackages: ['pdf-parse'],
 };
 
 export default nextConfig;
