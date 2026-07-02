@@ -33,6 +33,81 @@ interface ObraMaterial {
   created_at: string
 }
 
+// ── PDF.js client-side helpers ─────────────────────────────────────
+declare global { interface Window { pdfjsLib: any } }
+
+async function extrairTextoPDF(file: File): Promise<string> {
+  if (!window.pdfjsLib) {
+    await new Promise<void>((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+      s.onload = () => resolve(); s.onerror = reject
+      document.head.appendChild(s)
+    })
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  }
+  const buf = await file.arrayBuffer()
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise
+  let text = ''
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    text += (content.items as {str: string}[]).map(it => it.str).join(' ') + '\n'
+  }
+  return text
+}
+
+function parseBRDate(s: string): string | null {
+  const m = s.match(/(\d{2})\/(\d{2})\/(\d{4})/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null
+}
+function parseBRNum(s: string): number | null {
+  const n = parseFloat(s.replace(/\./g, '').replace(',', '.'))
+  return isNaN(n) ? null : n
+}
+
+function parseDANFE(text: string) {
+  // Emitente
+  const emitenteM = text.match(/([A-Z][A-Z &.\/\-,]{10,}(?:LTDA|EPP|EIRELI|S\/A|SA|ME|MEI)[^\n<]{0,40})/i)
+  const emitente = emitenteM ? emitenteM[1].trim().replace(/\s+/g, ' ') : undefined
+
+  // NF número
+  const nfM = text.match(/N[°oº\.]\s*([\d.]{6,})/i)
+  const nfNumero = nfM ? `NF ${nfM[1]}` : undefined
+
+  // Data de emissão (primeira data encontrada após "emiss")
+  const dataM = text.match(/emiss[ãa]o[^0-9]{0,20}(\d{2}\/\d{2}\/\d{4})/i)
+    ?? text.match(/(\d{2}\/\d{2}\/\d{4})/)
+  const dataEmissao = dataM ? parseBRDate(dataM[1]) : undefined
+
+  // Valor total da nota
+  const valorM = text.match(/VALOR TOTAL DA NOTA\s+([\d.,]+)/i)
+    ?? text.match(/Total[:\s]+(R\$\s*)?([\d.,]{4,})/i)
+  const valorTotal = valorM ? parseBRNum(valorM[valorM[2] ? 2 : 1]) : undefined
+
+  // Produtos — linha com: CODE DESCR ... UN QTY UNIT_VAL TOTAL
+  const produtos: {descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string}[] = []
+  const linhas = text.split('\n')
+  for (const linha of linhas) {
+    const m = linha.match(/\d+\s+(.+?)\s+\d{8}\s+\d+\s+\d+\s+(UN|PC|KG|M\b|MT|CX|RL|JG|L\b|KIT)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i)
+    if (m) {
+      produtos.push({
+        descricao: m[1].trim(),
+        unidade: m[2].toUpperCase(),
+        quantidade: parseBRNum(m[3]) ?? 1,
+        valorUnitario: parseBRNum(m[4]) ?? 0,
+        valorTotal: parseBRNum(m[5]) ?? 0,
+      })
+    }
+  }
+
+  const descricao = produtos.length === 1 ? produtos[0].descricao
+    : produtos.length > 1 ? `${produtos[0].descricao} (+${produtos.length - 1} itens)` : undefined
+
+  return { emitente, nfNumero, dataEmissao, valorTotal, produtos, descricao }
+}
+
 function formatDate(d?: string | null) {
   if (!d) return '—'
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
@@ -692,16 +767,15 @@ export default function ObraDetailPage() {
                       const f = e.target.files?.[0]; if (!f) return
                       setImportandoNF(true)
                       try {
-                        const fd = new FormData(); fd.append('file', f)
-                        const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
-                        const parsed = await res.json()
-                        if (res.ok && parsed && (parsed.produtos?.length || parsed.emitente)) {
+                        const text = await extrairTextoPDF(f)
+                        const parsed = parseDANFE(text)
+                        if (parsed.emitente || parsed.valorTotal) {
                           sessionStorage.setItem('nf_import', JSON.stringify({ ...parsed, fileName: f.name }))
                           setShowImportNF(true)
                         } else {
-                          alert(parsed?.error ?? 'Não foi possível extrair dados desta NF. Verifique se é um PDF de DANFE válido.')
+                          alert('Não foi possível extrair dados desta NF. Verifique se é um PDF de DANFE válido.')
                         }
-                      } catch (err) { alert('Erro ao conectar com a API: ' + String(err)) }
+                      } catch (err) { alert('Erro ao ler o PDF: ' + String(err)) }
                       setImportandoNF(false)
                       e.target.value = ''
                     }} />
