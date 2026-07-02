@@ -65,6 +65,8 @@ export default function ObraDetailPage() {
   const [loading, setLoading] = useState(true)
   const [showNovoMaterial, setShowNovoMaterial] = useState(false)
   const [editandoMaterial, setEditandoMaterial] = useState<ObraMaterial | null>(null)
+  const [importandoNF, setImportandoNF] = useState(false)
+  const [showImportNF, setShowImportNF] = useState(false)
   const [pastaAtiva, setPastaAtiva] = useState<string>('__todas__')
   const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
 
@@ -681,10 +683,37 @@ export default function ObraDetailPage() {
                 <h2 className="font-syne font-semibold text-[#0F172A]">Materiais da Obra</h2>
                 <p className="text-xs text-[#64748B] mt-0.5">Controle de compras, chegada e destino dos materiais</p>
               </div>
-              <button onClick={() => { setShowNovoMaterial(true); setEditandoMaterial(null) }}
-                className="btn-primary text-sm flex items-center gap-2">
-                <PlusCircle size={15} /> Novo Material
-              </button>
+              <div className="flex items-center gap-2">
+                <label className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-xl border-2 border-[#4F7CFF] text-[#4F7CFF] text-sm font-medium hover:bg-[#EEF2FF] transition-colors ${importandoNF ? 'opacity-60 pointer-events-none' : ''}`}>
+                  {importandoNF ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                  {importandoNF ? 'Lendo NF...' : 'Importar NF'}
+                  <input type="file" accept=".pdf" className="hidden" disabled={importandoNF}
+                    onChange={async e => {
+                      const f = e.target.files?.[0]; if (!f) return
+                      setImportandoNF(true)
+                      try {
+                        const fd = new FormData(); fd.append('file', f)
+                        const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
+                        if (res.ok) {
+                          const parsed = await res.json()
+                          if (parsed && (parsed.produtos?.length || parsed.emitente)) {
+                            // store parsed in sessionStorage and open modal
+                            sessionStorage.setItem('nf_import', JSON.stringify({ ...parsed, fileName: f.name, file: null }))
+                            setShowImportNF(true)
+                          } else {
+                            alert('Não foi possível extrair dados desta NF. Tente adicionar manualmente.')
+                          }
+                        }
+                      } catch { alert('Erro ao ler o PDF.') }
+                      setImportandoNF(false)
+                      e.target.value = ''
+                    }} />
+                </label>
+                <button onClick={() => { setShowNovoMaterial(true); setEditandoMaterial(null) }}
+                  className="btn-primary text-sm flex items-center gap-2">
+                  <PlusCircle size={15} /> Novo Material
+                </button>
+              </div>
             </div>
 
             {/* Sumário rápido */}
@@ -729,6 +758,15 @@ export default function ObraDetailPage() {
           material={editandoMaterial}
           onClose={() => { setShowNovoMaterial(false); setEditandoMaterial(null) }}
           onSaved={() => { setShowNovoMaterial(false); setEditandoMaterial(null); load() }}
+        />
+      )}
+
+      {/* Modal Importar NF */}
+      {showImportNF && (
+        <ModalImportNF
+          obraId={id}
+          onClose={() => setShowImportNF(false)}
+          onSaved={() => { setShowImportNF(false); load() }}
         />
       )}
 
@@ -1414,6 +1452,141 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// ── ModalImportNF ─────────────────────────────────────
+function ModalImportNF({ obraId, onClose, onSaved }: {
+  obraId: string; onClose: () => void; onSaved: () => void
+}) {
+  type NfItem = { codigo: string; descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }
+  type NfData = { emitente?: string; nfNumero?: string; dataEmissao?: string; valorTotal?: number; produtos?: NfItem[]; descricao?: string }
+
+  const raw = typeof window !== 'undefined' ? sessionStorage.getItem('nf_import') : null
+  const nf: NfData = raw ? JSON.parse(raw) : {}
+
+  const [selecionados, setSelecionados] = useState<Record<number, boolean>>(
+    Object.fromEntries((nf.produtos ?? []).map((_, i) => [i, true]))
+  )
+  const [tipCompra, setTipCompra] = useState<'interna' | 'cliente'>('interna')
+  const [comprador, setComprador] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const itens = nf.produtos ?? []
+  const allSelected = Object.values(selecionados).every(Boolean)
+
+  async function importar() {
+    const supabase = createClient()
+    setSaving(true)
+    const payload = itens
+      .filter((_, i) => selecionados[i])
+      .map(p => ({
+        obra_id: obraId,
+        descricao: p.descricao,
+        tipo_compra: tipCompra,
+        fornecedor: nf.emitente ?? null,
+        comprador: comprador.trim() || null,
+        data_compra: nf.dataEmissao ?? null,
+        quantidade: p.quantidade,
+        unidade: p.unidade,
+        valor_unitario: p.valorUnitario,
+        valor_total: p.valorTotal,
+        status: 'pendente' as const,
+        observacoes: nf.nfNumero ? `NF: ${nf.nfNumero}` : null,
+      }))
+    if (payload.length > 0) await supabase.from('obra_materiais').insert(payload)
+    sessionStorage.removeItem('nf_import')
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A]">Importar itens da NF</h2>
+            {nf.nfNumero && <p className="text-xs text-[#64748B] mt-0.5">{nf.nfNumero} · {nf.emitente}</p>}
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Resumo NF */}
+          <div className="bg-[#F8FAFC] rounded-xl p-4 text-sm grid grid-cols-2 gap-2">
+            {nf.emitente && <div><span className="text-[#64748B] text-xs">Fornecedor</span><p className="font-medium text-[#0F172A] truncate">{nf.emitente}</p></div>}
+            {nf.dataEmissao && <div><span className="text-[#64748B] text-xs">Data de emissão</span><p className="font-medium text-[#0F172A]">{formatDate(nf.dataEmissao)}</p></div>}
+            {nf.valorTotal && <div><span className="text-[#64748B] text-xs">Valor total NF</span><p className="font-semibold text-[#4F7CFF]">{formatCurrency(nf.valorTotal)}</p></div>}
+            {nf.nfNumero && <div><span className="text-[#64748B] text-xs">Número</span><p className="font-medium text-[#0F172A]">{nf.nfNumero}</p></div>}
+          </div>
+
+          {/* Tipo de compra */}
+          <div>
+            <label className="block text-xs font-medium text-[#64748B] mb-1.5">Tipo de compra</label>
+            <div className="flex gap-3">
+              {(['interna', 'cliente'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setTipCompra(t)}
+                  className={`flex-1 py-2.5 rounded-xl font-medium text-sm border-2 transition-all ${tipCompra === t
+                    ? t === 'interna' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-purple-400 bg-purple-50 text-purple-700'
+                    : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                  {t === 'interna' ? '🏢 Compra Interna' : '👤 Compra Cliente'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Comprador */}
+          <div>
+            <label className="block text-xs font-medium text-[#64748B] mb-1">Quem comprou</label>
+            <input className="field" value={comprador} onChange={e => setComprador(e.target.value)} placeholder="Nome de quem fez a compra" />
+          </div>
+
+          {/* Itens da NF */}
+          {itens.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium text-[#64748B]">Selecione os itens para importar</label>
+                <button type="button" className="text-xs text-[#4F7CFF] font-medium"
+                  onClick={() => setSelecionados(Object.fromEntries(itens.map((_, i) => [i, !allSelected])))}>
+                  {allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
+                </button>
+              </div>
+              <div className="space-y-2">
+                {itens.map((p, i) => (
+                  <label key={i} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${selecionados[i] ? 'border-[#4F7CFF] bg-[#EEF2FF]' : 'border-[#E2E8F0] bg-white'}`}>
+                    <input type="checkbox" className="mt-0.5 accent-[#4F7CFF]" checked={!!selecionados[i]}
+                      onChange={e => setSelecionados(s => ({ ...s, [i]: e.target.checked }))} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0F172A] leading-tight">{p.descricao}</p>
+                      <p className="text-xs text-[#64748B] mt-0.5">{p.quantidade} {p.unidade} · {formatCurrency(p.valorUnitario)}/un · <span className="font-semibold text-[#374151]">{formatCurrency(p.valorTotal)}</span></p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {itens.length === 0 && (
+            <div className="text-center py-6 text-sm text-[#64748B]">
+              Nenhum item de produto detectado nesta NF.<br />
+              Os dados gerais (fornecedor, valor, data) foram extraídos.
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+              Cancelar
+            </button>
+            <button onClick={importar} disabled={saving || Object.values(selecionados).every(v => !v)}
+              className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              {saving ? 'Importando...' : `Importar ${Object.values(selecionados).filter(Boolean).length} ite${Object.values(selecionados).filter(Boolean).length === 1 ? 'm' : 'ns'}`}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
