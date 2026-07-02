@@ -79,59 +79,70 @@ function parseBRNum(s: string): number | null {
 }
 
 function parseDANFE(text: string) {
+  // Texto completo sem quebras para regex cross-line
+  const flat = text.replace(/\n/g, ' ').replace(/\s+/g, ' ')
   const linhas = text.split('\n')
 
-  // Emitente: linha que contém LTDA/EPP etc mas NÃO começa com "Recebemos"
+  // Emitente: o nome aparece no cabeçalho de recebimento "Recebemos de X, os produtos"
   let emitente: string | undefined
-  for (const l of linhas) {
-    if (/LTDA|EPP|EIRELI|S\/A|EIRELI|ME\b|MEI\b/i.test(l) && !/Recebemos/i.test(l)) {
-      emitente = l.trim().replace(/\s+/g, ' ')
-      break
-    }
-  }
-  // Fallback: extrair de "Recebemos de X, os produtos"
-  if (!emitente) {
-    const m = text.match(/Recebemos de ([^,]+(?:LTDA|EPP|S\/A|SA|EIRELI|ME|MEI)[^,]*),/i)
-    if (m) emitente = m[1].trim()
-  }
+  const recebM = flat.match(/Recebemos de\s+(.+?),\s*os produtos/i)
+  if (recebM) emitente = recebM[1].trim()
 
   // NF número
-  const nfM = text.match(/N[°oº]\s*([\d.]{6,})/i)
+  const nfM = flat.match(/N[°oº]\s*([\d.]{6,})/i)
   const nfNumero = nfM ? `NF ${nfM[1]}` : undefined
 
-  // Data de emissão — procura linha que contenha "emiss" + data
-  let dataEmissao: string | undefined
-  for (const l of linhas) {
-    const m = l.match(/emiss[ãa]o.*?(\d{2}\/\d{2}\/\d{4})/i) ?? l.match(/^(\d{2}\/\d{2}\/\d{4})$/)
-    if (m) { dataEmissao = parseBRDate(m[1]) ?? undefined; break }
-  }
+  // Data de emissão — a primeira data DD/MM/YYYY após "emissão"
+  const dataM = flat.match(/emiss[ãa]o[^0-9]{0,30}(\d{2}\/\d{2}\/\d{4})/i)
+    ?? flat.match(/(\d{2}\/\d{2}\/\d{4})/)
+  const dataEmissao = dataM ? parseBRDate(dataM[1]) ?? undefined : undefined
 
-  // Valor total: linha que tem "VALOR TOTAL DA NOTA" e termina com o valor
+  // Valor total: procura "VALOR TOTAL DA NOTA" e pega o último número na sequência
+  // Ex: "...VALOR DO IPI VALOR TOTAL DA NOTA 0,00 0,00 0,00 0,00 1,43 2.385,43"
   let valorTotal: number | undefined
-  for (const l of linhas) {
-    if (/VALOR TOTAL DA NOTA/i.test(l)) {
-      const nums = l.match(/[\d.]+,\d{2}/g)
-      if (nums) { valorTotal = parseBRNum(nums[nums.length - 1]) ?? undefined }
-    }
+  const vtM = flat.match(/VALOR TOTAL DA NOTA\s+([\d.,\s]+)/i)
+  if (vtM) {
+    const nums = vtM[1].match(/[\d.]+,\d{2}/g)
+    if (nums) valorTotal = parseBRNum(nums[nums.length - 1]) ?? undefined
   }
-  // Fallback: linha da fatura "001 DD/MM/YYYY R$ X.XXX,XX"
+  // Fallback: "R$ X.XXX,XX" na linha de fatura
   if (!valorTotal) {
-    const m = text.match(/R\$\s*([\d.]+,\d{2})/)
+    const m = flat.match(/R\$\s*([\d.]+,\d{2})/)
     if (m) valorTotal = parseBRNum(m[1]) ?? undefined
   }
 
-  // Produtos: linhas com código numérico + descrição + NCM (8 dígitos) + unidade + valores
+  // Produtos: busca no texto flat por padrão NCM (8 dígitos) + CST + CFOP + UNID + QTY + VALS
+  // Formato DANFE: "... DESCRIÇÃO NCM CST CFOP UN QTY VU VT BC ICMS IPI ALICMS ALIPI"
   const produtos: { descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }[] = []
-  for (const linha of linhas) {
-    const m = linha.match(/^\d+\s+(.+?)\s+\d{8}\s+\d+\s+\d+\s+(UN|PC|KG|MT?|CX|RL|JG|L|KIT)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i)
-    if (m) {
+  const prodRe = /(\d{3,4})\s+([\w\s\/\-\.()ÃÇÁÉÍÓÚãçáéíóú]+?)\s+(\d{8})\s+\d{3}\s+\d{4}\s+(UN|PC|KG|MT?|CX|RL|JG|L\b|KIT)\s+([\d,]+)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/gi
+  let m: RegExpExecArray | null
+  while ((m = prodRe.exec(flat)) !== null) {
+    // Evita capturar duplicatas por overlap
+    const descricao = m[2].trim().replace(/\s+/g, ' ')
+    if (descricao.length > 3 && !produtos.find(p => p.descricao === descricao)) {
       produtos.push({
-        descricao: m[1].trim(),
-        unidade: m[2].toUpperCase(),
-        quantidade: parseBRNum(m[3]) ?? 1,
-        valorUnitario: parseBRNum(m[4]) ?? 0,
-        valorTotal: parseBRNum(m[5]) ?? 0,
+        descricao,
+        unidade: m[4].toUpperCase(),
+        quantidade: parseBRNum(m[5]) ?? 1,
+        valorUnitario: parseBRNum(m[6]) ?? 0,
+        valorTotal: parseBRNum(m[7]) ?? 0,
       })
+    }
+  }
+
+  // Fallback linha a linha para produtos (caso flat não funcione)
+  if (produtos.length === 0) {
+    for (const linha of linhas) {
+      const lm = linha.match(/^\d+\s+(.+?)\s+\d{8}\s+\d+\s+\d+\s+(UN|PC|KG|MT?|CX|RL|JG|L|KIT)\s+([\d.,]+)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i)
+      if (lm) {
+        produtos.push({
+          descricao: lm[1].trim(),
+          unidade: lm[2].toUpperCase(),
+          quantidade: parseBRNum(lm[3]) ?? 1,
+          valorUnitario: parseBRNum(lm[4]) ?? 0,
+          valorTotal: parseBRNum(lm[5]) ?? 0,
+        })
+      }
     }
   }
 
