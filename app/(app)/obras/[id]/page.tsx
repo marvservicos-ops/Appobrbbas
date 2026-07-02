@@ -1199,17 +1199,41 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
   const [nfPath, setNfPath] = useState(material?.nota_fiscal_path ?? '')
   const [uploadingNf, setUploadingNf] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [nfDados, setNfDados] = useState<{ emitente?: string; nfNumero?: string; dataEmissao?: string; valorTotal?: number; produtos?: { descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }[] } | null>(null)
 
   async function uploadNF(file: File) {
     setUploadingNf(true)
     const supabase = createClient()
     const path = `nf/${obraId}/${Date.now()}_${file.name}`
-    const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
-    if (!error) {
-      const { data } = supabase.storage.from('documentos').getPublicUrl(path)
-      setNfUrl(data.publicUrl)
-      setNfPath(path)
+
+    // Parse NFe PDF in parallel with upload (only PDFs)
+    const parsePromise = file.type === 'application/pdf' ? (async () => {
+      try {
+        const fd = new FormData(); fd.append('file', file)
+        const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
+        if (res.ok) return await res.json()
+      } catch { /* ignore */ }
+      return null
+    })() : Promise.resolve(null)
+
+    const [, parsed] = await Promise.all([
+      supabase.storage.from('documentos').upload(path, file, { upsert: true }),
+      parsePromise,
+    ])
+
+    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+    setNfUrl(data.publicUrl)
+    setNfPath(path)
+
+    if (parsed && (parsed.emitente || parsed.valorTotal)) {
+      setNfDados(parsed)
+      // Auto-fill fields that are still empty
+      if (parsed.emitente && !fornecedor) setFornecedor(parsed.emitente)
+      if (parsed.dataEmissao && !dataCompra) setDataCompra(parsed.dataEmissao)
+      if (parsed.valorTotal && !valorTotal) setValorTotal(String(parsed.valorTotal))
+      if (parsed.descricao && !descricao) setDescricao(parsed.descricao)
     }
+
     setUploadingNf(false)
   }
 
@@ -1350,12 +1374,28 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
               )}
               <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                 {uploadingNf ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                {uploadingNf ? 'Enviando...' : nfUrl ? 'Trocar NF' : 'Anexar NF'}
+                {uploadingNf ? 'Lendo NF...' : nfUrl ? 'Trocar NF' : 'Anexar NF'}
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadNF(f) }} />
               </label>
-              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath(''); setNfDados(null) }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
             </div>
+            {nfDados && (
+              <div className="mt-2 bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-800">
+                <div className="flex items-center gap-1.5 font-semibold mb-1.5">
+                  <CheckCircle2 size={13} className="text-green-600" /> Dados detectados na NF e preenchidos automaticamente
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-green-700">
+                  {nfDados.emitente && <span><b>Fornecedor:</b> {nfDados.emitente}</span>}
+                  {nfDados.nfNumero && <span><b>NF:</b> {nfDados.nfNumero}</span>}
+                  {nfDados.dataEmissao && <span><b>Data:</b> {formatDate(nfDados.dataEmissao)}</span>}
+                  {nfDados.valorTotal && <span><b>Total:</b> {formatCurrency(nfDados.valorTotal)}</span>}
+                  {nfDados.produtos && nfDados.produtos.length > 0 && (
+                    <span className="col-span-2"><b>Itens:</b> {nfDados.produtos.length} produto(s) na NF</span>
+                  )}
+                </div>
+              </div>
+            )}
           </F>
 
           <F label="Observações">
