@@ -53,7 +53,18 @@ async function extrairTextoPDF(file: File): Promise<string> {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
-    text += (content.items as {str: string}[]).map(it => it.str).join(' ') + '\n'
+    // Group items by Y coordinate to reconstruct visual lines
+    const lineMap = new Map<number, string[]>()
+    for (const item of content.items as { str: string; transform: number[] }[]) {
+      const y = Math.round(item.transform[5])
+      if (!lineMap.has(y)) lineMap.set(y, [])
+      lineMap.get(y)!.push(item.str)
+    }
+    const sortedYs = Array.from(lineMap.keys()).sort((a, b) => b - a)
+    for (const y of sortedYs) {
+      const line = lineMap.get(y)!.join(' ').trim()
+      if (line) text += line + '\n'
+    }
   }
   return text
 }
@@ -68,29 +79,51 @@ function parseBRNum(s: string): number | null {
 }
 
 function parseDANFE(text: string) {
-  // Emitente
-  const emitenteM = text.match(/([A-Z][A-Z &.\/\-,]{10,}(?:LTDA|EPP|EIRELI|S\/A|SA|ME|MEI)[^\n<]{0,40})/i)
-  const emitente = emitenteM ? emitenteM[1].trim().replace(/\s+/g, ' ') : undefined
+  const linhas = text.split('\n')
+
+  // Emitente: linha que contém LTDA/EPP etc mas NÃO começa com "Recebemos"
+  let emitente: string | undefined
+  for (const l of linhas) {
+    if (/LTDA|EPP|EIRELI|S\/A|EIRELI|ME\b|MEI\b/i.test(l) && !/Recebemos/i.test(l)) {
+      emitente = l.trim().replace(/\s+/g, ' ')
+      break
+    }
+  }
+  // Fallback: extrair de "Recebemos de X, os produtos"
+  if (!emitente) {
+    const m = text.match(/Recebemos de ([^,]+(?:LTDA|EPP|S\/A|SA|EIRELI|ME|MEI)[^,]*),/i)
+    if (m) emitente = m[1].trim()
+  }
 
   // NF número
-  const nfM = text.match(/N[°oº\.]\s*([\d.]{6,})/i)
+  const nfM = text.match(/N[°oº]\s*([\d.]{6,})/i)
   const nfNumero = nfM ? `NF ${nfM[1]}` : undefined
 
-  // Data de emissão (primeira data encontrada após "emiss")
-  const dataM = text.match(/emiss[ãa]o[^0-9]{0,20}(\d{2}\/\d{2}\/\d{4})/i)
-    ?? text.match(/(\d{2}\/\d{2}\/\d{4})/)
-  const dataEmissao = dataM ? parseBRDate(dataM[1]) : undefined
+  // Data de emissão — procura linha que contenha "emiss" + data
+  let dataEmissao: string | undefined
+  for (const l of linhas) {
+    const m = l.match(/emiss[ãa]o.*?(\d{2}\/\d{2}\/\d{4})/i) ?? l.match(/^(\d{2}\/\d{2}\/\d{4})$/)
+    if (m) { dataEmissao = parseBRDate(m[1]) ?? undefined; break }
+  }
 
-  // Valor total da nota
-  const valorM = text.match(/VALOR TOTAL DA NOTA\s+([\d.,]+)/i)
-    ?? text.match(/Total[:\s]+(R\$\s*)?([\d.,]{4,})/i)
-  const valorTotal = valorM ? parseBRNum(valorM[valorM[2] ? 2 : 1]) : undefined
+  // Valor total: linha que tem "VALOR TOTAL DA NOTA" e termina com o valor
+  let valorTotal: number | undefined
+  for (const l of linhas) {
+    if (/VALOR TOTAL DA NOTA/i.test(l)) {
+      const nums = l.match(/[\d.]+,\d{2}/g)
+      if (nums) { valorTotal = parseBRNum(nums[nums.length - 1]) ?? undefined }
+    }
+  }
+  // Fallback: linha da fatura "001 DD/MM/YYYY R$ X.XXX,XX"
+  if (!valorTotal) {
+    const m = text.match(/R\$\s*([\d.]+,\d{2})/)
+    if (m) valorTotal = parseBRNum(m[1]) ?? undefined
+  }
 
-  // Produtos — linha com: CODE DESCR ... UN QTY UNIT_VAL TOTAL
-  const produtos: {descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string}[] = []
-  const linhas = text.split('\n')
+  // Produtos: linhas com código numérico + descrição + NCM (8 dígitos) + unidade + valores
+  const produtos: { descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }[] = []
   for (const linha of linhas) {
-    const m = linha.match(/\d+\s+(.+?)\s+\d{8}\s+\d+\s+\d+\s+(UN|PC|KG|M\b|MT|CX|RL|JG|L\b|KIT)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i)
+    const m = linha.match(/^\d+\s+(.+?)\s+\d{8}\s+\d+\s+\d+\s+(UN|PC|KG|MT?|CX|RL|JG|L|KIT)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i)
     if (m) {
       produtos.push({
         descricao: m[1].trim(),
