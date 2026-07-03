@@ -798,15 +798,16 @@ export default function ObraDetailPage() {
                       const f = e.target.files?.[0]; if (!f) return
                       setImportandoNF(true)
                       try {
-                        const text = await extrairTextoPDF(f)
-                        const parsed = parseDANFE(text)
-                        if (parsed.emitente || parsed.valorTotal) {
+                        const fd = new FormData(); fd.append('file', f)
+                        const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
+                        const parsed = await res.json()
+                        if (res.ok && parsed && (parsed.emitente || parsed.valorTotal)) {
                           sessionStorage.setItem('nf_import', JSON.stringify({ ...parsed, fileName: f.name }))
                           setShowImportNF(true)
                         } else {
-                          alert('Não foi possível extrair dados desta NF. Verifique se é um PDF de DANFE válido.')
+                          alert(parsed?.error ?? 'Não foi possível extrair dados desta NF.')
                         }
-                      } catch (err) { alert('Erro ao ler o PDF: ' + String(err)) }
+                      } catch (err) { alert('Erro: ' + String(err)) }
                       setImportandoNF(false)
                       e.target.value = ''
                     }} />
