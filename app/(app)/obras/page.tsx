@@ -74,53 +74,20 @@ export default function ObrasPage() {
           </button>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Total de Projetos</span>
-              <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
-                <TrendingUp size={16} className="text-[#4F7CFF]" />
-              </div>
+        {/* Stats — barra compacta */}
+        <div className="flex items-center gap-2 mb-5 flex-wrap">
+          {[
+            { label: 'Total', value: stats.total, icon: <TrendingUp size={13} />, color: 'text-[#0F172A]', bg: 'bg-[#F1F5F9]', dot: 'bg-[#94A3B8]' },
+            { label: 'Em andamento', value: stats.andamento, icon: <Clock size={13} />, color: 'text-[#4F7CFF]', bg: 'bg-[#EEF2FF]', dot: 'bg-[#4F7CFF]' },
+            { label: 'Paralisadas', value: stats.paralisada, icon: <AlertTriangle size={13} />, color: 'text-amber-600', bg: 'bg-amber-50', dot: 'bg-amber-400' },
+            { label: 'Concluídas', value: stats.concluida, icon: <CheckCircle2 size={13} />, color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
+          ].map(s => (
+            <div key={s.label} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${s.bg}`}>
+              <span className={s.color}>{s.icon}</span>
+              <span className={`font-syne font-bold text-base ${s.color}`}>{s.value}</span>
+              <span className="text-xs text-[#64748B]">{s.label}</span>
             </div>
-            <div className="font-syne text-3xl font-bold text-[#0F172A]">{stats.total}</div>
-            <div className="text-xs text-[#64748B] mt-1">+2 este mês</div>
-          </div>
-
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Em Andamento</span>
-              <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
-                <Clock size={16} className="text-[#4F7CFF]" />
-              </div>
-            </div>
-            <div className="font-syne text-3xl font-bold text-[#4F7CFF]">{stats.andamento}</div>
-            <div className="w-full h-1 bg-[#E2E8F0] rounded-full mt-3">
-              <div className="h-1 bg-[#4F7CFF] rounded-full" style={{ width: stats.total ? `${(stats.andamento/stats.total)*100}%` : '0%' }} />
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Paralisadas</span>
-              <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center">
-                <AlertTriangle size={16} className="text-amber-500" />
-              </div>
-            </div>
-            <div className="font-syne text-3xl font-bold text-amber-500">{stats.paralisada}</div>
-            <div className="text-xs text-amber-600 mt-1">Requer atenção imediata</div>
-          </div>
-
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-[#64748B]">Concluídas</span>
-              <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center">
-                <CheckCircle2 size={16} className="text-emerald-500" />
-              </div>
-            </div>
-            <div className="font-syne text-3xl font-bold text-emerald-600">{stats.concluida}</div>
-            <div className="text-xs text-emerald-600 mt-1">Meta mensal atingida</div>
-          </div>
+          ))}
         </div>
 
         {/* Grid */}
@@ -138,47 +105,38 @@ export default function ObrasPage() {
                 const cliente = obra.cliente as Cliente | undefined
                 return (
                   <Link key={obra.id} href={`/obras/${obra.id}`}>
-                    <div className="card hover:border-[#4F7CFF]/30 hover:shadow-sm transition-all cursor-pointer group">
-                      <div className="flex items-start justify-between mb-3">
-                        <StatusChip status={obra.status} />
-                        <button className="w-7 h-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all" onClick={e => e.preventDefault()}>
-                          <MoreVertical size={14} className="text-[#64748B]" />
+                    <div className="card p-3 hover:border-[#4F7CFF]/30 hover:shadow-sm transition-all cursor-pointer group">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <StatusChip status={obra.status} />
+                          {obra.tipo_servico && <span className="text-xs text-[#4F7CFF] bg-[#EEF2FF] px-1.5 py-0.5 rounded truncate">{obra.tipo_servico}</span>}
+                        </div>
+                        <button className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all shrink-0" onClick={e => e.preventDefault()}>
+                          <MoreVertical size={13} className="text-[#64748B]" />
                         </button>
                       </div>
 
-                      <div className="mb-1">
-                        <span className="text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-2 py-0.5 rounded">{obra.tipo_servico}</span>
+                      <h3 className="font-syne font-semibold text-[#0F172A] text-sm mb-0.5 line-clamp-1">{obra.titulo}</h3>
+                      {cliente && <p className="text-xs text-[#94A3B8] mb-2 truncate">{cliente.nome}</p>}
+
+                      <div className="h-1 bg-[#F1F5F9] rounded-full overflow-hidden mb-2">
+                        <div
+                          className={`h-1 rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress > 70 ? 'bg-amber-400' : 'bg-[#4F7CFF]'}`}
+                          style={{ width: `${progress}%` }}
+                        />
                       </div>
 
-                      <h3 className="font-syne font-semibold text-[#0F172A] text-sm mt-2 mb-1 line-clamp-2">{obra.titulo}</h3>
-                      {cliente && <p className="text-xs text-[#64748B] mb-3">{cliente.nome}</p>}
-
-                      <div className="mb-3">
-                        <div className="flex justify-between text-xs text-[#64748B] mb-1">
-                          <span>Prazo</span>
-                          <span className="font-medium">{progress}%</span>
-                        </div>
-                        <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-                          <div
-                            className={`h-1.5 rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress > 70 ? 'bg-amber-400' : 'bg-[#4F7CFF]'}`}
-                            style={{ width: `${progress}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-[#64748B]">
+                      <div className="flex items-center justify-between text-xs text-[#94A3B8]">
                         {obra.engenheiro_responsavel && (
                           <div className="flex items-center gap-1">
-                            <User size={12} />
+                            <User size={11} />
                             <span className="truncate max-w-[100px]">{obra.engenheiro_responsavel}</span>
                           </div>
                         )}
-                        {obra.previsao_termino && (
-                          <div className="flex items-center gap-1 ml-auto">
-                            <Calendar size={12} />
-                            <span>{formatDate(obra.previsao_termino)}</span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1 ml-auto">
+                          <span className="font-medium text-[#64748B]">{progress}%</span>
+                          {obra.previsao_termino && <><span>·</span><Calendar size={11} /><span>{formatDate(obra.previsao_termino)}</span></>}
+                        </div>
                       </div>
                     </div>
                   </Link>
@@ -186,14 +144,11 @@ export default function ObrasPage() {
               })}
 
               {/* Empty state card */}
-              <button onClick={() => setShowModal(true)} className="card border-dashed hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-all flex flex-col items-center justify-center gap-3 min-h-[180px] group">
-                <div className="w-10 h-10 rounded-full bg-[#EEF2FF] group-hover:bg-[#4F7CFF] flex items-center justify-center transition-colors">
-                  <Plus size={20} className="text-[#4F7CFF] group-hover:text-white transition-colors" />
+              <button onClick={() => setShowModal(true)} className="card p-3 border-dashed hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-all flex flex-col items-center justify-center gap-2 min-h-[100px] group">
+                <div className="w-8 h-8 rounded-full bg-[#EEF2FF] group-hover:bg-[#4F7CFF] flex items-center justify-center transition-colors">
+                  <Plus size={16} className="text-[#4F7CFF] group-hover:text-white transition-colors" />
                 </div>
-                <div className="text-center">
-                  <p className="text-sm font-medium text-[#374151]">Novo Projeto</p>
-                  <p className="text-xs text-[#94A3B8]">Clique para criar e configurar</p>
-                </div>
+                <p className="text-xs font-medium text-[#94A3B8]">Nova Obra</p>
               </button>
             </div>
 
