@@ -173,6 +173,7 @@ export default function ObraDetailPage() {
   const [editandoMaterial, setEditandoMaterial] = useState<ObraMaterial | null>(null)
   const [importandoNF, setImportandoNF] = useState(false)
   const [showImportNF, setShowImportNF] = useState(false)
+  const [showNFManual, setShowNFManual] = useState(false)
   const [pastaAtiva, setPastaAtiva] = useState<string>('__todas__')
   const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
 
@@ -790,6 +791,10 @@ export default function ObraDetailPage() {
                 <p className="text-xs text-[#64748B] mt-0.5">Controle de compras, chegada e destino dos materiais</p>
               </div>
               <div className="flex items-center gap-2">
+                <button onClick={() => setShowNFManual(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-[#E2E8F0] text-[#64748B] text-sm font-medium hover:bg-[#F8FAFC] transition-colors">
+                  <FileText size={15} /> Lançar NF
+                </button>
                 <label className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-xl border-2 border-[#4F7CFF] text-[#4F7CFF] text-sm font-medium hover:bg-[#EEF2FF] transition-colors ${importandoNF ? 'opacity-60 pointer-events-none' : ''}`}>
                   {importandoNF ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
                   {importandoNF ? 'Lendo NF...' : 'Importar NF'}
@@ -861,6 +866,15 @@ export default function ObraDetailPage() {
           material={editandoMaterial}
           onClose={() => { setShowNovoMaterial(false); setEditandoMaterial(null) }}
           onSaved={() => { setShowNovoMaterial(false); setEditandoMaterial(null); load() }}
+        />
+      )}
+
+      {/* Modal NF Manual */}
+      {showNFManual && (
+        <ModalNFManual
+          obraId={id}
+          onClose={() => setShowNFManual(false)}
+          onSaved={() => { setShowNFManual(false); load() }}
         />
       )}
 
@@ -1687,6 +1701,175 @@ function ModalImportNF({ obraId, onClose, onSaved }: {
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
               {saving ? 'Importando...' : `Importar ${Object.values(selecionados).filter(Boolean).length} ite${Object.values(selecionados).filter(Boolean).length === 1 ? 'm' : 'ns'}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ModalNFManual ─────────────────────────────────────
+type ItemNF = { descricao: string; quantidade: string; unidade: string; valorUnitario: string; valorTotal: string }
+const ITEM_VAZIO = (): ItemNF => ({ descricao: '', quantidade: '1', unidade: 'UN', valorUnitario: '', valorTotal: '' })
+
+function ModalNFManual({ obraId, onClose, onSaved }: {
+  obraId: string; onClose: () => void; onSaved: () => void
+}) {
+  const [tipCompra, setTipCompra] = useState<'interna' | 'cliente'>('interna')
+  const [fornecedor, setFornecedor] = useState('')
+  const [comprador, setComprador] = useState('')
+  const [nfNumero, setNfNumero] = useState('')
+  const [dataCompra, setDataCompra] = useState('')
+  const [itens, setItens] = useState<ItemNF[]>([ITEM_VAZIO()])
+  const [saving, setSaving] = useState(false)
+
+  function updateItem(i: number, field: keyof ItemNF, value: string) {
+    setItens(prev => {
+      const next = [...prev]
+      next[i] = { ...next[i], [field]: value }
+      // Auto-calc valor total
+      if (field === 'quantidade' || field === 'valorUnitario') {
+        const qty = parseFloat(field === 'quantidade' ? value : next[i].quantidade)
+        const vu = parseFloat(field === 'valorUnitario' ? value : next[i].valorUnitario)
+        if (!isNaN(qty) && !isNaN(vu)) next[i].valorTotal = (qty * vu).toFixed(2)
+      }
+      return next
+    })
+  }
+
+  function addItem() { setItens(prev => [...prev, ITEM_VAZIO()]) }
+  function removeItem(i: number) { setItens(prev => prev.filter((_, idx) => idx !== i)) }
+
+  async function salvar() {
+    const validos = itens.filter(it => it.descricao.trim())
+    if (validos.length === 0) return
+    setSaving(true)
+    const supabase = createClient()
+    const obs = nfNumero.trim() ? `NF: ${nfNumero.trim()}` : null
+    const payload = validos.map(it => ({
+      obra_id: obraId,
+      descricao: it.descricao.trim(),
+      tipo_compra: tipCompra,
+      fornecedor: fornecedor.trim() || null,
+      comprador: comprador.trim() || null,
+      data_compra: dataCompra || null,
+      quantidade: parseFloat(it.quantidade) || null,
+      unidade: it.unidade.trim() || null,
+      valor_unitario: parseFloat(it.valorUnitario) || null,
+      valor_total: parseFloat(it.valorTotal) || null,
+      status: 'pendente' as const,
+      observacoes: obs,
+    }))
+    await supabase.from('obra_materiais').insert(payload)
+    setSaving(false)
+    onSaved()
+  }
+
+  const F = ({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) => (
+    <div className={className}><label className="block text-xs font-medium text-[#64748B] mb-1">{label}</label>{children}</div>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
+          <h2 className="font-syne font-semibold text-[#0F172A]">Lançar NF Manual</h2>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Tipo */}
+          <div className="flex gap-3">
+            {(['interna', 'cliente'] as const).map(t => (
+              <button key={t} type="button" onClick={() => setTipCompra(t)}
+                className={`flex-1 py-2.5 rounded-xl font-medium text-sm border-2 transition-all ${tipCompra === t
+                  ? t === 'interna' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-purple-400 bg-purple-50 text-purple-700'
+                  : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                {t === 'interna' ? '🏢 Compra Interna' : '👤 Compra Cliente'}
+              </button>
+            ))}
+          </div>
+
+          {/* Cabeçalho da NF */}
+          <div className="grid grid-cols-2 gap-3">
+            <F label="Número da NF">
+              <input className="field" value={nfNumero} onChange={e => setNfNumero(e.target.value)} placeholder="Ex: 000.086.191" />
+            </F>
+            <F label="Data da compra">
+              <input type="date" className="field" value={dataCompra} onChange={e => setDataCompra(e.target.value)} />
+            </F>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <F label="Fornecedor">
+              <input className="field" value={fornecedor} onChange={e => setFornecedor(e.target.value)} placeholder="Nome da empresa" />
+            </F>
+            <F label="Quem comprou">
+              <input className="field" value={comprador} onChange={e => setComprador(e.target.value)} placeholder="Nome" />
+            </F>
+          </div>
+
+          {/* Itens */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-[#64748B]">Itens da NF</label>
+              <button type="button" onClick={addItem}
+                className="flex items-center gap-1 text-xs font-medium text-[#4F7CFF] hover:text-blue-700">
+                <Plus size={13} /> Adicionar item
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {itens.map((item, i) => (
+                <div key={i} className="border border-[#E2E8F0] rounded-xl p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <input className="field text-sm" value={item.descricao}
+                        onChange={e => updateItem(i, 'descricao', e.target.value)}
+                        placeholder={`Item ${i + 1} — descrição do material`} />
+                    </div>
+                    {itens.length > 1 && (
+                      <button type="button" onClick={() => removeItem(i)} className="mt-1 text-[#94A3B8] hover:text-red-500 shrink-0">
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div>
+                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Qtd</label>
+                      <input type="number" min="0" step="any" className="field text-sm" value={item.quantidade}
+                        onChange={e => updateItem(i, 'quantidade', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Unidade</label>
+                      <input className="field text-sm" value={item.unidade}
+                        onChange={e => updateItem(i, 'unidade', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Vl. unit.</label>
+                      <input type="number" min="0" step="any" className="field text-sm" value={item.valorUnitario}
+                        onChange={e => updateItem(i, 'valorUnitario', e.target.value)} placeholder="0,00" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Total</label>
+                      <input type="number" min="0" step="any" className="field text-sm" value={item.valorTotal}
+                        onChange={e => updateItem(i, 'valorTotal', e.target.value)} placeholder="0,00" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+              Cancelar
+            </button>
+            <button onClick={salvar} disabled={saving || itens.every(it => !it.descricao.trim())}
+              className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              {saving ? 'Salvando...' : `Salvar ${itens.filter(it => it.descricao.trim()).length} ite${itens.filter(it => it.descricao.trim()).length === 1 ? 'm' : 'ns'}`}
             </button>
           </div>
         </div>
