@@ -26,7 +26,7 @@ interface ObraMaterial {
   unidade?: string
   valor_unitario?: number
   valor_total?: number
-  status: 'pendente' | 'em_transito' | 'recebido' | 'instalado'
+  status: 'pendente' | 'orcado' | 'comprado' | 'em_transito' | 'recebido' | 'instalado'
   nota_fiscal_url?: string
   nota_fiscal_path?: string
   observacoes?: string
@@ -261,6 +261,12 @@ export default function ObraDetailPage() {
     setLoading(false)
   }
 
+  async function alterarStatusObra(novoStatus: string) {
+    const supabase = createClient()
+    await supabase.from('obras').update({ status: novoStatus }).eq('id', id)
+    setObra(prev => prev ? { ...prev, status: novoStatus as Obra['status'] } : prev)
+  }
+
   async function excluirMaterial(materialId: string) {
     if (!confirm('Excluir este material?')) return
     const supabase = createClient()
@@ -402,7 +408,32 @@ export default function ObraDetailPage() {
               <div className="card">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-syne font-semibold text-[#0F172A]">Informações do Projeto</h2>
-                  <StatusChip status={obra.status} />
+                  <select
+                    value={obra.status}
+                    onChange={e => alterarStatusObra(e.target.value)}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-full border-0 cursor-pointer appearance-none focus:outline-none focus:ring-2 focus:ring-[#4F7CFF]/30
+                      bg-transparent
+                      [&[data-s='Em Orçamento']]:bg-slate-100 [&[data-s='Em Orçamento']]:text-slate-600
+                      [&[data-s='Aprovada']]:bg-violet-50 [&[data-s='Aprovada']]:text-violet-700
+                      [&[data-s='Em Andamento']]:bg-blue-50 [&[data-s='Em Andamento']]:text-blue-700
+                      [&[data-s='Concluída']]:bg-emerald-50 [&[data-s='Concluída']]:text-emerald-700"
+                    style={{
+                      backgroundColor:
+                        obra.status === 'Em Orçamento' ? '#f1f5f9' :
+                        obra.status === 'Aprovada' ? '#f5f3ff' :
+                        obra.status === 'Em Andamento' ? '#eff6ff' :
+                        '#f0fdf4',
+                      color:
+                        obra.status === 'Em Orçamento' ? '#475569' :
+                        obra.status === 'Aprovada' ? '#6d28d9' :
+                        obra.status === 'Em Andamento' ? '#1d4ed8' :
+                        '#065f46',
+                    }}
+                  >
+                    {(['Em Orçamento', 'Aprovada', 'Em Andamento', 'Concluída'] as const).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                   <InfoRow icon={<Wrench size={14} />} label="Tipo de Serviço" value={obra.tipo_servico} />
@@ -829,9 +860,9 @@ export default function ObraDetailPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                 {[
                   { label: 'Total', val: materiais.length, color: 'text-[#0F172A]', bg: 'bg-[#F1F5F9]' },
-                  { label: 'Pendentes', val: materiais.filter(m => m.status === 'pendente').length, color: 'text-amber-700', bg: 'bg-amber-50' },
-                  { label: 'Em trânsito', val: materiais.filter(m => m.status === 'em_transito').length, color: 'text-blue-700', bg: 'bg-blue-50' },
-                  { label: 'Recebidos', val: materiais.filter(m => m.status === 'recebido' || m.status === 'instalado').length, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                  { label: 'Pendente/Orçado', val: materiais.filter(m => m.status === 'pendente' || m.status === 'orcado').length, color: 'text-slate-600', bg: 'bg-slate-100' },
+                  { label: 'Comprado/Trânsito', val: materiais.filter(m => m.status === 'comprado' || m.status === 'em_transito').length, color: 'text-blue-700', bg: 'bg-blue-50' },
+                  { label: 'Recebido/Instalado', val: materiais.filter(m => m.status === 'recebido' || m.status === 'instalado').length, color: 'text-emerald-700', bg: 'bg-emerald-50' },
                 ].map(s => (
                   <div key={s.label} className={`card py-3 text-center ${s.bg}`}>
                     <div className={`text-2xl font-syne font-bold ${s.color}`}>{s.val}</div>
@@ -1269,10 +1300,12 @@ function NovaPastaInline({ onConfirm, onCancel }: { onConfirm: (nome: string) =>
 
 // ── STATUS CONFIG MATERIAL ────────────────────────────
 const STATUS_MATERIAL: Record<string, { label: string; cls: string }> = {
-  pendente:    { label: 'Pendente',    cls: 'bg-amber-50 text-amber-700' },
+  pendente:    { label: 'Pendente',    cls: 'bg-slate-100 text-slate-600' },
+  orcado:      { label: 'Orçado',      cls: 'bg-amber-50 text-amber-700' },
+  comprado:    { label: 'Comprado',    cls: 'bg-orange-50 text-orange-700' },
   em_transito: { label: 'Em trânsito', cls: 'bg-blue-50 text-blue-700' },
-  recebido:    { label: 'Recebido',    cls: 'bg-emerald-50 text-emerald-700' },
-  instalado:   { label: 'Instalado',   cls: 'bg-purple-50 text-purple-700' },
+  recebido:    { label: 'Recebido',    cls: 'bg-teal-50 text-teal-700' },
+  instalado:   { label: 'Instalado',   cls: 'bg-emerald-50 text-emerald-700' },
 }
 
 // ── MaterialCard ──────────────────────────────────────

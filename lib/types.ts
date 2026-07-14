@@ -1,4 +1,4 @@
-export type StatusObra = 'Em Planejamento' | 'Em Andamento' | 'Paralisada' | 'Concluída'
+export type StatusObra = 'Em Orçamento' | 'Aprovada' | 'Em Andamento' | 'Concluída'
 export type TipoServico = 'HVAC' | 'Elétrico' | 'Hidráulico' | 'Civil'
 export type StatusEtapa = 'Pendente' | 'Em Andamento' | 'Concluída' | 'Atrasada'
 export type CategoriaDoc = 'Financeiro' | 'Técnico' | 'Jurídico' | 'Outros'

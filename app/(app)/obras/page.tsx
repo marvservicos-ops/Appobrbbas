@@ -52,8 +52,9 @@ export default function ObrasPage() {
 
   const stats = {
     total: obras.length,
+    orcamento: obras.filter(o => o.status === 'Em Orçamento').length,
+    aprovada: obras.filter(o => o.status === 'Aprovada').length,
     andamento: obras.filter(o => o.status === 'Em Andamento').length,
-    paralisada: obras.filter(o => o.status === 'Paralisada').length,
     concluida: obras.filter(o => o.status === 'Concluída').length,
   }
 
@@ -77,10 +78,11 @@ export default function ObrasPage() {
         {/* Stats — barra compacta */}
         <div className="flex items-center gap-2 mb-5 flex-wrap">
           {[
-            { label: 'Total', value: stats.total, icon: <TrendingUp size={13} />, color: 'text-[#0F172A]', bg: 'bg-[#F1F5F9]', dot: 'bg-[#94A3B8]' },
-            { label: 'Em andamento', value: stats.andamento, icon: <Clock size={13} />, color: 'text-[#4F7CFF]', bg: 'bg-[#EEF2FF]', dot: 'bg-[#4F7CFF]' },
-            { label: 'Paralisadas', value: stats.paralisada, icon: <AlertTriangle size={13} />, color: 'text-amber-600', bg: 'bg-amber-50', dot: 'bg-amber-400' },
-            { label: 'Concluídas', value: stats.concluida, icon: <CheckCircle2 size={13} />, color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-500' },
+            { label: 'Total', value: stats.total, icon: <TrendingUp size={13} />, color: 'text-[#0F172A]', bg: 'bg-[#F1F5F9]' },
+            { label: 'Em orçamento', value: stats.orcamento, icon: <Clock size={13} />, color: 'text-slate-600', bg: 'bg-slate-100' },
+            { label: 'Aprovadas', value: stats.aprovada, icon: <CheckCircle2 size={13} />, color: 'text-violet-700', bg: 'bg-violet-50' },
+            { label: 'Em andamento', value: stats.andamento, icon: <Clock size={13} />, color: 'text-blue-700', bg: 'bg-blue-50' },
+            { label: 'Concluídas', value: stats.concluida, icon: <CheckCircle2 size={13} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           ].map(s => (
             <div key={s.label} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${s.bg}`}>
               <span className={s.color}>{s.icon}</span>

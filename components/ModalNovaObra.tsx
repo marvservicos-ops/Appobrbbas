@@ -12,14 +12,14 @@ interface Props {
 }
 
 const tiposServico: TipoServico[] = ['HVAC', 'Elétrico', 'Hidráulico', 'Civil']
-const statusOpcoes: StatusObra[] = ['Em Planejamento', 'Em Andamento', 'Paralisada', 'Concluída']
+const statusOpcoes: StatusObra[] = ['Em Orçamento', 'Aprovada', 'Em Andamento', 'Concluída']
 
 export default function ModalNovaObra({ clientes, onClose, onCreated }: Props) {
   const [form, setForm] = useState({
     titulo: '',
     cliente_id: '',
     tipo_servico: 'HVAC' as TipoServico,
-    status: 'Em Planejamento' as StatusObra,
+    status: 'Em Orçamento' as StatusObra,
     engenheiro_responsavel: '',
     numero_contrato: '',
     endereco: '',
