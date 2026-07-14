@@ -1392,6 +1392,10 @@ function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMateria
   )
 }
 
+function F({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  return <div className={className}><label className="block text-xs font-medium text-[#64748B] mb-1">{label}</label>{children}</div>
+}
+
 // ── ModalMaterial ─────────────────────────────────────
 function ModalMaterial({ obraId, material, onClose, onSaved }: {
   obraId: string; material: ObraMaterial | null; onClose: () => void; onSaved: () => void
@@ -1487,9 +1491,6 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
     onSaved()
   }
 
-  const F = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div><label className="block text-xs font-medium text-[#64748B] mb-1">{label}</label>{children}</div>
-  )
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
@@ -1852,9 +1853,6 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
     onSaved()
   }
 
-  const F = ({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) => (
-    <div className={className}><label className="block text-xs font-medium text-[#64748B] mb-1">{label}</label>{children}</div>
-  )
 
   const itensValidos = itens.filter(it => it.descricao.trim()).length
 
