@@ -118,7 +118,7 @@ export default function ObrasPage() {
                         <div className="relative">
                           <button
                             className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all shrink-0"
-                            onClick={e => { e.preventDefault(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
                           >
                             <MoreVertical size={13} className="text-[#64748B]" />
                           </button>
