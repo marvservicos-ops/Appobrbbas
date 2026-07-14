@@ -882,9 +882,11 @@ export default function ObraDetailPage() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
-                {materiais.map(m => <MaterialCard key={m.id} material={m} onEdit={() => { setEditandoMaterial(m); setShowNovoMaterial(true) }} onDelete={() => excluirMaterial(m.id)} />)}
-              </div>
+              <MateriaisLista
+                materiais={materiais}
+                onEdit={m => { setEditandoMaterial(m); setShowNovoMaterial(true) }}
+                onDelete={m => excluirMaterial(m.id)}
+              />
             )}
           </div>
         )}
@@ -1334,6 +1336,133 @@ const STATUS_MATERIAL: Record<string, { label: string; cls: string }> = {
   em_transito: { label: 'Em trânsito', cls: 'bg-blue-50 text-blue-700' },
   recebido:    { label: 'Recebido',    cls: 'bg-teal-50 text-teal-700' },
   instalado:   { label: 'Instalado',   cls: 'bg-emerald-50 text-emerald-700' },
+}
+
+// ── MateriaisLista ────────────────────────────────────
+function MateriaisLista({ materiais, onEdit, onDelete }: {
+  materiais: ObraMaterial[]
+  onEdit: (m: ObraMaterial) => void
+  onDelete: (m: ObraMaterial) => void
+}) {
+  // Separar materiais com NF (agrupados) dos avulsos
+  const comNF = materiais.filter(m => m.nota_fiscal_url)
+  const semNF = materiais.filter(m => !m.nota_fiscal_url)
+
+  // Agrupar por nota_fiscal_url
+  const grupos = new Map<string, ObraMaterial[]>()
+  for (const m of comNF) {
+    const key = m.nota_fiscal_url!
+    if (!grupos.has(key)) grupos.set(key, [])
+    grupos.get(key)!.push(m)
+  }
+
+  return (
+    <div className="space-y-3">
+      {Array.from(grupos.entries()).map(([url, itens]) => (
+        <NFCard key={url} itens={itens} nfUrl={url} onEdit={onEdit} onDelete={onDelete} />
+      ))}
+      {semNF.map(m => (
+        <MaterialCard key={m.id} material={m} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)} />
+      ))}
+    </div>
+  )
+}
+
+// ── NFCard ────────────────────────────────────────────
+function NFCard({ itens, nfUrl, onEdit, onDelete }: {
+  itens: ObraMaterial[]
+  nfUrl: string
+  onEdit: (m: ObraMaterial) => void
+  onDelete: (m: ObraMaterial) => void
+}) {
+  const [aberto, setAberto] = useState(true)
+  const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
+  const fmtMoeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
+  const ref = itens[0]
+  const totalNF = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
+  // Extrair número da NF das observações
+  const nfNumero = ref.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
+
+  return (
+    <div className="card p-0 overflow-hidden">
+      {/* Cabeçalho da NF */}
+      <div className="flex items-center justify-between px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${ref.tipo_compra === 'cliente' ? 'bg-purple-50' : 'bg-blue-50'}`}>
+            <FileText size={15} className={ref.tipo_compra === 'cliente' ? 'text-purple-600' : 'text-blue-600'} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-syne font-semibold text-sm text-[#0F172A]">
+                {nfNumero ? `NF ${nfNumero}` : 'Nota Fiscal'}
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ref.tipo_compra === 'cliente' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
+                {ref.tipo_compra === 'cliente' ? 'Compra Cliente' : 'Compra Interna'}
+              </span>
+              <span className="text-[10px] text-[#94A3B8]">{itens.length} ite{itens.length === 1 ? 'm' : 'ns'}</span>
+            </div>
+            <div className="flex items-center gap-3 mt-0.5 text-xs text-[#64748B] flex-wrap">
+              {ref.fornecedor && <span>{ref.fornecedor}</span>}
+              {ref.data_compra && <span>· {fmt(ref.data_compra)}</span>}
+              {ref.comprador && <span>· {ref.comprador}</span>}
+              {ref.destino && <span>· Destino: {ref.destino}</span>}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0 ml-3">
+          <span className="font-syne font-bold text-sm text-[#0F172A]">{fmtMoeda(totalNF)}</span>
+          <a href={nfUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-2.5 py-1 rounded-lg hover:bg-[#dce8ff] transition-colors">
+            <ExternalLink size={11} /> Ver NF
+          </a>
+          <button onClick={() => setAberto(a => !a)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+            {aberto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Tabela de itens */}
+      {aberto && (
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-[#F1F5F9]">
+              <th className="text-left text-xs font-semibold text-[#94A3B8] px-4 py-2">Descrição</th>
+              <th className="text-left text-xs font-semibold text-[#94A3B8] px-3 py-2">Status</th>
+              <th className="text-left text-xs font-semibold text-[#94A3B8] px-3 py-2">Qtd</th>
+              <th className="text-left text-xs font-semibold text-[#94A3B8] px-3 py-2">Vl. Unit.</th>
+              <th className="text-left text-xs font-semibold text-[#94A3B8] px-3 py-2">Total</th>
+              <th className="text-left text-xs font-semibold text-[#94A3B8] px-3 py-2">Chegada</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {itens.map(m => {
+              const st = STATUS_MATERIAL[m.status] ?? STATUS_MATERIAL.pendente
+              return (
+                <tr key={m.id} className="border-b border-[#F8FAFC] hover:bg-[#F8FAFC] transition-colors group">
+                  <td className="px-4 py-2.5 text-sm font-medium text-[#0F172A] max-w-xs">{m.descricao}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                  </td>
+                  <td className="px-3 py-2.5 text-sm text-[#374151]">{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</td>
+                  <td className="px-3 py-2.5 text-sm text-[#374151]">{m.valor_unitario != null ? fmtMoeda(m.valor_unitario) : '—'}</td>
+                  <td className="px-3 py-2.5 text-sm font-medium text-[#0F172A]">{m.valor_total != null ? fmtMoeda(m.valor_total) : '—'}</td>
+                  <td className="px-3 py-2.5 text-xs text-[#64748B]">{m.data_chegada ? fmt(m.data_chegada) : m.data_prevista_chegada ? `prev. ${fmt(m.data_prevista_chegada)}` : '—'}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => onEdit(m)} className="text-[#94A3B8] hover:text-[#4F7CFF] p-1 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={12} /></button>
+                      <button onClick={() => onDelete(m)} className="text-[#94A3B8] hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
 }
 
 // ── MaterialCard ──────────────────────────────────────
