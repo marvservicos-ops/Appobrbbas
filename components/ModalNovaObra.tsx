@@ -3,30 +3,32 @@
 import { useState } from 'react'
 import { X, Wrench } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Cliente, TipoServico, StatusObra } from '@/lib/types'
+import { Cliente, Obra, TipoServico, StatusObra } from '@/lib/types'
 
 interface Props {
   clientes: Cliente[]
   onClose: () => void
   onCreated: () => void
+  obra?: Obra
 }
 
 const tiposServico: TipoServico[] = ['HVAC', 'Elétrico', 'Hidráulico', 'Civil']
 const statusOpcoes: StatusObra[] = ['Em Orçamento', 'Aprovada', 'Em Andamento', 'Concluída']
 
-export default function ModalNovaObra({ clientes, onClose, onCreated }: Props) {
+export default function ModalNovaObra({ clientes, onClose, onCreated, obra }: Props) {
+  const editing = !!obra
   const [form, setForm] = useState({
-    titulo: '',
-    cliente_id: '',
-    tipo_servico: 'HVAC' as TipoServico,
-    status: 'Em Orçamento' as StatusObra,
-    engenheiro_responsavel: '',
-    numero_contrato: '',
-    endereco: '',
-    valor_estimado: '',
-    data_inicio: '',
-    previsao_termino: '',
-    descricao: '',
+    titulo: obra?.titulo ?? '',
+    cliente_id: obra?.cliente_id ?? '',
+    tipo_servico: (obra?.tipo_servico ?? 'HVAC') as TipoServico,
+    status: (obra?.status ?? 'Em Orçamento') as StatusObra,
+    engenheiro_responsavel: obra?.engenheiro_responsavel ?? '',
+    numero_contrato: obra?.numero_contrato ?? '',
+    endereco: obra?.endereco ?? '',
+    valor_estimado: obra?.valor_estimado?.toString() ?? '',
+    data_inicio: obra?.data_inicio ?? '',
+    previsao_termino: obra?.previsao_termino ?? '',
+    descricao: obra?.descricao ?? '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -40,7 +42,7 @@ export default function ModalNovaObra({ clientes, onClose, onCreated }: Props) {
     setLoading(true)
     setError('')
     const supabase = createClient()
-    const { error } = await supabase.from('obras').insert({
+    const payload = {
       titulo: form.titulo,
       cliente_id: form.cliente_id || null,
       tipo_servico: form.tipo_servico,
@@ -52,7 +54,10 @@ export default function ModalNovaObra({ clientes, onClose, onCreated }: Props) {
       data_inicio: form.data_inicio || null,
       previsao_termino: form.previsao_termino || null,
       descricao: form.descricao || null,
-    })
+    }
+    const { error } = editing
+      ? await supabase.from('obras').update(payload).eq('id', obra!.id)
+      : await supabase.from('obras').insert(payload)
     if (error) { setError(error.message); setLoading(false); return }
     onCreated()
   }
@@ -66,7 +71,7 @@ export default function ModalNovaObra({ clientes, onClose, onCreated }: Props) {
             <div className="w-8 h-8 bg-[#EEF2FF] rounded-lg flex items-center justify-center">
               <Wrench size={16} className="text-[#4F7CFF]" />
             </div>
-            <h2 className="font-syne font-semibold text-[#0F172A]">Nova Obra</h2>
+            <h2 className="font-syne font-semibold text-[#0F172A]">{editing ? 'Editar Obra' : 'Nova Obra'}</h2>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
             <X size={16} className="text-[#64748B]" />
@@ -169,7 +174,7 @@ export default function ModalNovaObra({ clientes, onClose, onCreated }: Props) {
               Cancelar
             </button>
             <button type="submit" disabled={loading} className="px-5 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition-colors">
-              {loading ? 'Salvando...' : 'Salvar Obra'}
+              {loading ? 'Salvando...' : editing ? 'Salvar Alterações' : 'Salvar Obra'}
             </button>
           </div>
         </form>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Calendar, User, MoreVertical, AlertTriangle, CheckCircle2, Clock, TrendingUp } from 'lucide-react'
+import { Plus, Calendar, User, MoreVertical, CheckCircle2, Clock, TrendingUp, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, Cliente } from '@/lib/types'
 import Topbar from '@/components/Topbar'
@@ -29,6 +29,8 @@ export default function ObrasPage() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [editObra, setEditObra] = useState<Obra | null>(null)
+  const [menuObraId, setMenuObraId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   async function load() {
@@ -59,7 +61,7 @@ export default function ObrasPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" onClick={() => setMenuObraId(null)}>
       <Topbar searchPlaceholder="Buscar obra ou cliente..." onSearch={setSearch} />
 
       <div className="p-4 md:p-6 flex-1 overflow-y-auto">
@@ -113,9 +115,26 @@ export default function ObrasPage() {
                           <StatusChip status={obra.status} />
                           {obra.tipo_servico && <span className="text-xs text-[#4F7CFF] bg-[#EEF2FF] px-1.5 py-0.5 rounded truncate">{obra.tipo_servico}</span>}
                         </div>
-                        <button className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all shrink-0" onClick={e => e.preventDefault()}>
-                          <MoreVertical size={13} className="text-[#64748B]" />
-                        </button>
+                        <div className="relative">
+                          <button
+                            className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all shrink-0"
+                            onClick={e => { e.preventDefault(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
+                          >
+                            <MoreVertical size={13} className="text-[#64748B]" />
+                          </button>
+                          {menuObraId === obra.id && (
+                            <div className="absolute right-0 top-7 z-20 bg-white border border-[#E2E8F0] rounded-xl shadow-lg py-1 min-w-[140px]"
+                              onClick={e => e.preventDefault()}>
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#374151] hover:bg-[#F8FAFF] transition-colors"
+                                onClick={e => { e.preventDefault(); setEditObra(obra); setMenuObraId(null) }}
+                              >
+                                <Pencil size={13} className="text-[#64748B]" />
+                                Editar obra
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <h3 className="font-syne font-semibold text-[#0F172A] text-sm mb-0.5 line-clamp-1">{obra.titulo}</h3>
@@ -168,6 +187,14 @@ export default function ObrasPage() {
           clientes={clientes}
           onClose={() => setShowModal(false)}
           onCreated={() => { setShowModal(false); load() }}
+        />
+      )}
+      {editObra && (
+        <ModalNovaObra
+          clientes={clientes}
+          obra={editObra}
+          onClose={() => setEditObra(null)}
+          onCreated={() => { setEditObra(null); load() }}
         />
       )}
     </div>
