@@ -1219,6 +1219,29 @@ function ModalAddDoc({ obraId, pastaInicial, pastasDisponiveis, onClose, onCreat
 }
 
 // Tabela de documentos reutilizável
+function getExtInfo(nome: string, url?: string): { ext: string; bg: string; text: string } {
+  const src = url || nome
+  const ext = (src.split('.').pop() || '').toLowerCase().split('?')[0]
+  const map: Record<string, { bg: string; text: string }> = {
+    pdf:  { bg: 'bg-red-50',    text: 'text-red-600' },
+    dwg:  { bg: 'bg-orange-50', text: 'text-orange-600' },
+    dxf:  { bg: 'bg-orange-50', text: 'text-orange-600' },
+    xlsx: { bg: 'bg-emerald-50',text: 'text-emerald-700' },
+    xls:  { bg: 'bg-emerald-50',text: 'text-emerald-700' },
+    csv:  { bg: 'bg-emerald-50',text: 'text-emerald-700' },
+    docx: { bg: 'bg-blue-50',   text: 'text-blue-700' },
+    doc:  { bg: 'bg-blue-50',   text: 'text-blue-700' },
+    pptx: { bg: 'bg-amber-50',  text: 'text-amber-700' },
+    ppt:  { bg: 'bg-amber-50',  text: 'text-amber-700' },
+    jpg:  { bg: 'bg-purple-50', text: 'text-purple-700' },
+    jpeg: { bg: 'bg-purple-50', text: 'text-purple-700' },
+    png:  { bg: 'bg-purple-50', text: 'text-purple-700' },
+    zip:  { bg: 'bg-slate-100', text: 'text-slate-600' },
+    rar:  { bg: 'bg-slate-100', text: 'text-slate-600' },
+  }
+  return { ext: ext || '—', ...(map[ext] ?? { bg: 'bg-gray-100', text: 'text-gray-500' }) }
+}
+
 function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string, path?: string) => void }) {
   const categoriaConfig: Record<string, { bg: string; text: string }> = {
     Financeiro: { bg: 'bg-blue-50', text: 'text-blue-700' },
@@ -1231,6 +1254,7 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
       <thead>
         <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Nome</th>
+          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Formato</th>
           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Categoria</th>
           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Fornecedor</th>
           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Data</th>
@@ -1240,6 +1264,7 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
       <tbody>
         {docs.map(doc => {
           const cat = categoriaConfig[doc.categoria] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+          const fmt = getExtInfo(doc.nome, doc.arquivo_url)
           return (
             <tr key={doc.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
               <td className="px-4 py-3">
@@ -1249,6 +1274,9 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
                   </div>
                   <span className="text-sm text-[#0F172A] font-medium">{doc.nome}</span>
                 </div>
+              </td>
+              <td className="px-4 py-3">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded ${fmt.bg} ${fmt.text} uppercase tracking-wide`}>{fmt.ext}</span>
               </td>
               <td className="px-4 py-3">
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cat.bg} ${cat.text}`}>{doc.categoria}</span>
