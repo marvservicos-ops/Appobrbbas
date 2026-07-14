@@ -1778,18 +1778,37 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
   obraId: string; onClose: () => void; onSaved: () => void
 }) {
   const [tipCompra, setTipCompra] = useState<'interna' | 'cliente'>('interna')
+  const [statusPadrao, setStatusPadrao] = useState<ObraMaterial['status']>('comprado')
+  const [nfNumero, setNfNumero] = useState('')
   const [fornecedor, setFornecedor] = useState('')
   const [comprador, setComprador] = useState('')
-  const [nfNumero, setNfNumero] = useState('')
   const [dataCompra, setDataCompra] = useState('')
+  const [dataPrevista, setDataPrevista] = useState('')
+  const [dataChegada, setDataChegada] = useState('')
+  const [localChegada, setLocalChegada] = useState('')
+  const [destino, setDestino] = useState('')
+  const [nfUrl, setNfUrl] = useState('')
+  const [nfPath, setNfPath] = useState('')
+  const [uploadingNf, setUploadingNf] = useState(false)
+  const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemNF[]>([ITEM_VAZIO()])
   const [saving, setSaving] = useState(false)
+
+  async function uploadNF(file: File) {
+    setUploadingNf(true)
+    const supabase = createClient()
+    const path = `nf/${obraId}/${Date.now()}_${file.name}`
+    await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+    setNfUrl(data.publicUrl)
+    setNfPath(path)
+    setUploadingNf(false)
+  }
 
   function updateItem(i: number, field: keyof ItemNF, value: string) {
     setItens(prev => {
       const next = [...prev]
       next[i] = { ...next[i], [field]: value }
-      // Auto-calc valor total
       if (field === 'quantidade' || field === 'valorUnitario') {
         const qty = parseFloat(field === 'quantidade' ? value : next[i].quantidade)
         const vu = parseFloat(field === 'valorUnitario' ? value : next[i].valorUnitario)
@@ -1807,7 +1826,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
     if (validos.length === 0) return
     setSaving(true)
     const supabase = createClient()
-    const obs = nfNumero.trim() ? `NF: ${nfNumero.trim()}` : null
+    const obs = [nfNumero.trim() ? `NF: ${nfNumero.trim()}` : '', observacoes.trim()].filter(Boolean).join(' | ') || null
     const payload = validos.map(it => ({
       obra_id: obraId,
       descricao: it.descricao.trim(),
@@ -1815,11 +1834,17 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
       fornecedor: fornecedor.trim() || null,
       comprador: comprador.trim() || null,
       data_compra: dataCompra || null,
+      data_prevista_chegada: dataPrevista || null,
+      data_chegada: dataChegada || null,
+      local_chegada: localChegada.trim() || null,
+      destino: destino.trim() || null,
       quantidade: parseFloat(it.quantidade) || null,
       unidade: it.unidade.trim() || null,
       valor_unitario: parseFloat(it.valorUnitario) || null,
       valor_total: parseFloat(it.valorTotal) || null,
-      status: 'pendente' as const,
+      status: statusPadrao,
+      nota_fiscal_url: nfUrl || null,
+      nota_fiscal_path: nfPath || null,
       observacoes: obs,
     }))
     await supabase.from('obra_materiais').insert(payload)
@@ -1831,6 +1856,8 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
     <div className={className}><label className="block text-xs font-medium text-[#64748B] mb-1">{label}</label>{children}</div>
   )
 
+  const itensValidos = itens.filter(it => it.descricao.trim()).length
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1840,7 +1867,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
         </div>
 
         <div className="p-6 space-y-4">
-          {/* Tipo */}
+          {/* Tipo de compra */}
           <div className="flex gap-3">
             {(['interna', 'cliente'] as const).map(t => (
               <button key={t} type="button" onClick={() => setTipCompra(t)}
@@ -1852,6 +1879,18 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
             ))}
           </div>
 
+          {/* Status padrão para todos os itens */}
+          <F label="Status dos itens">
+            <div className="flex gap-2 flex-wrap">
+              {(Object.entries(STATUS_MATERIAL) as [ObraMaterial['status'], { label: string; cls: string }][]).map(([key, cfg]) => (
+                <button key={key} type="button" onClick={() => setStatusPadrao(key)}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border-2 transition-all ${statusPadrao === key ? cfg.cls + ' border-current' : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                  {cfg.label}
+                </button>
+              ))}
+            </div>
+          </F>
+
           {/* Cabeçalho da NF */}
           <div className="grid grid-cols-2 gap-3">
             <F label="Número da NF">
@@ -1861,12 +1900,32 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
               <input type="date" className="field" value={dataCompra} onChange={e => setDataCompra(e.target.value)} />
             </F>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <F label="Fornecedor">
               <input className="field" value={fornecedor} onChange={e => setFornecedor(e.target.value)} placeholder="Nome da empresa" />
             </F>
             <F label="Quem comprou">
               <input className="field" value={comprador} onChange={e => setComprador(e.target.value)} placeholder="Nome" />
+            </F>
+          </div>
+
+          {/* Logística */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <F label="Prev. chegada">
+              <input type="date" className="field" value={dataPrevista} onChange={e => setDataPrevista(e.target.value)} />
+            </F>
+            <F label="Data chegada real">
+              <input type="date" className="field" value={dataChegada} onChange={e => setDataChegada(e.target.value)} />
+            </F>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <F label="Local de chegada">
+              <input className="field" value={localChegada} onChange={e => setLocalChegada(e.target.value)} placeholder="Ex: Almoxarifado MARV" />
+            </F>
+            <F label="Destino / Para onde foi">
+              <input className="field" value={destino} onChange={e => setDestino(e.target.value)} placeholder="Ex: Obra Projac" />
             </F>
           </div>
 
@@ -1922,15 +1981,39 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
             </div>
           </div>
 
+          {/* Nota Fiscal anexo */}
+          <F label="Nota Fiscal (PDF ou imagem)">
+            <div className="flex items-center gap-3 flex-wrap">
+              {nfUrl && (
+                <a href={nfUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg">
+                  <FileText size={13} /> Ver NF anexada
+                </a>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
+                {uploadingNf ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {uploadingNf ? 'Enviando...' : nfUrl ? 'Trocar NF' : 'Anexar NF'}
+                <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadNF(f) }} />
+              </label>
+              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+            </div>
+          </F>
+
+          {/* Observações */}
+          <F label="Observações">
+            <textarea className="field resize-none" rows={2} value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Informações adicionais..." />
+          </F>
+
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
               Cancelar
             </button>
-            <button onClick={salvar} disabled={saving || itens.every(it => !it.descricao.trim())}
+            <button onClick={salvar} disabled={saving || itensValidos === 0}
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              {saving ? 'Salvando...' : `Salvar ${itens.filter(it => it.descricao.trim()).length} ite${itens.filter(it => it.descricao.trim()).length === 1 ? 'm' : 'ns'}`}
+              {saving ? 'Salvando...' : `Salvar ${itensValidos} ite${itensValidos === 1 ? 'm' : 'ns'}`}
             </button>
           </div>
         </div>
