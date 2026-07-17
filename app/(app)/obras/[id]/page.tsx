@@ -216,9 +216,11 @@ export default function ObraDetailPage() {
           const titulo = r['Etapa'] || r['Nome'] || r['Titulo'] || r['título'] || r['etapa'] || `Etapa ${i + 1}`
           const responsavel = r['Responsável'] || r['Responsavel'] || r['responsavel'] || ''
           const cor = r['Cor'] || r['cor'] || r['Color'] || ''
+          const numeroItem = r['Item'] || r['Número'] || r['Numero'] || r['numero_item'] || r['WBS'] || ''
           return {
             obra_id: id,
             titulo: String(titulo).trim(),
+            numero_item: numeroItem ? String(numeroItem).trim() : null,
             responsavel: responsavel ? String(responsavel).trim() : null,
             data_inicio: parseDate(r['Início'] || r['Inicio'] || r['Data Início'] || r['Data Inicio'] || r['inicio']),
             data_fim: parseDate(r['Fim'] || r['Término'] || r['Termino'] || r['Data Fim'] || r['fim']),
@@ -948,6 +950,7 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
 }) {
   const editing = !!etapa
   const [titulo, setTitulo] = useState(etapa?.titulo ?? '')
+  const [numeroItem, setNumeroItem] = useState(etapa?.numero_item ?? '')
   const [responsavel, setResponsavel] = useState(etapa?.responsavel ?? '')
   const [dataInicio, setDataInicio] = useState(etapa?.data_inicio ?? '')
   const [dataFim, setDataFim] = useState(etapa?.data_fim ?? '')
@@ -972,6 +975,7 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
     const payload = {
       obra_id: obraId,
       titulo: titulo.trim(),
+      numero_item: numeroItem.trim() || null,
       responsavel: responsavel.trim() || null,
       data_inicio: dataInicio || null,
       data_fim: dataFim || null,
@@ -996,9 +1000,15 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-[#64748B] mb-1">Título *</label>
-            <input required className="field" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Instalação de fancoils" />
+          <div className="grid grid-cols-[80px_1fr] gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#64748B] mb-1">Item</label>
+              <input className="field font-mono" value={numeroItem} onChange={e => setNumeroItem(e.target.value)} placeholder="1.1" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#64748B] mb-1">Título *</label>
+              <input required className="field" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Instalação de fancoils" />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1458,7 +1468,6 @@ const GANTT_COLORS = [
   '#4F7CFF','#10B981','#F59E0B','#EF4444','#8B5CF6',
   '#06B6D4','#F97316','#EC4899','#6B7280','#0F172A',
 ]
-const DAY_W = 22 // px per day
 
 function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
   etapas: CronogramaEtapa[]
@@ -1466,6 +1475,8 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
   onDelete: (id: string) => void
   onProgressUpdate: () => void
 }) {
+  const [dayW, setDayW] = useState(22)
+
   const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'
   const fmtFull = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
 
@@ -1482,20 +1493,19 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
     minDate.setDate(minDate.getDate() - 3)
     maxDate.setDate(maxDate.getDate() + 7)
     totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / 86400000) + 1
-
     const cur = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
     while (cur <= maxDate) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1) }
   }
 
   const today = new Date()
-  const todayLeft = hasGantt ? Math.floor((today.getTime() - minDate.getTime()) / 86400000) * DAY_W : -1
+  const todayLeft = hasGantt ? Math.floor((today.getTime() - minDate.getTime()) / 86400000) * dayW : -1
 
   function barStyle(e: CronogramaEtapa) {
     if (!e.data_inicio || !e.data_fim) return null
     const s = new Date(e.data_inicio + 'T00:00:00')
     const en = new Date(e.data_fim + 'T00:00:00')
-    const left = Math.floor((s.getTime() - minDate.getTime()) / 86400000) * DAY_W
-    const w = Math.max(DAY_W, Math.ceil((en.getTime() - s.getTime()) / 86400000) * DAY_W)
+    const left = Math.floor((s.getTime() - minDate.getTime()) / 86400000) * dayW
+    const w = Math.max(dayW, Math.ceil((en.getTime() - s.getTime()) / 86400000) * dayW)
     return { left, width: w }
   }
 
@@ -1503,38 +1513,61 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
     const y = m.getFullYear(), mo = m.getMonth()
     const start = new Date(Math.max(minDate.getTime(), new Date(y, mo, 1).getTime()))
     const end = new Date(Math.min(maxDate.getTime(), new Date(y, mo + 1, 0).getTime()))
-    return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1) * DAY_W
+    return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1) * dayW
   }
 
-  const LEFT_W = 640
-  const ROW_H = 40
+  // Determinar se uma linha é grupo (numero_item sem ponto, ex: "1", "2") ou subitem ("1.1", "1.2")
+  function isGroup(e: CronogramaEtapa) {
+    if (!e.numero_item) return false
+    return !e.numero_item.includes('.')
+  }
+
+  const ITEM_W = 56
+  const LEFT_W = 56 + 220 + 100 + 80 + 70 + 48 + 56 // item+cor | title | resp | inicio | fim | % | actions = 630
+  const ROW_H = 38
 
   return (
     <div className="card p-0 overflow-hidden">
+      {/* Zoom toolbar */}
+      {hasGantt && (
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[#E2E8F0] bg-[#FAFBFF]">
+          <span className="text-[11px] text-[#64748B] font-medium">Zoom do Gantt</span>
+          <button onClick={() => setDayW(d => Math.max(8, d - 4))}
+            className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] hover:bg-[#EEF2FF] text-[#64748B] hover:text-[#4F7CFF] text-sm font-bold transition-colors">−</button>
+          <input type="range" min={8} max={48} step={2} value={dayW}
+            onChange={e => setDayW(Number(e.target.value))}
+            className="w-28 accent-[#4F7CFF] h-1" />
+          <button onClick={() => setDayW(d => Math.min(48, d + 4))}
+            className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] hover:bg-[#EEF2FF] text-[#64748B] hover:text-[#4F7CFF] text-sm font-bold transition-colors">+</button>
+          <span className="text-[10px] text-[#94A3B8]">{dayW}px/dia</span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <div className="w-4 h-px bg-red-400" />
+            <span className="text-[10px] text-[#94A3B8]">Hoje — {today.toLocaleDateString('pt-BR')}</span>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
-        <div style={{ minWidth: LEFT_W + (hasGantt ? totalDays * DAY_W : 0) }}>
+        <div style={{ minWidth: LEFT_W + (hasGantt ? totalDays * dayW : 0) }}>
 
           {/* ── Header ── */}
-          <div className="flex border-b border-[#E2E8F0] bg-[#F8FAFC]" style={{ height: 32 }}>
-            {/* Left header */}
+          <div className="flex border-b border-[#E2E8F0] bg-[#F8FAFC]" style={{ height: 30 }}>
             <div className="shrink-0 flex items-center border-r border-[#E2E8F0]" style={{ width: LEFT_W }}>
-              <span className="text-[11px] font-semibold text-[#64748B] px-3 w-8">#</span>
-              <span className="text-[11px] font-semibold text-[#64748B] flex-1 px-2">Etapa</span>
-              <span className="text-[11px] font-semibold text-[#64748B] w-24 px-2">Responsável</span>
-              <span className="text-[11px] font-semibold text-[#64748B] w-20 px-2">Início</span>
-              <span className="text-[11px] font-semibold text-[#64748B] w-16 px-2">Fim</span>
-              <span className="text-[11px] font-semibold text-[#64748B] w-12 px-2 text-center">%</span>
-              <span className="w-14" />
+              <span className="text-[11px] font-semibold text-[#64748B] px-2 shrink-0" style={{ width: ITEM_W }}>Item</span>
+              <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 220 }}>Etapa</span>
+              <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 100 }}>Responsável</span>
+              <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 80 }}>Início</span>
+              <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 70 }}>Fim</span>
+              <span className="text-[11px] font-semibold text-[#64748B] px-2 text-center" style={{ width: 48 }}>%</span>
+              <span style={{ width: 56 }} />
             </div>
-            {/* Month headers */}
             {hasGantt && (
-              <div className="flex relative" style={{ width: totalDays * DAY_W }}>
+              <div className="flex" style={{ width: totalDays * dayW }}>
                 {months.map((m, i) => {
                   const w = monthWidth(m)
                   if (w <= 0) return null
                   return (
-                    <div key={i} className="border-r border-[#E2E8F0] flex items-center justify-center shrink-0"
-                      style={{ width: w }}>
+                    <div key={i} className="border-r border-[#E2E8F0] flex items-center justify-center shrink-0" style={{ width: w }}>
                       <span className="text-[11px] font-semibold text-[#64748B]">
                         {m.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '')}
                       </span>
@@ -1546,71 +1579,72 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
           </div>
 
           {/* ── Rows ── */}
-          {etapas.map((etapa, idx) => {
+          {etapas.map(etapa => {
             const bar = hasGantt ? barStyle(etapa) : null
             const cor = etapa.cor || '#4F7CFF'
+            const grupo = isGroup(etapa)
+            const subitem = !!etapa.numero_item && etapa.numero_item.includes('.')
             const st = etapa.status === 'Concluída' ? 'bg-emerald-50 text-emerald-700'
               : etapa.status === 'Em Andamento' ? 'bg-blue-50 text-blue-700'
               : etapa.status === 'Atrasada' ? 'bg-red-50 text-red-600'
               : 'bg-slate-100 text-slate-600'
+
             return (
-              <div key={etapa.id} className="flex border-b border-[#F1F5F9] hover:bg-[#FAFBFF] group transition-colors"
-                style={{ height: ROW_H }}>
+              <div key={etapa.id}
+                className={`flex border-b group transition-colors ${grupo ? 'bg-[#F8FAFC] hover:bg-[#F1F5F9]' : 'hover:bg-[#FAFBFF]'}`}
+                style={{ height: grupo ? ROW_H + 4 : ROW_H, borderColor: grupo ? '#E2E8F0' : '#F1F5F9' }}>
+
                 {/* Left cells */}
                 <div className="shrink-0 flex items-center border-r border-[#E2E8F0]" style={{ width: LEFT_W }}>
-                  {/* Color dot + index */}
-                  <div className="w-8 shrink-0 flex items-center justify-center">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cor }} />
+                  {/* Item número + cor dot */}
+                  <div className="flex items-center gap-1.5 px-2 shrink-0" style={{ width: ITEM_W }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cor }} />
+                    <span className={`text-[11px] font-mono shrink-0 ${grupo ? 'font-bold text-[#0F172A]' : 'text-[#64748B]'}`}>
+                      {etapa.numero_item || ''}
+                    </span>
                   </div>
-                  {/* Title + status */}
-                  <div className="flex-1 px-2 min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs font-medium text-[#0F172A] truncate">{etapa.titulo}</span>
+                  {/* Title */}
+                  <div className="flex items-center gap-1.5 px-2 min-w-0" style={{ width: 220 }}>
+                    <span className={`text-xs truncate ${grupo ? 'font-bold text-[#0F172A]' : subitem ? 'text-[#374151] pl-2' : 'font-medium text-[#0F172A]'}`}>
+                      {etapa.titulo}
+                    </span>
+                    {!grupo && (
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${st}`}>{etapa.status}</span>
-                    </div>
+                    )}
+                    {grupo && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${st}`}>{etapa.status}</span>
+                    )}
                   </div>
-                  <span className="text-xs text-[#64748B] w-24 px-2 truncate shrink-0">{etapa.responsavel || '—'}</span>
-                  <span className="text-xs text-[#64748B] w-20 px-2 shrink-0">{fmt(etapa.data_inicio)}</span>
-                  <span className="text-xs text-[#64748B] w-16 px-2 shrink-0">{fmt(etapa.data_fim)}</span>
-                  <span className="text-xs font-semibold text-[#4F7CFF] w-12 px-2 text-center shrink-0">{etapa.progresso}%</span>
-                  {/* Actions */}
-                  <div className="w-14 flex items-center gap-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button onClick={() => onEdit(etapa)} className="p-1 rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
-                      <Pencil size={12} />
-                    </button>
-                    <button onClick={() => onDelete(etapa.id)} className="p-1 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors">
-                      <Trash2 size={12} />
-                    </button>
+                  <span className="text-xs text-[#64748B] px-2 truncate" style={{ width: 100 }}>{etapa.responsavel || '—'}</span>
+                  <span className="text-xs text-[#64748B] px-2" style={{ width: 80 }}>{fmt(etapa.data_inicio)}</span>
+                  <span className="text-xs text-[#64748B] px-2" style={{ width: 70 }}>{fmt(etapa.data_fim)}</span>
+                  <span className={`text-xs font-semibold px-2 text-center ${grupo ? 'text-[#0F172A]' : 'text-[#4F7CFF]'}`} style={{ width: 48 }}>{etapa.progresso}%</span>
+                  <div className="flex items-center gap-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ width: 56 }}>
+                    <button onClick={() => onEdit(etapa)} className="p-1 rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={12} /></button>
+                    <button onClick={() => onDelete(etapa.id)} className="p-1 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
                   </div>
                 </div>
 
                 {/* Gantt area */}
                 {hasGantt && (
-                  <div className="relative" style={{ width: totalDays * DAY_W }}>
-                    {/* Weekend/today bg lines */}
-                    {todayLeft >= 0 && todayLeft <= totalDays * DAY_W && (
-                      <div className="absolute top-0 bottom-0 w-px bg-red-400 z-10 opacity-70" style={{ left: todayLeft }} />
+                  <div className="relative" style={{ width: totalDays * dayW }}>
+                    {todayLeft >= 0 && todayLeft <= totalDays * dayW && (
+                      <div className="absolute top-0 bottom-0 w-px bg-red-400 z-10 opacity-60" style={{ left: todayLeft }} />
                     )}
                     {bar && (
-                      <div
-                        className="absolute rounded-md overflow-hidden"
+                      <div className="absolute rounded-md overflow-hidden"
                         style={{
-                          left: bar.left + 2,
-                          width: bar.width - 4,
-                          top: 8,
-                          height: ROW_H - 16,
-                          background: cor + '33',
-                          border: `1.5px solid ${cor}`,
+                          left: bar.left + 2, width: bar.width - 4,
+                          top: grupo ? 10 : 8, height: (grupo ? ROW_H + 4 : ROW_H) - (grupo ? 20 : 16),
+                          background: cor + (grupo ? '25' : '22'),
+                          border: `${grupo ? 2 : 1.5}px solid ${cor}${grupo ? '' : 'AA'}`,
                         }}
                         title={`${etapa.titulo}: ${fmtFull(etapa.data_inicio)} – ${fmtFull(etapa.data_fim)} (${etapa.progresso}%)`}
                       >
-                        {/* Progress fill */}
-                        <div className="h-full rounded-md" style={{ width: `${etapa.progresso}%`, background: cor + 'BB' }} />
-                        {/* Label inside bar if wide enough */}
-                        {bar.width > 80 && (
-                          <span className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold truncate"
-                            style={{ color: cor }}>
-                            {etapa.progresso}%
+                        <div className="h-full rounded-md" style={{ width: `${etapa.progresso}%`, background: cor + (grupo ? 'AA' : '88') }} />
+                        {bar.width > 60 && (
+                          <span className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold truncate" style={{ color: cor }}>
+                            {etapa.progresso > 0 ? `${etapa.progresso}%` : ''}
                           </span>
                         )}
                       </div>
@@ -1620,14 +1654,6 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
               </div>
             )
           })}
-
-          {/* Today legend */}
-          {hasGantt && (
-            <div className="flex items-center gap-1.5 px-4 py-2 border-t border-[#F1F5F9] bg-[#FAFBFF]">
-              <div className="w-3 h-px bg-red-400" />
-              <span className="text-[10px] text-[#94A3B8]">Hoje — {today.toLocaleDateString('pt-BR')}</span>
-            </div>
-          )}
         </div>
       </div>
     </div>
