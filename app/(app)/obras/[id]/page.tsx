@@ -252,6 +252,12 @@ export default function ObraDetailPage() {
     load()
   }
 
+  async function excluirEtapas(ids: string[]) {
+    const supabase = createClient()
+    await supabase.from('cronograma_etapas').delete().in('id', ids)
+    load()
+  }
+
   async function load() {
     setLoading(true)
     const supabase = createClient()
@@ -710,6 +716,7 @@ export default function ObraDetailPage() {
                 etapas={etapas}
                 onEdit={e => { setEditandoEtapa(e); setShowNovaEtapa(true) }}
                 onDelete={excluirEtapa}
+                onDeleteMany={excluirEtapas}
                 onProgressUpdate={load}
               />
             )}
@@ -1620,13 +1627,31 @@ const GANTT_COLORS = [
   '#06B6D4','#F97316','#EC4899','#6B7280','#0F172A',
 ]
 
-function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
+function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }: {
   etapas: CronogramaEtapa[]
   onEdit: (e: CronogramaEtapa) => void
   onDelete: (id: string) => void
+  onDeleteMany: (ids: string[]) => void
   onProgressUpdate: () => void
 }) {
   const [dayW, setDayW] = useState(22)
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
+
+  function toggleSel(id: string) {
+    setSelecionadas(prev => {
+      const n = new Set(prev)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+  function toggleAll() {
+    setSelecionadas(prev => prev.size === etapas.length ? new Set() : new Set(etapas.map(e => e.id)))
+  }
+  function excluirSelecionadas() {
+    if (!confirm(`Excluir ${selecionadas.size} etapa${selecionadas.size > 1 ? 's' : ''} selecionada${selecionadas.size > 1 ? 's' : ''}?`)) return
+    onDeleteMany([...selecionadas])
+    setSelecionadas(new Set())
+  }
 
   const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'
   const fmtFull = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -1673,8 +1698,9 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
     return !e.numero_item.includes('.')
   }
 
+  const CHK_W = 36
   const ITEM_W = 56
-  const LEFT_W = 56 + 220 + 100 + 80 + 70 + 48 + 56 // item+cor | title | resp | inicio | fim | % | actions = 630
+  const LEFT_W = CHK_W + ITEM_W + 220 + 100 + 80 + 70 + 48 + 56
   const ROW_H = 38
 
   return (
@@ -1698,12 +1724,35 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
         </div>
       )}
 
+      {/* Barra de seleção múltipla */}
+      {selecionadas.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-[#EEF2FF] border-b border-[#C7D2FE]">
+          <span className="text-sm font-medium text-[#4F7CFF]">{selecionadas.size} etapa{selecionadas.size > 1 ? 's' : ''} selecionada{selecionadas.size > 1 ? 's' : ''}</span>
+          <button onClick={excluirSelecionadas}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors">
+            <Trash2 size={12} /> Excluir selecionadas
+          </button>
+          <button onClick={() => setSelecionadas(new Set())}
+            className="ml-auto text-xs text-[#64748B] hover:text-[#0F172A] transition-colors">
+            Cancelar seleção
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <div style={{ minWidth: LEFT_W + (hasGantt ? totalDays * dayW : 0) }}>
 
           {/* ── Header ── */}
           <div className="flex border-b border-[#E2E8F0] bg-[#F8FAFC]" style={{ height: 30 }}>
             <div className="shrink-0 flex items-center border-r border-[#E2E8F0]" style={{ width: LEFT_W }}>
+              {/* Checkbox selecionar tudo */}
+              <div className="flex items-center justify-center shrink-0" style={{ width: CHK_W }}>
+                <input type="checkbox"
+                  checked={selecionadas.size === etapas.length && etapas.length > 0}
+                  ref={el => { if (el) el.indeterminate = selecionadas.size > 0 && selecionadas.size < etapas.length }}
+                  onChange={toggleAll}
+                  className="w-3.5 h-3.5 accent-[#4F7CFF] cursor-pointer" />
+              </div>
               <span className="text-[11px] font-semibold text-[#64748B] px-2 shrink-0" style={{ width: ITEM_W }}>Item</span>
               <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 220 }}>Etapa</span>
               <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 100 }}>Responsável</span>
@@ -1747,6 +1796,13 @@ function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
 
                 {/* Left cells */}
                 <div className="shrink-0 flex items-center border-r border-[#E2E8F0]" style={{ width: LEFT_W }}>
+                  {/* Checkbox */}
+                  <div className="flex items-center justify-center shrink-0" style={{ width: CHK_W }}>
+                    <input type="checkbox"
+                      checked={selecionadas.has(etapa.id)}
+                      onChange={() => toggleSel(etapa.id)}
+                      className="w-3.5 h-3.5 accent-[#4F7CFF] cursor-pointer" />
+                  </div>
                   {/* Item número + cor dot */}
                   <div className="flex items-center gap-1.5 px-2 shrink-0" style={{ width: ITEM_W }}>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cor }} />
