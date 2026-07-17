@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -184,6 +184,7 @@ export default function ObraDetailPage() {
   const [showNovaPasta, setShowNovaPasta] = useState(false)
   const [pastaParaDoc, setPastaParaDoc] = useState<string>('Geral')
   const [importandoExcel, setImportandoExcel] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   async function importarExcelCronograma(file: File) {
     setImportandoExcel(true)
@@ -684,12 +685,11 @@ export default function ObraDetailPage() {
                 <p className="text-xs text-[#64748B] mt-0.5">{totalEtapas} etapa{totalEtapas !== 1 ? 's' : ''} · {progressoGeral}% concluído{atrasadas > 0 ? ` · ${atrasadas} atrasada${atrasadas !== 1 ? 's' : ''}` : ''}</p>
               </div>
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors cursor-pointer">
+                <button onClick={() => setShowImportModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors cursor-pointer">
                   {importandoExcel ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
                   <span className="hidden sm:inline">Importar Excel</span>
-                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={importandoExcel}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) importarExcelCronograma(f); e.target.value = '' }} />
-                </label>
+                </button>
                 <button onClick={() => { setEditandoEtapa(null); setShowNovaEtapa(true) }} className="btn-primary text-sm">
                   <PlusCircle size={15} /> Nova Etapa
                 </button>
@@ -903,6 +903,15 @@ export default function ObraDetailPage() {
         />
       )}
 
+      {/* Modal Importar Excel */}
+      {showImportModal && (
+        <ModalImportacaoExcel
+          importando={importandoExcel}
+          onClose={() => setShowImportModal(false)}
+          onImport={file => { setShowImportModal(false); importarExcelCronograma(file) }}
+        />
+      )}
+
       {/* Modal Etapa */}
       {showNovaEtapa && (
         <ModalEtapa
@@ -944,6 +953,148 @@ function InfoRow({ icon, label, value, highlight, className }: { icon: React.Rea
   )
 }
 
+
+function ModalImportacaoExcel({ importando, onClose, onImport }: {
+  importando: boolean
+  onClose: () => void
+  onImport: (file: File) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const colunas = [
+    { col: 'Item', tipo: 'Texto', obrig: false, ex: '1, 1.1, 2, 2.1', desc: 'Número WBS (grupo / subitem)' },
+    { col: 'Etapa', tipo: 'Texto', obrig: true,  ex: 'Instalação de fancoils', desc: 'Título da etapa' },
+    { col: 'Responsável', tipo: 'Texto', obrig: false, ex: 'João Silva', desc: 'Nome do responsável' },
+    { col: 'Início', tipo: 'Data', obrig: false, ex: '01/07/2025', desc: 'Data de início (dd/mm/aaaa)' },
+    { col: 'Fim', tipo: 'Data', obrig: false, ex: '15/07/2025', desc: 'Data de término (dd/mm/aaaa)' },
+    { col: 'Progresso', tipo: 'Número', obrig: false, ex: '50', desc: 'Percentual concluído (0–100)' },
+    { col: 'Cor', tipo: 'Texto', obrig: false, ex: '#4F7CFF', desc: 'Cor hex para o Gantt (opcional)' },
+  ]
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#EEF2FF] flex items-center justify-center">
+              <FileSpreadsheet size={16} className="text-[#4F7CFF]" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-[#0F172A] text-sm">Importar Cronograma via Excel</h2>
+              <p className="text-[11px] text-[#64748B]">Monte sua planilha seguindo a estrutura abaixo</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+
+          {/* Estrutura da planilha */}
+          <div>
+            <h3 className="text-xs font-semibold text-[#0F172A] uppercase tracking-wide mb-3">Colunas da planilha</h3>
+            <div className="border border-[#E2E8F0] rounded-xl overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                    <th className="text-left px-3 py-2.5 font-semibold text-[#64748B]">Coluna</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-[#64748B]">Tipo</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-[#64748B] hidden sm:table-cell">Obrigatório</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-[#64748B] hidden md:table-cell">Exemplo</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-[#64748B]">Descrição</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {colunas.map((c, i) => (
+                    <tr key={c.col} className={i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFF]'}>
+                      <td className="px-3 py-2.5">
+                        <span className="font-mono font-semibold text-[#4F7CFF] bg-[#EEF2FF] px-1.5 py-0.5 rounded">{c.col}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-[#64748B]">{c.tipo}</td>
+                      <td className="px-3 py-2.5 hidden sm:table-cell">
+                        {c.obrig
+                          ? <span className="text-red-500 font-semibold">Sim</span>
+                          : <span className="text-[#94A3B8]">Não</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-[#64748B] font-mono hidden md:table-cell">{c.ex}</td>
+                      <td className="px-3 py-2.5 text-[#64748B]">{c.desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Exemplo visual */}
+          <div>
+            <h3 className="text-xs font-semibold text-[#0F172A] uppercase tracking-wide mb-3">Exemplo de planilha</h3>
+            <div className="overflow-x-auto border border-[#E2E8F0] rounded-xl">
+              <table className="text-[11px] font-mono whitespace-nowrap">
+                <thead>
+                  <tr className="bg-[#4F7CFF] text-white">
+                    {['Item','Etapa','Responsável','Início','Fim','Progresso','Cor'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-[#F1F5F9]">
+                  {[
+                    ['1','Fundação e Estrutura','Carlos','01/07/2025','31/07/2025','100','#10B981'],
+                    ['1.1','Escavação','Carlos','01/07/2025','10/07/2025','100','#10B981'],
+                    ['1.2','Concretagem','Maria','11/07/2025','31/07/2025','100','#10B981'],
+                    ['2','Instalações HVAC','João','01/08/2025','30/09/2025','40','#4F7CFF'],
+                    ['2.1','Instalação de dutos','João','01/08/2025','20/08/2025','80','#4F7CFF'],
+                    ['2.2','Fancoils e UTAs','Pedro','21/08/2025','30/09/2025','10','#4F7CFF'],
+                  ].map((row, i) => (
+                    <tr key={i} className={i % 2 === 0 ? '' : 'bg-[#FAFBFF]'}>
+                      {row.map((cell, j) => (
+                        <td key={j} className="px-3 py-1.5 text-[#374151]">
+                          {j === 6 ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-3 h-3 rounded-full" style={{ background: cell }} />
+                              {cell}
+                            </span>
+                          ) : cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Dicas */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-1.5">
+            <p className="text-xs font-semibold text-amber-800">Dicas importantes</p>
+            <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+              <li>A primeira linha deve ser o cabeçalho com os nomes das colunas exatamente como mostrado.</li>
+              <li>Datas no formato <strong>dd/mm/aaaa</strong> ou datas nativas do Excel (ambos são aceitos).</li>
+              <li>Linhas com coluna <strong>Item</strong> sem ponto (ex: <code>1</code>, <code>2</code>) são tratadas como <strong>grupos</strong> no Gantt.</li>
+              <li>A coluna <strong>Cor</strong> é opcional — se omitida, será usada a cor padrão azul.</li>
+              <li>Formatos aceitos: <strong>.xlsx</strong>, <strong>.xls</strong> e <strong>.csv</strong>.</li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-[#E2E8F0] flex items-center justify-between shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">
+            Cancelar
+          </button>
+          <label className={`btn-primary cursor-pointer ${importando ? 'opacity-60 pointer-events-none' : ''}`}>
+            {importando ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+            {importando ? 'Importando...' : 'Selecionar arquivo e importar'}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              ref={inputRef}
+              onChange={e => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = '' }} />
+          </label>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
   obraId: string; ordem: number; etapa: CronogramaEtapa | null; onClose: () => void; onSaved: () => void
