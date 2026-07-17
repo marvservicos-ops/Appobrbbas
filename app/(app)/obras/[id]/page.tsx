@@ -179,6 +179,7 @@ export default function ObraDetailPage() {
 
   // Modals
   const [showNovaEtapa, setShowNovaEtapa] = useState(false)
+  const [editandoEtapa, setEditandoEtapa] = useState<CronogramaEtapa | null>(null)
   const [showAddDoc, setShowAddDoc] = useState(false)
   const [showNovaPasta, setShowNovaPasta] = useState(false)
   const [pastaParaDoc, setPastaParaDoc] = useState<string>('Geral')
@@ -194,28 +195,27 @@ export default function ObraDetailPage() {
       const rows: any[] = utils.sheet_to_json(ws, { defval: '' })
 
       const supabase = createClient()
+      const parseDate = (v: any) => {
+        if (!v) return null
+        if (typeof v === 'number') {
+          const d = new Date(Math.round((v - 25569) * 86400 * 1000))
+          return d.toISOString().split('T')[0]
+        }
+        const s = String(v).trim()
+        if (!s) return null
+        const parts = s.split(/[/\-.]/)
+        if (parts.length === 3) {
+          if (parts[0].length <= 2) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+          return `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`
+        }
+        return null
+      }
       const etapasParaInserir = rows
         .filter(r => r['Etapa'] || r['Nome'] || r['Titulo'] || r['título'] || r['etapa'])
         .map((r, i) => {
           const titulo = r['Etapa'] || r['Nome'] || r['Titulo'] || r['título'] || r['etapa'] || `Etapa ${i + 1}`
           const responsavel = r['Responsável'] || r['Responsavel'] || r['responsavel'] || ''
-          const parseDate = (v: any) => {
-            if (!v) return null
-            if (typeof v === 'number') {
-              // Excel serial date
-              const d = new Date(Math.round((v - 25569) * 86400 * 1000))
-              return d.toISOString().split('T')[0]
-            }
-            const s = String(v).trim()
-            if (!s) return null
-            const parts = s.split(/[/\-.]/)
-            if (parts.length === 3) {
-              // dd/mm/yyyy
-              if (parts[0].length <= 2) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
-              return `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`
-            }
-            return null
-          }
+          const cor = r['Cor'] || r['cor'] || r['Color'] || ''
           return {
             obra_id: id,
             titulo: String(titulo).trim(),
@@ -224,6 +224,7 @@ export default function ObraDetailPage() {
             data_fim: parseDate(r['Fim'] || r['Término'] || r['Termino'] || r['Data Fim'] || r['fim']),
             progresso: parseInt(r['Progresso'] || r['%'] || '0') || 0,
             status: 'Pendente' as const,
+            cor: cor ? String(cor).trim() : '#4F7CFF',
             ordem: etapas.length + i + 1,
           }
         })
@@ -239,6 +240,13 @@ export default function ObraDetailPage() {
       alert('Erro ao ler o arquivo Excel.')
     }
     setImportandoExcel(false)
+  }
+
+  async function excluirEtapa(etapaId: string) {
+    if (!confirm('Excluir esta etapa?')) return
+    const supabase = createClient()
+    await supabase.from('cronograma_etapas').delete().eq('id', etapaId)
+    load()
   }
 
   async function load() {
@@ -666,70 +674,43 @@ export default function ObraDetailPage() {
 
         {/* ===== CRONOGRAMA ===== */}
         {tab === 'cronograma' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Left */}
-            <div className="space-y-4">
-              <div className="card">
-                <h3 className="font-syne font-semibold text-sm text-[#0F172A] mb-4">Status Geral</h3>
-                <div className="text-center mb-4">
-                  <div className="font-syne text-5xl font-bold text-[#4F7CFF]">{progressoGeral}%</div>
-                  <div className="text-xs text-[#64748B] mt-1">Concluído</div>
-                </div>
-                <div className="h-2 bg-[#F1F5F9] rounded-full mb-4 overflow-hidden">
-                  <div className="h-2 bg-[#4F7CFF] rounded-full transition-all" style={{ width: `${progressoGeral}%` }} />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-[#F8FAFC] rounded-lg p-3 text-center">
-                    <div className="font-syne text-xl font-bold text-[#0F172A]">{totalEtapas}</div>
-                    <div className="text-xs text-[#64748B]">Etapas</div>
-                  </div>
-                  <div className="bg-red-50 rounded-lg p-3 text-center">
-                    <div className="font-syne text-xl font-bold text-red-600">{atrasadas}</div>
-                    <div className="text-xs text-red-500">Atrasadas</div>
-                  </div>
-                </div>
+          <div>
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-semibold text-[#0F172A]">Cronograma de Execução</h2>
+                <p className="text-xs text-[#64748B] mt-0.5">{totalEtapas} etapa{totalEtapas !== 1 ? 's' : ''} · {progressoGeral}% concluído{atrasadas > 0 ? ` · ${atrasadas} atrasada${atrasadas !== 1 ? 's' : ''}` : ''}</p>
               </div>
-
-              <div className="card p-0 overflow-hidden">
-                <div className="w-full h-44 bg-[#F1F5F9] flex flex-col items-center justify-center gap-2">
-                  <MapPin size={24} className="text-[#94A3B8]" />
-                  <p className="text-sm text-[#94A3B8]">Localização</p>
-                  {obra.endereco && <p className="text-xs text-[#CBD5E1] px-4 text-center">{obra.endereco}</p>}
-                </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors cursor-pointer">
+                  {importandoExcel ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                  <span className="hidden sm:inline">Importar Excel</span>
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={importandoExcel}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) importarExcelCronograma(f); e.target.value = '' }} />
+                </label>
+                <button onClick={() => { setEditandoEtapa(null); setShowNovaEtapa(true) }} className="btn-primary text-sm">
+                  <PlusCircle size={15} /> Nova Etapa
+                </button>
               </div>
             </div>
 
-            {/* Right: Etapas */}
-            <div className="lg:col-span-2">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-syne font-semibold text-[#0F172A]">Cronograma de Execução</h2>
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors cursor-pointer">
-                    {importandoExcel ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                    <span className="hidden sm:inline">Importar Excel</span>
-                    <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={importandoExcel}
-                      onChange={e => { const f = e.target.files?.[0]; if (f) importarExcelCronograma(f); e.target.value = '' }} />
-                  </label>
-                  <button onClick={() => setShowNovaEtapa(true)} className="btn-primary text-sm">
-                    <PlusCircle size={16} />
-                    <span className="hidden sm:inline">Nova </span>Etapa
-                  </button>
-                </div>
+            {etapas.length === 0 ? (
+              <div className="card text-center py-16">
+                <Calendar size={36} className="text-[#CBD5E1] mx-auto mb-3" />
+                <p className="font-medium text-[#374151]">Nenhuma etapa cadastrada</p>
+                <p className="text-sm text-[#94A3B8] mt-1 mb-4">Adicione etapas manualmente ou importe uma planilha Excel</p>
+                <button onClick={() => setShowNovaEtapa(true)} className="btn-primary mx-auto text-sm">
+                  <PlusCircle size={14} /> Adicionar primeira etapa
+                </button>
               </div>
-
-              <div className="space-y-3">
-                {etapas.length === 0 ? (
-                  <div className="card text-center py-12">
-                    <p className="text-[#94A3B8] text-sm mb-3">Nenhuma etapa cadastrada ainda.</p>
-                    <button onClick={() => setShowNovaEtapa(true)} className="btn-primary mx-auto">
-                      <PlusCircle size={16} /> Adicionar primeira etapa
-                    </button>
-                  </div>
-                ) : etapas.map((etapa, idx) => (
-                  <EtapaCard key={etapa.id} etapa={etapa} index={idx} obraId={id} onUpdated={load} />
-                ))}
-              </div>
-            </div>
+            ) : (
+              <GanttView
+                etapas={etapas}
+                onEdit={e => { setEditandoEtapa(e); setShowNovaEtapa(true) }}
+                onDelete={excluirEtapa}
+                onProgressUpdate={load}
+              />
+            )}
           </div>
         )}
 
@@ -920,13 +901,14 @@ export default function ObraDetailPage() {
         />
       )}
 
-      {/* Modal Nova Etapa */}
+      {/* Modal Etapa */}
       {showNovaEtapa && (
-        <ModalNovaEtapa
+        <ModalEtapa
           obraId={id}
           ordem={etapas.length + 1}
-          onClose={() => setShowNovaEtapa(false)}
-          onCreated={() => { setShowNovaEtapa(false); load() }}
+          etapa={editandoEtapa}
+          onClose={() => { setShowNovaEtapa(false); setEditandoEtapa(null) }}
+          onSaved={() => { setShowNovaEtapa(false); setEditandoEtapa(null); load() }}
         />
       )}
 
@@ -960,120 +942,126 @@ function InfoRow({ icon, label, value, highlight, className }: { icon: React.Rea
   )
 }
 
-function EtapaCard({ etapa, index, onUpdated }: { etapa: CronogramaEtapa; index: number; obraId?: string; onUpdated: () => void }) {
-  const [progress, setProgress] = useState(etapa.progresso)
-  const [saving, setSaving] = useState(false)
 
-  async function updateProgress(val: number) {
-    setProgress(val)
-    setSaving(true)
-    const supabase = createClient()
-    const newStatus: StatusEtapa = val === 100 ? 'Concluída' : val > 0 ? 'Em Andamento' : 'Pendente'
-    await supabase.from('cronograma_etapas').update({ progresso: val, status: newStatus }).eq('id', etapa.id)
-    setSaving(false)
-    onUpdated()
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-start gap-4">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-          etapa.status === 'Concluída' ? 'bg-emerald-100 text-emerald-700' :
-          etapa.status === 'Em Andamento' ? 'bg-blue-100 text-blue-700' :
-          etapa.status === 'Atrasada' ? 'bg-red-100 text-red-700' :
-          'bg-gray-100 text-gray-500'
-        }`}>
-          {index + 1}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-1">
-            <h4 className="font-syne font-semibold text-sm text-[#0F172A]">{etapa.titulo}</h4>
-            <StatusChip status={etapa.status} />
-          </div>
-          <div className="flex items-center gap-4 text-xs text-[#64748B] mb-3">
-            {etapa.responsavel && <span className="flex items-center gap-1"><User size={11} />{etapa.responsavel}</span>}
-            {etapa.data_inicio && etapa.data_fim && (
-              <span className="flex items-center gap-1">
-                <Calendar size={11} />
-                {new Date(etapa.data_inicio + 'T00:00:00').toLocaleDateString('pt-BR')} – {new Date(etapa.data_fim + 'T00:00:00').toLocaleDateString('pt-BR')}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={progress}
-              onChange={e => setProgress(Number(e.target.value))}
-              onMouseUp={e => updateProgress(Number((e.target as HTMLInputElement).value))}
-              onTouchEnd={e => updateProgress(Number((e.target as HTMLInputElement).value))}
-              className="flex-1 accent-[#4F7CFF] h-1.5"
-            />
-            <span className={`text-xs font-semibold w-10 text-right ${saving ? 'text-[#94A3B8]' : 'text-[#4F7CFF]'}`}>{progress}%</span>
-          </div>
-          {etapa.arquivo_nome && (
-            <a href={etapa.arquivo_url || '#'} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-[#4F7CFF] hover:underline">
-              <FileText size={11} /> {etapa.arquivo_nome}
-            </a>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ModalNovaEtapa({ obraId, ordem, onClose, onCreated }: { obraId: string; ordem: number; onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ titulo: '', responsavel: '', data_inicio: '', data_fim: '' })
+function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
+  obraId: string; ordem: number; etapa: CronogramaEtapa | null; onClose: () => void; onSaved: () => void
+}) {
+  const editing = !!etapa
+  const [titulo, setTitulo] = useState(etapa?.titulo ?? '')
+  const [responsavel, setResponsavel] = useState(etapa?.responsavel ?? '')
+  const [dataInicio, setDataInicio] = useState(etapa?.data_inicio ?? '')
+  const [dataFim, setDataFim] = useState(etapa?.data_fim ?? '')
+  const [progresso, setProgresso] = useState(etapa?.progresso ?? 0)
+  const [status, setStatus] = useState<StatusEtapa>(etapa?.status ?? 'Pendente')
+  const [cor, setCor] = useState(etapa?.cor ?? '#4F7CFF')
   const [loading, setLoading] = useState(false)
+
+  const STATUS_OPS: StatusEtapa[] = ['Pendente', 'Em Andamento', 'Concluída', 'Atrasada']
+  const STATUS_CLS: Record<StatusEtapa, string> = {
+    'Pendente': 'bg-slate-100 text-slate-600',
+    'Em Andamento': 'bg-blue-50 text-blue-700',
+    'Concluída': 'bg-emerald-50 text-emerald-700',
+    'Atrasada': 'bg-red-50 text-red-600',
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!titulo.trim()) return
     setLoading(true)
     const supabase = createClient()
-    await supabase.from('cronograma_etapas').insert({
+    const payload = {
       obra_id: obraId,
-      titulo: form.titulo,
-      responsavel: form.responsavel || null,
-      data_inicio: form.data_inicio || null,
-      data_fim: form.data_fim || null,
-      progresso: 0,
-      status: 'Pendente',
-      ordem,
-    })
-    onCreated()
+      titulo: titulo.trim(),
+      responsavel: responsavel.trim() || null,
+      data_inicio: dataInicio || null,
+      data_fim: dataFim || null,
+      progresso,
+      status,
+      cor,
+      ordem: etapa?.ordem ?? ordem,
+    }
+    if (editing) {
+      await supabase.from('cronograma_etapas').update(payload).eq('id', etapa!.id)
+    } else {
+      await supabase.from('cronograma_etapas').insert(payload)
+    }
+    onSaved()
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
-          <h2 className="font-syne font-semibold text-[#0F172A]">Nova Etapa</h2>
+          <h2 className="font-semibold text-[#0F172A]">{editing ? 'Editar Etapa' : 'Nova Etapa'}</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Título da Etapa *</label>
-            <input required className="field" value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} placeholder="Ex: Instalação de fancoils" />
+            <label className="block text-xs font-medium text-[#64748B] mb-1">Título *</label>
+            <input required className="field" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Instalação de fancoils" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável</label>
-            <input className="field" value={form.responsavel} onChange={e => setForm(f => ({ ...f, responsavel: e.target.value }))} placeholder="Nome do responsável" />
-          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">Data Início</label>
-              <input type="date" className="field" value={form.data_inicio} onChange={e => setForm(f => ({ ...f, data_inicio: e.target.value }))} />
+              <label className="block text-xs font-medium text-[#64748B] mb-1">Responsável</label>
+              <input className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">Data Fim</label>
-              <input type="date" className="field" value={form.data_fim} onChange={e => setForm(f => ({ ...f, data_fim: e.target.value }))} />
+              <label className="block text-xs font-medium text-[#64748B] mb-1">Status</label>
+              <select className="field" value={status} onChange={e => setStatus(e.target.value as StatusEtapa)}>
+                {STATUS_OPS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
           </div>
-          <div className="flex justify-end gap-3 pt-2">
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#64748B] mb-1">Data Início</label>
+              <input type="date" className="field" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#64748B] mb-1">Data Fim</label>
+              <input type="date" className="field" value={dataFim} onChange={e => setDataFim(e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[#64748B] mb-1">Progresso — {progresso}%</label>
+            <input type="range" min={0} max={100} step={5} value={progresso}
+              onChange={e => {
+                const v = Number(e.target.value)
+                setProgresso(v)
+                if (v === 100) setStatus('Concluída')
+                else if (v > 0) setStatus('Em Andamento')
+                else setStatus('Pendente')
+              }}
+              className="w-full accent-[#4F7CFF] h-1.5" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[#64748B] mb-2">Cor no Gantt</label>
+            <div className="flex gap-2 flex-wrap">
+              {GANTT_COLORS.map(c => (
+                <button key={c} type="button" onClick={() => setCor(c)}
+                  className="w-7 h-7 rounded-full border-2 transition-all"
+                  style={{
+                    background: c,
+                    borderColor: cor === c ? '#0F172A' : 'transparent',
+                    boxShadow: cor === c ? '0 0 0 2px white, 0 0 0 4px ' + c : 'none',
+                  }}
+                />
+              ))}
+              <div className="flex items-center gap-1.5 ml-1">
+                <span className="text-xs text-[#94A3B8]">ou</span>
+                <input type="color" value={cor} onChange={e => setCor(e.target.value)}
+                  className="w-7 h-7 rounded cursor-pointer border border-[#E2E8F0]" title="Cor personalizada" />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-[#E2E8F0]">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
-            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar Etapa'}</button>
+            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : editing ? 'Salvar Alterações' : 'Adicionar Etapa'}</button>
           </div>
         </form>
       </div>
@@ -1461,6 +1449,187 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
           </tbody>
         </table>
       )}
+    </div>
+  )
+}
+
+// ── GanttView ─────────────────────────────────────────
+const GANTT_COLORS = [
+  '#4F7CFF','#10B981','#F59E0B','#EF4444','#8B5CF6',
+  '#06B6D4','#F97316','#EC4899','#6B7280','#0F172A',
+]
+const DAY_W = 22 // px per day
+
+function GanttView({ etapas, onEdit, onDelete, onProgressUpdate }: {
+  etapas: CronogramaEtapa[]
+  onEdit: (e: CronogramaEtapa) => void
+  onDelete: (id: string) => void
+  onProgressUpdate: () => void
+}) {
+  const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'
+  const fmtFull = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
+
+  const withDates = etapas.filter(e => e.data_inicio && e.data_fim)
+  const hasGantt = withDates.length > 0
+
+  let minDate = new Date(), maxDate = new Date()
+  let totalDays = 30
+  let months: Date[] = []
+
+  if (hasGantt) {
+    minDate = new Date(Math.min(...withDates.map(e => new Date(e.data_inicio! + 'T00:00:00').getTime())))
+    maxDate = new Date(Math.max(...withDates.map(e => new Date(e.data_fim! + 'T00:00:00').getTime())))
+    minDate.setDate(minDate.getDate() - 3)
+    maxDate.setDate(maxDate.getDate() + 7)
+    totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / 86400000) + 1
+
+    const cur = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+    while (cur <= maxDate) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1) }
+  }
+
+  const today = new Date()
+  const todayLeft = hasGantt ? Math.floor((today.getTime() - minDate.getTime()) / 86400000) * DAY_W : -1
+
+  function barStyle(e: CronogramaEtapa) {
+    if (!e.data_inicio || !e.data_fim) return null
+    const s = new Date(e.data_inicio + 'T00:00:00')
+    const en = new Date(e.data_fim + 'T00:00:00')
+    const left = Math.floor((s.getTime() - minDate.getTime()) / 86400000) * DAY_W
+    const w = Math.max(DAY_W, Math.ceil((en.getTime() - s.getTime()) / 86400000) * DAY_W)
+    return { left, width: w }
+  }
+
+  function monthWidth(m: Date) {
+    const y = m.getFullYear(), mo = m.getMonth()
+    const start = new Date(Math.max(minDate.getTime(), new Date(y, mo, 1).getTime()))
+    const end = new Date(Math.min(maxDate.getTime(), new Date(y, mo + 1, 0).getTime()))
+    return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1) * DAY_W
+  }
+
+  const LEFT_W = 640
+  const ROW_H = 40
+
+  return (
+    <div className="card p-0 overflow-hidden">
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: LEFT_W + (hasGantt ? totalDays * DAY_W : 0) }}>
+
+          {/* ── Header ── */}
+          <div className="flex border-b border-[#E2E8F0] bg-[#F8FAFC]" style={{ height: 32 }}>
+            {/* Left header */}
+            <div className="shrink-0 flex items-center border-r border-[#E2E8F0]" style={{ width: LEFT_W }}>
+              <span className="text-[11px] font-semibold text-[#64748B] px-3 w-8">#</span>
+              <span className="text-[11px] font-semibold text-[#64748B] flex-1 px-2">Etapa</span>
+              <span className="text-[11px] font-semibold text-[#64748B] w-24 px-2">Responsável</span>
+              <span className="text-[11px] font-semibold text-[#64748B] w-20 px-2">Início</span>
+              <span className="text-[11px] font-semibold text-[#64748B] w-16 px-2">Fim</span>
+              <span className="text-[11px] font-semibold text-[#64748B] w-12 px-2 text-center">%</span>
+              <span className="w-14" />
+            </div>
+            {/* Month headers */}
+            {hasGantt && (
+              <div className="flex relative" style={{ width: totalDays * DAY_W }}>
+                {months.map((m, i) => {
+                  const w = monthWidth(m)
+                  if (w <= 0) return null
+                  return (
+                    <div key={i} className="border-r border-[#E2E8F0] flex items-center justify-center shrink-0"
+                      style={{ width: w }}>
+                      <span className="text-[11px] font-semibold text-[#64748B]">
+                        {m.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '')}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Rows ── */}
+          {etapas.map((etapa, idx) => {
+            const bar = hasGantt ? barStyle(etapa) : null
+            const cor = etapa.cor || '#4F7CFF'
+            const st = etapa.status === 'Concluída' ? 'bg-emerald-50 text-emerald-700'
+              : etapa.status === 'Em Andamento' ? 'bg-blue-50 text-blue-700'
+              : etapa.status === 'Atrasada' ? 'bg-red-50 text-red-600'
+              : 'bg-slate-100 text-slate-600'
+            return (
+              <div key={etapa.id} className="flex border-b border-[#F1F5F9] hover:bg-[#FAFBFF] group transition-colors"
+                style={{ height: ROW_H }}>
+                {/* Left cells */}
+                <div className="shrink-0 flex items-center border-r border-[#E2E8F0]" style={{ width: LEFT_W }}>
+                  {/* Color dot + index */}
+                  <div className="w-8 shrink-0 flex items-center justify-center">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cor }} />
+                  </div>
+                  {/* Title + status */}
+                  <div className="flex-1 px-2 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-medium text-[#0F172A] truncate">{etapa.titulo}</span>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${st}`}>{etapa.status}</span>
+                    </div>
+                  </div>
+                  <span className="text-xs text-[#64748B] w-24 px-2 truncate shrink-0">{etapa.responsavel || '—'}</span>
+                  <span className="text-xs text-[#64748B] w-20 px-2 shrink-0">{fmt(etapa.data_inicio)}</span>
+                  <span className="text-xs text-[#64748B] w-16 px-2 shrink-0">{fmt(etapa.data_fim)}</span>
+                  <span className="text-xs font-semibold text-[#4F7CFF] w-12 px-2 text-center shrink-0">{etapa.progresso}%</span>
+                  {/* Actions */}
+                  <div className="w-14 flex items-center gap-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <button onClick={() => onEdit(etapa)} className="p-1 rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+                      <Pencil size={12} />
+                    </button>
+                    <button onClick={() => onDelete(etapa.id)} className="p-1 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Gantt area */}
+                {hasGantt && (
+                  <div className="relative" style={{ width: totalDays * DAY_W }}>
+                    {/* Weekend/today bg lines */}
+                    {todayLeft >= 0 && todayLeft <= totalDays * DAY_W && (
+                      <div className="absolute top-0 bottom-0 w-px bg-red-400 z-10 opacity-70" style={{ left: todayLeft }} />
+                    )}
+                    {bar && (
+                      <div
+                        className="absolute rounded-md overflow-hidden"
+                        style={{
+                          left: bar.left + 2,
+                          width: bar.width - 4,
+                          top: 8,
+                          height: ROW_H - 16,
+                          background: cor + '33',
+                          border: `1.5px solid ${cor}`,
+                        }}
+                        title={`${etapa.titulo}: ${fmtFull(etapa.data_inicio)} – ${fmtFull(etapa.data_fim)} (${etapa.progresso}%)`}
+                      >
+                        {/* Progress fill */}
+                        <div className="h-full rounded-md" style={{ width: `${etapa.progresso}%`, background: cor + 'BB' }} />
+                        {/* Label inside bar if wide enough */}
+                        {bar.width > 80 && (
+                          <span className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold truncate"
+                            style={{ color: cor }}>
+                            {etapa.progresso}%
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Today legend */}
+          {hasGantt && (
+            <div className="flex items-center gap-1.5 px-4 py-2 border-t border-[#F1F5F9] bg-[#FAFBFF]">
+              <div className="w-3 h-px bg-red-400" />
+              <span className="text-[10px] text-[#94A3B8]">Hoje — {today.toLocaleDateString('pt-BR')}</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

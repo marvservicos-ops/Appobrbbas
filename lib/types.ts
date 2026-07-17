@@ -38,6 +38,7 @@ export interface CronogramaEtapa {
   data_fim?: string
   progresso: number
   status: StatusEtapa
+  cor?: string
   arquivo_url?: string
   arquivo_nome?: string
   ordem: number
