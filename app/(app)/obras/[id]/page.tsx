@@ -1649,7 +1649,7 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
   }
   function excluirSelecionadas() {
     if (!confirm(`Excluir ${selecionadas.size} etapa${selecionadas.size > 1 ? 's' : ''} selecionada${selecionadas.size > 1 ? 's' : ''}?`)) return
-    onDeleteMany([...selecionadas])
+    onDeleteMany(Array.from(selecionadas))
     setSelecionadas(new Set())
   }
 
