@@ -1742,10 +1742,9 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
       <div className="overflow-x-auto">
         <div style={{ minWidth: LEFT_W + (hasGantt ? totalDays * dayW : 0) }}>
 
-          {/* ── Header ── */}
-          <div className="flex border-b border-[#E2E8F0] bg-[#F8FAFC]" style={{ height: 30 }}>
+          {/* ── Header linha 1: colunas esq + meses ── */}
+          <div className="flex border-b border-[#E2E8F0] bg-[#F8FAFC]" style={{ height: 28 }}>
             <div className="shrink-0 flex items-center border-r border-[#E2E8F0]" style={{ width: LEFT_W }}>
-              {/* Checkbox selecionar tudo */}
               <div className="flex items-center justify-center shrink-0" style={{ width: CHK_W }}>
                 <input type="checkbox"
                   checked={selecionadas.size === etapas.length && etapas.length > 0}
@@ -1767,8 +1766,8 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
                   const w = monthWidth(m)
                   if (w <= 0) return null
                   return (
-                    <div key={i} className="border-r border-[#E2E8F0] flex items-center justify-center shrink-0" style={{ width: w }}>
-                      <span className="text-[11px] font-semibold text-[#64748B]">
+                    <div key={i} className="border-r border-[#E2E8F0] flex items-center justify-center shrink-0 bg-[#F1F5F9]" style={{ width: w }}>
+                      <span className="text-[11px] font-bold text-[#475569]">
                         {m.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '')}
                       </span>
                     </div>
@@ -1777,6 +1776,34 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
               </div>
             )}
           </div>
+
+          {/* ── Header linha 2: dias ── */}
+          {hasGantt && (
+            <div className="flex border-b border-[#E2E8F0] bg-[#F8FAFC]" style={{ height: 22 }}>
+              <div className="shrink-0 border-r border-[#E2E8F0]" style={{ width: LEFT_W }} />
+              <div className="flex relative" style={{ width: totalDays * dayW }}>
+                {Array.from({ length: totalDays }, (_, i) => {
+                  const d = new Date(minDate.getTime() + i * 86400000)
+                  const dom = d.getDate()
+                  const dow = d.getDay() // 0=dom, 6=sab
+                  const isWeekend = dow === 0 || dow === 6
+                  const isToday = d.toDateString() === today.toDateString()
+                  const showLabel = dayW >= 14 || dom === 1 || dom === 5 || dom === 10 || dom === 15 || dom === 20 || dom === 25
+                  return (
+                    <div key={i}
+                      className={`shrink-0 flex items-center justify-center border-r border-[#F1F5F9] ${isWeekend ? 'bg-[#F8FAFC]' : ''} ${isToday ? 'bg-[#EEF2FF]' : ''}`}
+                      style={{ width: dayW }}>
+                      {showLabel && (
+                        <span className={`text-[9px] font-medium select-none ${isToday ? 'text-[#4F7CFF] font-bold' : isWeekend ? 'text-[#CBD5E1]' : 'text-[#94A3B8]'}`}>
+                          {dom}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* ── Rows ── */}
           {etapas.map(etapa => {
