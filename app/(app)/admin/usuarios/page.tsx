@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Loader2, ShieldCheck, UserRound } from 'lucide-react'
+import { Check, Eye, EyeOff, Loader2, Plus, ShieldCheck, UserRound, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { AppProfile, AppRole } from '@/lib/access'
 
@@ -11,6 +11,11 @@ export default function AdminUsuariosPage() {
   const [profiles, setProfiles] = useState<AppProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const [showNew, setShowNew] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [newUser, setNewUser] = useState({ nome: '', email: '', password: '', role: 'usuario' as AppRole, financeiro: false })
 
   async function load() {
     const supabase = createClient()
@@ -30,15 +35,62 @@ export default function AdminUsuariosPage() {
     setSaving(null)
   }
 
+  async function createUser(e: React.FormEvent) {
+    e.preventDefault()
+    setCreating(true)
+    setCreateError('')
+    const response = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nome: newUser.nome,
+        email: newUser.email,
+        password: newUser.password,
+        role: newUser.role,
+        permissions: newUser.financeiro ? ['financeiro'] : [],
+      }),
+    })
+    const result = await response.json()
+    if (!response.ok) setCreateError(result.error || 'Não foi possível criar o usuário.')
+    else {
+      setShowNew(false)
+      setNewUser({ nome: '', email: '', password: '', role: 'usuario', financeiro: false })
+      await load()
+    }
+    setCreating(false)
+  }
+
   if (loading) return <div className="h-64 flex items-center justify-center"><Loader2 className="animate-spin text-[#4F7CFF]" /></div>
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto">
-      <div className="mb-6">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#4F7CFF]">Acesso</p>
-        <h1 className="font-syne text-2xl md:text-3xl font-bold text-[#0F172A] mt-1">Usuários e permissões</h1>
-        <p className="text-sm text-[#64748B] mt-1">Defina quem pode acessar informações financeiras.</p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#4F7CFF]">Acesso</p>
+          <h1 className="font-syne text-2xl md:text-3xl font-bold text-[#0F172A] mt-1">Usuários e permissões</h1>
+          <p className="text-sm text-[#64748B] mt-1">Crie acessos e defina quem pode visualizar informações financeiras.</p>
+        </div>
+        <button onClick={() => setShowNew(true)} className="btn-primary shrink-0"><Plus size={16} /> Novo usuário</button>
       </div>
+      {showNew && (
+        <form onSubmit={createUser} className="card mb-5 border-[#C7D2FE] shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-5">
+            <div><h2 className="font-syne font-semibold text-[#0F172A]">Criar novo usuário</h2><p className="text-xs text-[#64748B] mt-1">A conta poderá entrar imediatamente com a senha definida.</p></div>
+            <button type="button" aria-label="Fechar" onClick={() => setShowNew(false)} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]"><X size={17} /></button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <label className="text-xs text-[#64748B]">Nome completo<input required className="field mt-1" value={newUser.nome} onChange={e => setNewUser(x => ({ ...x, nome: e.target.value }))} placeholder="Nome do usuário" /></label>
+            <label className="text-xs text-[#64748B]">E-mail<input required type="email" autoComplete="off" className="field mt-1" value={newUser.email} onChange={e => setNewUser(x => ({ ...x, email: e.target.value }))} placeholder="usuario@empresa.com.br" /></label>
+            <label className="text-xs text-[#64748B]">Senha inicial
+              <div className="relative mt-1"><input required minLength={8} type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field pr-11" value={newUser.password} onChange={e => setNewUser(x => ({ ...x, password: e.target.value }))} placeholder="Mínimo 8 caracteres" /><button type="button" aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} onClick={() => setShowPassword(v => !v)} className="absolute right-0 top-0 w-11 h-11 flex items-center justify-center text-[#64748B]">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div>
+            </label>
+            <label className="text-xs text-[#64748B]">Perfil<select className="field mt-1" value={newUser.role} onChange={e => setNewUser(x => ({ ...x, role: e.target.value as AppRole }))}><option value="usuario">Usuário</option><option value="admin">Administrador</option></select></label>
+          </div>
+          <label className="mt-4 flex items-center gap-2 text-sm text-[#374151]"><input type="checkbox" disabled={newUser.role === 'admin'} checked={newUser.role === 'admin' || newUser.financeiro} onChange={e => setNewUser(x => ({ ...x, financeiro: e.target.checked }))} className="w-4 h-4 accent-[#4F7CFF]" />Permitir acesso ao financeiro e medições</label>
+          {createError && <p className="mt-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{createError}</p>}
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-5 pt-4 border-t border-[#E2E8F0]"><button type="button" onClick={() => setShowNew(false)} className="btn-secondary">Cancelar</button><button type="submit" disabled={creating} className="btn-primary">{creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Criar usuário</button></div>
+        </form>
+      )}
       <div className="space-y-3">
         {profiles.map(profile => (
           <div key={profile.id} className="card">
