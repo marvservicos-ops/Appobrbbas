@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
+import { useAccess } from '@/lib/useAccess'
 
 type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais'
 
@@ -161,6 +162,7 @@ export default function ObraDetailPage() {
   const id = params.id as string
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
+  const { can } = useAccess()
   const [obra, setObra] = useState<Obra | null>(null)
   const [etapas, setEtapas] = useState<CronogramaEtapa[]>([])
   const [docs, setDocs] = useState<Documento[]>([])
@@ -412,6 +414,11 @@ export default function ObraDetailPage() {
                 : `Materiais (${materiais.length})`}
             </button>
           ))}
+          {can('financeiro') && (
+            <Link href={`/obras/${id}/pagamentos`} className="px-3 md:px-4 py-3 text-sm font-medium border-b-2 border-transparent text-[#64748B] hover:text-[#0F172A] whitespace-nowrap shrink-0">
+              Pagamentos
+            </Link>
+          )}
         </div>
       </div>
 

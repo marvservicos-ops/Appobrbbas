@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, BarChart2, Users, FileText, Settings, User, Package, Menu, X } from 'lucide-react'
+import { Wrench, BarChart2, Users, FileText, Settings, User, Package, Menu, X, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useAccess } from '@/lib/useAccess'
 
 const navItems = [
   { href: '/obras', label: 'Obras', icon: Wrench },
@@ -21,6 +22,10 @@ const bottomItems = [
 export default function Sidebar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { isAdmin } = useAccess()
+  const accountItems = isAdmin
+    ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }, ...bottomItems]
+    : bottomItems
 
   useEffect(() => {
     if (!mobileOpen) return
@@ -68,7 +73,7 @@ export default function Sidebar() {
           {navItems.map(item => <NavLink key={item.href} {...item} />)}
         </nav>
         <div className="px-3 py-4 border-t border-[#E2E8F0] space-y-1">
-          {bottomItems.map(item => <NavLink key={item.href} {...item} />)}
+          {accountItems.map(item => <NavLink key={item.href} {...item} />)}
         </div>
       </aside>
 
@@ -110,7 +115,7 @@ export default function Sidebar() {
               {navItems.map(item => <NavLink key={item.href} {...item} onClick={() => setMobileOpen(false)} />)}
             </nav>
             <div className="px-3 py-4 border-t border-[#E2E8F0] space-y-1">
-              {bottomItems.map(item => <NavLink key={item.href} {...item} onClick={() => setMobileOpen(false)} />)}
+              {accountItems.map(item => <NavLink key={item.href} {...item} onClick={() => setMobileOpen(false)} />)}
             </div>
           </aside>
         </div>

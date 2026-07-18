@@ -78,6 +78,28 @@ export interface Perfil {
   cargo?: string
 }
 
+export interface ObraMedicao {
+  id: string
+  obra_id: string
+  ordem: number
+  nome: string
+  percentual: number
+  valor_previsto: number
+  status: 'planejada' | 'faturada' | 'recebida' | 'atrasada' | 'cancelada'
+  data_prevista?: string
+  data_emissao?: string
+  data_vencimento?: string
+  data_pagamento?: string
+  valor_faturado?: number
+  valor_recebido?: number
+  numero_nf?: string
+  nf_nome?: string
+  nf_path?: string
+  observacoes?: string
+  created_at: string
+  updated_at: string
+}
+
 // ── Estoque V2 ────────────────────────────────────────
 export interface Estoque {
   id: string
