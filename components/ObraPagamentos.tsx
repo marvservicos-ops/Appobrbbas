@@ -189,7 +189,21 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                   <label className="text-xs text-[#64748B]">Valor faturado<input type="number" step="0.01" className="field mt-1" value={m.valor_faturado ?? ''} onBlur={e => atualizar(m, { valor_faturado: Number(e.target.value) || undefined })} onChange={e => setMedicoes(list => list.map(x => x.id === m.id ? { ...x, valor_faturado: Number(e.target.value) } : x))} /></label>
                   <label className="text-xs text-[#64748B]">Valor recebido<input type="number" step="0.01" className="field mt-1" value={m.valor_recebido ?? ''} onBlur={e => atualizar(m, { valor_recebido: Number(e.target.value) || undefined })} onChange={e => setMedicoes(list => list.map(x => x.id === m.id ? { ...x, valor_recebido: Number(e.target.value) } : x))} /></label>
                   <label className="text-xs text-[#64748B]">Número da NF<input className="field mt-1" value={m.numero_nf ?? ''} onBlur={e => atualizar(m, { numero_nf: e.target.value || undefined })} onChange={e => setMedicoes(list => list.map(x => x.id === m.id ? { ...x, numero_nf: e.target.value } : x))} /></label>
-                  <div className="text-xs text-[#64748B]">Nota fiscal<div className="mt-1 flex gap-2"><label className="btn-secondary flex-1 cursor-pointer px-3">{uploading === m.id ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}<span className="truncate">{m.nf_nome || 'Anexar PDF'}</span><input type="file" accept=".pdf,image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) anexarNF(m, f); e.target.value = '' }} /></label>{m.nf_path && <button onClick={() => abrirNF(m)} className="w-11 h-11 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF]" aria-label="Abrir nota fiscal"><FileText size={16} /></button>}</div></div>
+                  <div className="min-w-0 text-xs text-[#64748B]">
+                    Nota fiscal
+                    <div className="mt-1 flex min-w-0 gap-2">
+                      <label title={m.nf_nome || 'Anexar nota fiscal'} className="btn-secondary min-w-0 flex-1 cursor-pointer overflow-hidden px-3">
+                        {uploading === m.id ? <Loader2 size={14} className="shrink-0 animate-spin" /> : <Upload size={14} className="shrink-0" />}
+                        <span className="block min-w-0 flex-1 truncate text-left">{m.nf_nome || 'Anexar NF'}</span>
+                        <input type="file" accept=".pdf,image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) anexarNF(m, f); e.target.value = '' }} />
+                      </label>
+                      {m.nf_path && (
+                        <button type="button" onClick={() => abrirNF(m)} className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]" aria-label={`Abrir ${m.nf_nome || 'nota fiscal'}`} title="Abrir nota fiscal">
+                          <FileText size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </article>
             )
