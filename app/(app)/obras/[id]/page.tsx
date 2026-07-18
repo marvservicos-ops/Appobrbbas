@@ -379,7 +379,7 @@ export default function ObraDetailPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-screen">
+    <div className="flex flex-col h-full min-h-screen min-w-0 overflow-x-hidden">
       {/* Topbar */}
       <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-3 md:px-6 gap-3 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-10">
         <button onClick={() => router.push('/obras')} className="shrink-0 flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F172A] transition-colors">
@@ -400,11 +400,11 @@ export default function ObraDetailPage() {
       </header>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-[#E2E8F0] px-6">
-        <div className="flex gap-0 overflow-x-auto">
+      <div className="bg-white border-b border-[#E2E8F0] px-2 md:px-6 min-w-0">
+        <div className="flex gap-0 overflow-x-auto overscroll-x-contain scrollbar-none">
           {(['visao-geral', 'relatorios', 'materiais', 'documentos', 'cronograma'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
+              className={`px-3 md:px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${tab === t ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
               {t === 'visao-geral' ? 'Visão Geral'
                 : t === 'documentos' ? 'Documentos'
                 : t === 'cronograma' ? 'Cronograma'
@@ -416,7 +416,7 @@ export default function ObraDetailPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 p-3 md:p-6">
+      <div className="flex-1 min-w-0 p-3 md:p-6">
         {/* ===== VISÃO GERAL ===== */}
         {tab === 'visao-geral' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -532,9 +532,9 @@ export default function ObraDetailPage() {
 
         {/* ===== DOCUMENTOS ===== */}
         {tab === 'documentos' && (
-          <div className="flex gap-6">
+          <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 min-w-0">
             {/* Sidebar de pastas */}
-            <div className="w-56 shrink-0">
+            <div className="w-full lg:w-56 shrink-0">
               <div className="card p-3">
                 <div className="flex items-center justify-between mb-3 px-1">
                   <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wide">Pastas</span>
@@ -590,7 +590,7 @@ export default function ObraDetailPage() {
               </div>
 
               {/* Custos */}
-              <div className="card mt-4">
+              <div className="card mt-4 hidden lg:block">
                 <h3 className="font-syne font-semibold text-xs text-[#0F172A] mb-3">Distribuição de Custos</h3>
                 <div className="space-y-2.5">
                   <div>
@@ -617,16 +617,16 @@ export default function ObraDetailPage() {
 
             {/* Área principal */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="font-syne text-lg font-bold text-[#0F172A]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div className="min-w-0">
+                  <h2 className="font-syne text-lg font-bold text-[#0F172A] break-words">
                     {pastaAtiva === '__todas__' ? 'Todos os Documentos' : pastaAtiva}
                   </h2>
                   <p className="text-xs text-[#64748B]">{docsFiltrados.length} documento{docsFiltrados.length !== 1 ? 's' : ''}</p>
                 </div>
                 <button
                   onClick={() => { setPastaParaDoc(pastaAtiva === '__todas__' ? 'Geral' : pastaAtiva); setShowAddDoc(true) }}
-                  className="btn-primary"
+                  className="btn-primary w-full sm:w-auto shrink-0"
                 >
                   <Upload size={16} /> Adicionar Documentos
                 </button>
@@ -1408,7 +1408,51 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
     Outros: { bg: 'bg-gray-100', text: 'text-gray-600' },
   }
   return (
-    <table className="w-full">
+    <>
+      <div className="divide-y divide-[#E2E8F0] md:hidden">
+        {docs.map(doc => {
+          const cat = categoriaConfig[doc.categoria] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+          const fmt = getExtInfo(doc.nome, doc.arquivo_url)
+          return (
+            <article key={doc.id} className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-[#F1F5F9] rounded-xl flex items-center justify-center shrink-0">
+                  <FileText size={17} className="text-[#64748B]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm text-[#0F172A] font-semibold leading-5 break-words">{doc.nome}</h3>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${fmt.bg} ${fmt.text} uppercase tracking-wide`}>{fmt.ext}</span>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${cat.bg} ${cat.text}`}>{doc.categoria}</span>
+                  </div>
+                  {(doc.fornecedor || doc.data_documento) && (
+                    <p className="text-xs text-[#64748B] mt-2">
+                      {[doc.fornecedor, doc.data_documento ? new Date(doc.data_documento + 'T00:00:00').toLocaleDateString('pt-BR') : null].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-3 pl-[52px]">
+                {doc.arquivo_url && (
+                  <a href={doc.arquivo_url} target="_blank" rel="noopener noreferrer" className="min-h-10 flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#EEF2FF] text-xs font-semibold text-[#4F7CFF]">
+                    <ExternalLink size={13} /> Abrir documento
+                  </a>
+                )}
+                <button
+                  type="button"
+                  aria-label={`Excluir ${doc.nome}`}
+                  onClick={() => onDelete(doc.id, doc.arquivo_path)}
+                  className="w-10 h-10 shrink-0 inline-flex items-center justify-center rounded-lg border border-red-100 text-red-500"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      <table className="hidden md:table w-full">
       <thead>
         <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Nome</th>
@@ -1460,7 +1504,8 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
           )
         })}
       </tbody>
-    </table>
+      </table>
+    </>
   )
 }
 

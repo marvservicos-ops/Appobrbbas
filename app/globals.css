@@ -50,6 +50,8 @@ h1, h2, h3, h4, h5, h6 {
 @layer utilities {
   .font-syne { font-family: 'Inter', sans-serif; }
   .font-dm { font-family: 'DM Sans', sans-serif; }
+  .scrollbar-none { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
 }
 
 @layer components {
