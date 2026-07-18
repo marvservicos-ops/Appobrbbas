@@ -63,8 +63,8 @@ export default function ModalNovaObra({ clientes, onClose, onCreated, obra }: Pr
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[600px] max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-[600px] max-h-[calc(100dvh-env(safe-area-inset-top))] overflow-y-auto pb-[env(safe-area-inset-bottom)]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <div className="flex items-center gap-2">
@@ -79,9 +79,9 @@ export default function ModalNovaObra({ clientes, onClose, onCreated, obra }: Pr
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Título */}
-            <div className="col-span-2 sm:col-span-1">
+            <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Título do Projeto *</label>
               <input
                 required
@@ -94,7 +94,7 @@ export default function ModalNovaObra({ clientes, onClose, onCreated, obra }: Pr
             </div>
 
             {/* Cliente */}
-            <div className="col-span-2 sm:col-span-1">
+            <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Cliente</label>
               <select value={form.cliente_id} onChange={e => set('cliente_id', e.target.value)} className="field">
                 <option value="">Selecione um cliente</option>

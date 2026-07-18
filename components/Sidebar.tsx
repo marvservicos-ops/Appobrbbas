@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Wrench, BarChart2, Users, FileText, Settings, User, Package, Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const navItems = [
   { href: '/obras', label: 'Obras', icon: Wrench },
@@ -22,6 +22,20 @@ export default function Sidebar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  useEffect(() => {
+    if (!mobileOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [mobileOpen])
+
   const NavLink = ({ href, label, icon: Icon, onClick }: { href: string; label: string; icon: any; onClick?: () => void }) => {
     const active = pathname.startsWith(href)
     return (
@@ -38,7 +52,7 @@ export default function Sidebar() {
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────────────── */}
-      <aside className="hidden md:flex w-[220px] shrink-0 bg-[#F8FAFC] border-r border-[#E2E8F0] flex-col h-screen sticky top-0">
+      <aside className="hidden md:flex w-[220px] shrink-0 bg-[#F8FAFC] border-r border-[#E2E8F0] flex-col h-dvh sticky top-0">
         <div className="px-6 py-5 border-b border-[#E2E8F0]">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-[#4F7CFF] rounded-lg flex items-center justify-center">
@@ -59,14 +73,14 @@ export default function Sidebar() {
       </aside>
 
       {/* ── Mobile top bar ───────────────────────────────── */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-[#E2E8F0] flex items-center justify-between px-4 h-14">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-[#E2E8F0] flex items-end justify-between px-4 pb-2 h-[calc(3.5rem+env(safe-area-inset-top))]">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-[#4F7CFF] rounded-lg flex items-center justify-center">
             <Wrench size={14} className="text-white" />
           </div>
           <span className="font-syne font-bold text-[15px] text-[#0F172A]">MARV Gestão</span>
         </div>
-        <button onClick={() => setMobileOpen(true)} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
+        <button type="button" aria-label="Abrir menu" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
           <Menu size={20} className="text-[#64748B]" />
         </button>
       </div>
@@ -75,9 +89,9 @@ export default function Sidebar() {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
           {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
+          <button type="button" aria-label="Fechar menu" className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
           {/* Drawer */}
-          <aside className="relative w-[260px] bg-white h-full flex flex-col shadow-2xl">
+          <aside aria-label="Menu principal" className="relative w-[min(82vw,300px)] bg-white h-dvh flex flex-col shadow-2xl pt-[env(safe-area-inset-top)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-[#4F7CFF] rounded-lg flex items-center justify-center">
@@ -88,7 +102,7 @@ export default function Sidebar() {
                   <div className="text-[10px] text-[#64748B] uppercase tracking-wide">Mechanical Engineering</div>
                 </div>
               </div>
-              <button onClick={() => setMobileOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
+              <button type="button" aria-label="Fechar menu" autoFocus onClick={() => setMobileOpen(false)} className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
                 <X size={18} className="text-[#64748B]" />
               </button>
             </div>
@@ -103,12 +117,13 @@ export default function Sidebar() {
       )}
 
       {/* ── Mobile bottom nav ────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-[#E2E8F0] flex">
+      <nav aria-label="Navegação principal" className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-[#E2E8F0] flex pb-[env(safe-area-inset-bottom)]">
         {[...navItems, ...bottomItems].slice(0, 5).map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           return (
             <Link key={href} href={href}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${active ? 'text-[#4F7CFF]' : 'text-[#94A3B8]'}`}>
+              aria-current={active ? 'page' : undefined}
+              className={`flex-1 min-h-16 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${active ? 'text-[#4F7CFF]' : 'text-[#64748B]'}`}>
               <Icon size={20} />
               <span className="text-[10px] font-medium">{label}</span>
             </Link>

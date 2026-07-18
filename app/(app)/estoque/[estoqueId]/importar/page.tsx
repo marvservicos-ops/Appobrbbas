@@ -234,7 +234,7 @@ export default function ImportarPage() {
   )
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-4 md:p-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
         <Link href={`/estoque/${estoqueId}`} className="w-9 h-9 rounded-xl border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors">
           <ArrowLeft size={16} className="text-[#64748B]" />
@@ -256,7 +256,7 @@ export default function ImportarPage() {
       </div>
 
       {/* Seletor de tipo */}
-      <div className="flex gap-2 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-6">
         {([
           { key: 'registros', label: '📋 Importar Registros', desc: 'Entradas e saídas do estoque' },
           { key: 'produtos', label: '📦 Importar Produtos', desc: 'Cadastro de itens do estoque' },
@@ -298,8 +298,8 @@ export default function ImportarPage() {
             </div>
           </label>
 
-          <div className="card p-0 overflow-hidden">
-            <table className="w-full">
+          <div className="card p-0 overflow-x-auto">
+            <table className="w-full min-w-[620px]">
               <thead>
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Coluna no CSV</th>
@@ -350,11 +350,11 @@ export default function ImportarPage() {
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col-reverse sm:flex-row gap-3">
             <Link href={`/estoque/${estoqueId}`} className="px-5 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
               Cancelar
             </Link>
-            <button onClick={importar} disabled={importing} className="btn-primary flex items-center gap-2 px-6">
+            <button onClick={importar} disabled={importing} className="btn-primary flex items-center gap-2 px-6 w-full sm:w-auto">
               {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
               {importing ? 'Importando...' : `Importar ${csvRows.length} ${tipoImport === 'produtos' ? 'produtos' : 'registros'}`}
             </button>

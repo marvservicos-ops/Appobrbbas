@@ -252,7 +252,7 @@ export default function RDOPage() {
   return (
     <div className="flex flex-col h-full min-h-screen bg-[#F8FAFC]">
       {/* Header */}
-      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-4 gap-3 sticky top-14 md:top-0 z-20">
+      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-3 md:px-4 gap-2 md:gap-3 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-20">
         <Link href={`/obras/${obraId}?tab=relatorios`} className="flex items-center gap-1.5 text-sm text-[#64748B] hover:text-[#0F172A]">
           <ArrowLeft size={16} />
         </Link>
@@ -307,11 +307,11 @@ export default function RDOPage() {
           <Section id="clima" title="Condição Climática" count={0}>
             <div className="space-y-3">
               <div className="grid grid-cols-1 gap-2">
-                <div className="grid grid-cols-[100px_1fr_1fr] gap-2 text-xs font-semibold text-[#64748B] px-1">
+                <div className="hidden sm:grid grid-cols-[100px_1fr_1fr] gap-2 text-xs font-semibold text-[#64748B] px-1">
                   <span>Período</span><span>Tempo</span><span>Condição</span>
                 </div>
                 {clima.map(c => (
-                  <div key={c.id} className={`grid grid-cols-[100px_1fr_1fr] gap-2 items-center p-2 rounded-lg ${c.ativo ? 'bg-[#F8FAFC]' : 'bg-[#F1F5F9] opacity-60'}`}>
+                  <div key={c.id} className={`grid grid-cols-1 sm:grid-cols-[100px_1fr_1fr] gap-2 items-center p-2 rounded-lg ${c.ativo ? 'bg-[#F8FAFC]' : 'bg-[#F1F5F9] opacity-60'}`}>
                     <label className="flex items-center gap-2 text-sm font-medium text-[#374151] cursor-pointer">
                       <input type="checkbox" checked={c.ativo} onChange={() => togglePeriodo(c)} className="rounded" />
                       {periodoLabel[c.periodo]}

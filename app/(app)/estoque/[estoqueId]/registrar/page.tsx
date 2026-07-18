@@ -223,7 +223,7 @@ export default function RegistrarPage() {
   )
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-4 md:p-6 max-w-2xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
         <Link href={`/estoque/${estoqueId}`} className="w-9 h-9 rounded-xl border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors">
           <ArrowLeft size={16} className="text-[#64748B]" />
@@ -236,7 +236,7 @@ export default function RegistrarPage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Tipo entrada/saída */}
-        <div className="flex gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {(['saida', 'entrada'] as const).map(t => (
             <button key={t} type="button" onClick={() => setTipo(t)}
               className={`flex-1 py-3 rounded-xl font-medium text-sm border-2 transition-all ${tipo === t
@@ -310,7 +310,7 @@ export default function RegistrarPage() {
         })()}
 
         {/* Quantidade e Unidade */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade *</label>
             <input type="number" min="0" step="any" required className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />

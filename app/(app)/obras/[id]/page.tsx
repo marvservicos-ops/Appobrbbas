@@ -381,7 +381,7 @@ export default function ObraDetailPage() {
   return (
     <div className="flex flex-col h-full min-h-screen">
       {/* Topbar */}
-      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-3 md:px-6 gap-3 sticky top-14 md:top-0 z-10">
+      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-3 md:px-6 gap-3 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-10">
         <button onClick={() => router.push('/obras')} className="shrink-0 flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F172A] transition-colors">
           <ArrowLeft size={16} />
         </button>
@@ -754,8 +754,8 @@ export default function ObraDetailPage() {
                 </button>
               </div>
             ) : (
-              <div className="card p-0 overflow-hidden">
-                <table className="w-full">
+              <div className="card p-0 overflow-x-auto">
+                <table className="w-full min-w-[680px]">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>

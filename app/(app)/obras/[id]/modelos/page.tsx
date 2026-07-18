@@ -128,7 +128,7 @@ export default function ModelosPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#F8FAFC]">
-      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-4 gap-3 sticky top-14 md:top-0 z-20">
+      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-4 gap-3 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-20">
         <Link href={`/obras/${obraId}?tab=relatorios`} className="flex items-center gap-1.5 text-sm text-[#64748B] hover:text-[#0F172A]">
           <ArrowLeft size={16} />
         </Link>
@@ -174,7 +174,7 @@ export default function ModelosPage() {
             </div>
 
             {/* Preview logos */}
-            <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
               {[
                 { url: m.logo_empresa_url, label: 'Logomarca Empresa' },
                 { url: m.logo_relatorio_url, label: 'Logomarca Relatório' },
@@ -270,7 +270,7 @@ function ModeloForm({ inicial, obraId, saving, uploadingLogo, onSalvar, onCancel
       {/* Logos */}
       <div className="mb-4">
         <label className="text-xs font-medium text-[#64748B] mb-2 block">Logomarcas</label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {([
             { campo: 'empresa' as const, label: 'Logomarca Empresa' },
             { campo: 'relatorio' as const, label: 'Logomarca Relatório' },

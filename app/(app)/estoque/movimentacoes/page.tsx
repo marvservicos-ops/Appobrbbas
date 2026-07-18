@@ -76,8 +76,8 @@ export default function MovimentacoesPage() {
           ))}
         </div>
 
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full">
+        <div className="card p-0 overflow-x-auto">
+          <table className="w-full min-w-[720px]">
             <thead>
               <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Item</th>

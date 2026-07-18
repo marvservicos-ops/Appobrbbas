@@ -21,7 +21,7 @@ export default function Topbar({ searchPlaceholder = 'Buscar obra ou projeto...'
   }
 
   return (
-    <header className="h-16 bg-white border-b border-[#E2E8F0] flex items-center px-6 gap-4 sticky top-0 z-10">
+    <header className="min-h-16 bg-white border-b border-[#E2E8F0] flex items-center px-4 md:px-6 gap-2 md:gap-4 sticky top-0 z-10">
       <div className="flex-1 max-w-md relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
         <input
@@ -33,13 +33,16 @@ export default function Topbar({ searchPlaceholder = 'Buscar obra ou projeto...'
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        <button className="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
+        <button type="button" aria-label="Notificações" className="relative w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
           <Bell size={18} className="text-[#64748B]" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#4F7CFF] rounded-full" />
         </button>
 
         <div className="relative">
           <button
+            type="button"
+            aria-label="Abrir menu do usuário"
+            aria-expanded={showMenu}
             onClick={() => setShowMenu(!showMenu)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-[#F1F5F9] transition-colors"
           >

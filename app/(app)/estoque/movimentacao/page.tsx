@@ -96,12 +96,12 @@ function MovimentacaoForm() {
 
   return (
     <div className="flex flex-col h-full">
-      <header className="h-16 bg-white border-b border-[#E2E8F0] flex items-center px-6 gap-3 sticky top-0 z-10">
+      <header className="h-14 md:h-16 bg-white border-b border-[#E2E8F0] flex items-center px-4 md:px-6 gap-3 sticky top-0 z-10">
         <button onClick={() => router.back()} className="text-[#64748B] hover:text-[#0F172A]"><ArrowLeft size={18} /></button>
         <h1 className="font-syne font-semibold text-[#0F172A]">Registrar Movimentação</h1>
       </header>
 
-      <div className="p-6 max-w-xl">
+      <div className="p-4 md:p-6 max-w-xl mx-auto w-full">
         {/* Tipo toggle */}
         <div className="flex gap-2 mb-6 p-1 bg-[#F1F5F9] rounded-xl">
           <button
@@ -179,7 +179,7 @@ function MovimentacaoForm() {
 
           {/* Quantidade e responsável */}
           <div className="card">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">
                   Quantidade * {selectedItem && <span className="text-[#94A3B8]">({selectedItem.unidade})</span>}

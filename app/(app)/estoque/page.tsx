@@ -44,11 +44,11 @@ export default function EstoquePage() {
   useEffect(() => { load() }, [])
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="flex items-start justify-between gap-3 mb-6 md:mb-8">
         <div>
-          <h1 className="font-syne font-bold text-2xl text-[#0F172A]">Estoques</h1>
-          <p className="text-sm text-[#64748B] mt-1">Gerencie cada estoque separadamente</p>
+          <h1 className="font-syne font-bold text-xl md:text-2xl text-[#0F172A]">Estoques</h1>
+          <p className="hidden sm:block text-sm text-[#64748B] mt-1">Gerencie cada estoque separadamente</p>
         </div>
         <button onClick={() => setShowNovo(true)} className="btn-primary flex items-center gap-2">
           <Plus size={16} /> Novo Estoque
@@ -122,12 +122,12 @@ function ModalNovoEstoque({ onClose, onCreated }: { onClose: () => void; onCreat
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100dvh-env(safe-area-inset-top))] overflow-y-auto mt-auto sm:mt-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">Novo Estoque</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
             <input required className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Material de Refrigeração" />

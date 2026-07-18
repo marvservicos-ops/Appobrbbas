@@ -47,8 +47,8 @@ export default function ConfiguracoesPage() {
   )
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
-      <h1 className="font-syne font-bold text-2xl text-[#0F172A] mb-8">Configurações</h1>
+    <div className="p-4 md:p-8 max-w-3xl mx-auto">
+      <h1 className="font-syne font-bold text-xl md:text-2xl text-[#0F172A] mb-6 md:mb-8">Configurações</h1>
 
       <div className="space-y-6">
         {/* Perfil */}
@@ -60,7 +60,7 @@ export default function ConfiguracoesPage() {
             <h2 className="font-syne font-semibold text-[#0F172A]">Meu Perfil</h2>
           </div>
           <form onSubmit={salvarPerfil} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome</label>
                 <input className="field" value={perfil.nome} onChange={e => setPerfil(p => ({ ...p, nome: e.target.value }))} placeholder="Seu nome" />
@@ -93,7 +93,7 @@ export default function ConfiguracoesPage() {
             <h2 className="font-syne font-semibold text-[#0F172A]">Dados da Empresa</h2>
           </div>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Razão Social</label>
                 <input className="field" value={empresa.razao_social} onChange={e => setEmpresa(p => ({ ...p, razao_social: e.target.value }))} placeholder="MARV Serviços Ltda." />
@@ -103,7 +103,7 @@ export default function ConfiguracoesPage() {
                 <input className="field" value={empresa.cnpj} onChange={e => setEmpresa(p => ({ ...p, cnpj: e.target.value }))} placeholder="00.000.000/0000-00" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Telefone</label>
                 <input className="field" value={empresa.telefone} onChange={e => setEmpresa(p => ({ ...p, telefone: e.target.value }))} placeholder="(11) 99999-9999" />
@@ -126,7 +126,7 @@ export default function ConfiguracoesPage() {
             <h2 className="font-syne font-semibold text-[#0F172A]">Segurança</h2>
           </div>
           <div className="space-y-3">
-            <div className="flex items-center justify-between py-3 border-b border-[#F1F5F9]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 border-b border-[#F1F5F9]">
               <div>
                 <p className="text-sm font-medium text-[#374151]">Senha</p>
                 <p className="text-xs text-[#94A3B8]">Altere sua senha de acesso</p>
@@ -144,7 +144,7 @@ export default function ConfiguracoesPage() {
                 Enviar link de redefinição
               </button>
             </div>
-            <div className="flex items-center justify-between py-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3">
               <div>
                 <p className="text-sm font-medium text-[#374151]">Sair da conta</p>
                 <p className="text-xs text-[#94A3B8]">Encerra a sessão atual</p>

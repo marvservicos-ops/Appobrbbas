@@ -46,10 +46,10 @@ export default function EstoqueItensPage() {
     <div className="flex flex-col h-full">
       <Topbar searchPlaceholder="Buscar por nome, código..." onSearch={setSearch} />
 
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="p-4 md:p-6">
+        <div className="flex items-start justify-between gap-3 mb-6">
           <div>
-            <h1 className="font-syne text-2xl font-bold text-[#0F172A]">Itens do Estoque</h1>
+            <h1 className="font-syne text-xl md:text-2xl font-bold text-[#0F172A]">Itens do Estoque</h1>
             <p className="text-sm text-[#64748B] mt-0.5">{itens.length} itens cadastrados</p>
           </div>
           <Link href="/estoque/itens/novo" className="btn-primary">
@@ -58,7 +58,7 @@ export default function EstoqueItensPage() {
         </div>
 
         {/* Filtros */}
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0">
           <div className="flex items-center gap-2">
             <Filter size={14} className="text-[#64748B]" />
             <span className="text-sm text-[#64748B]">Categoria:</span>
@@ -108,7 +108,7 @@ export default function EstoqueItensPage() {
                       {nivel === 'baixo' && <span className="text-xs font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full">Baixo</span>}
                     </div>
                     {/* Edit button */}
-                    <Link href={`/estoque/itens/${item.id}/editar`} className="absolute top-2 left-2 w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-[#E2E8F0]">
+                    <Link aria-label={`Editar ${item.nome}`} href={`/estoque/itens/${item.id}/editar`} className="absolute top-2 left-2 w-10 h-10 bg-white/95 rounded-lg flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border border-[#E2E8F0] shadow-sm">
                       <Edit2 size={12} className="text-[#64748B]" />
                     </Link>
                   </div>
