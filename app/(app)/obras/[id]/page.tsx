@@ -595,30 +595,6 @@ export default function ObraDetailPage() {
                 )}
               </div>
 
-              {/* Custos */}
-              <div className="card mt-4 hidden lg:block">
-                <h3 className="font-syne font-semibold text-xs text-[#0F172A] mb-3">Distribuição de Custos</h3>
-                <div className="space-y-2.5">
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-[#374151]">Financeiro</span>
-                      <span className="text-[#4F7CFF] font-semibold">{formatCurrency(totalFinanceiro) !== '—' ? formatCurrency(totalFinanceiro) : 'R$ 0'}</span>
-                    </div>
-                    <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-                      <div className="h-1.5 bg-[#4F7CFF] rounded-full" style={{ width: totalFinanceiro + totalTecnico > 0 ? `${(totalFinanceiro / (totalFinanceiro + totalTecnico)) * 100}%` : '0%' }} />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-[#374151]">Técnico</span>
-                      <span className="text-[#2DD4BF] font-semibold">{formatCurrency(totalTecnico) !== '—' ? formatCurrency(totalTecnico) : 'R$ 0'}</span>
-                    </div>
-                    <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-                      <div className="h-1.5 bg-[#2DD4BF] rounded-full" style={{ width: totalFinanceiro + totalTecnico > 0 ? `${(totalTecnico / (totalFinanceiro + totalTecnico)) * 100}%` : '0%' }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
 
             {/* Área principal */}
