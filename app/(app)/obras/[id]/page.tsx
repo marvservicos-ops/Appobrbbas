@@ -184,7 +184,8 @@ export default function ObraDetailPage() {
   const [editandoEtapa, setEditandoEtapa] = useState<CronogramaEtapa | null>(null)
   const [showAddDoc, setShowAddDoc] = useState(false)
   const [showNovaPasta, setShowNovaPasta] = useState(false)
-  const [pastaParaDoc, setPastaParaDoc] = useState<string>('Geral')
+  const [criandoSubpastaEm, setCriandoSubpastaEm] = useState<string | null>(null)
+  const [pastaParaDoc, setPastaParaDoc] = useState<string | null>(null)
   const [importandoExcel, setImportandoExcel] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
 
@@ -322,14 +323,32 @@ export default function ObraDetailPage() {
   const totalEtapas = etapas.length
   const progressoGeral = totalEtapas > 0 ? Math.round(etapas.reduce((s, e) => s + e.progresso, 0) / totalEtapas) : 0
 
-  // Docs
-  const todasPastasNomes = ['Geral', ...pastas.map(p => p.nome), ...Array.from(new Set(docs.map(d => d.pasta || 'Geral').filter(p => p !== 'Geral' && !pastas.find(pp => pp.nome === p))))]
-  const docsFiltrados = pastaAtiva === '__todas__' ? docs : docs.filter(d => (d.pasta || 'Geral') === pastaAtiva)
-  const totalFinanceiro = docs.filter(d => d.categoria === 'Financeiro').reduce((s, d) => s + (d.valor || 0), 0)
-  const totalTecnico = docs.filter(d => d.categoria === 'Técnico').reduce((s, d) => s + (d.valor || 0), 0)
+  // Docs — hierarquia de pastas
+  // Resolve o pasta_id de um doc (suporta legado: campo pasta guardado como nome ou como id)
+  function resolveDocPastaId(doc: Documento): string | null {
+    if (!doc.pasta) return null
+    if (pastas.find(p => p.id === doc.pasta)) return doc.pasta
+    const byName = pastas.find(p => p.nome === doc.pasta)
+    return byName ? byName.id : null
+  }
 
-  function togglePasta(nome: string) {
-    setPastasAbertas(prev => ({ ...prev, [nome]: !prev[nome] }))
+  const rootPastas = pastas.filter(p => !p.parent_id)
+  const childrenOf = (parentId: string) => pastas.filter(p => p.parent_id === parentId)
+  // Todos os ids descendentes de uma pasta (para selecionar subpastas ao filtrar)
+  function descendantIds(pastaId: string): string[] {
+    const children = childrenOf(pastaId)
+    return [pastaId, ...children.flatMap(c => descendantIds(c.id))]
+  }
+
+  const docsFiltrados = pastaAtiva === '__todas__'
+    ? docs
+    : docs.filter(d => {
+        const pid = resolveDocPastaId(d)
+        return descendantIds(pastaAtiva).includes(pid ?? '')
+      })
+
+  function togglePasta(pastaId: string) {
+    setPastasAbertas(prev => ({ ...prev, [pastaId]: !prev[pastaId] }))
   }
 
   async function excluirDoc(docId: string, arquivoPath?: string) {
@@ -340,9 +359,9 @@ export default function ObraDetailPage() {
     load()
   }
 
-  async function criarPasta(nome: string) {
+  async function criarPasta(nome: string, parentId?: string | null) {
     const supabase = createClient()
-    await supabase.from('doc_pastas').insert({ obra_id: id, nome, ordem: pastas.length })
+    await supabase.from('doc_pastas').insert({ obra_id: id, nome, ordem: pastas.length, parent_id: parentId || null })
     load()
   }
 
@@ -372,11 +391,22 @@ export default function ObraDetailPage() {
   }
 
   async function excluirPasta(pastaId: string, nomePasta: string) {
-    if (!confirm(`Excluir a pasta "${nomePasta}"? Os documentos dentro dela serão movidos para Geral.`)) return
+    const filhos = childrenOf(pastaId)
+    const msg = filhos.length > 0
+      ? `Excluir a pasta "${nomePasta}" e suas ${filhos.length} subpasta(s)? Os documentos serão desvinculados.`
+      : `Excluir a pasta "${nomePasta}"? Os documentos dentro dela serão desvinculados.`
+    if (!confirm(msg)) return
     const supabase = createClient()
-    await supabase.from('documentos').update({ pasta: 'Geral' }).eq('obra_id', id).eq('pasta', nomePasta)
+    // Desvincular docs desta pasta e subpastas
+    const todosIds = descendantIds(pastaId)
+    for (const pid of todosIds) {
+      await supabase.from('documentos').update({ pasta: null }).eq('obra_id', id).eq('pasta', pid)
+      // legado: pasta guardada como nome
+      const p = pastas.find(pp => pp.id === pid)
+      if (p) await supabase.from('documentos').update({ pasta: null }).eq('obra_id', id).eq('pasta', p.nome)
+    }
     await supabase.from('doc_pastas').delete().eq('id', pastaId)
-    if (pastaAtiva === nomePasta) setPastaAtiva('__todas__')
+    if (descendantIds(pastaId).includes(pastaAtiva)) setPastaAtiva('__todas__')
     load()
   }
 
@@ -552,41 +582,97 @@ export default function ObraDetailPage() {
                 {/* Todas */}
                 <button
                   onClick={() => setPastaAtiva('__todas__')}
-                  className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-0.5 ${pastaAtiva === '__todas__' ? 'bg-[#EEF2FF] text-[#4F7CFF] font-medium' : 'text-[#374151] hover:bg-[#F1F5F9]'}`}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors mb-0.5 ${pastaAtiva === '__todas__' ? 'bg-[#EEF2FF] text-[#4F7CFF] font-medium' : 'text-[#374151] hover:bg-[#F1F5F9]'}`}
                 >
-                  <FolderOpen size={15} />
+                  <FolderOpen size={14} />
                   <span className="flex-1 text-left">Todos</span>
                   <span className="text-xs text-[#94A3B8]">{docs.length}</span>
                 </button>
 
-                {/* Pastas dinâmicas */}
-                {todasPastasNomes.map(nomePasta => {
-                  const qtd = docs.filter(d => (d.pasta || 'Geral') === nomePasta).length
-                  const pastaObj = pastas.find(p => p.nome === nomePasta)
-                  const ativa = pastaAtiva === nomePasta
+                {/* Árvore de pastas */}
+                {rootPastas.map(pasta => {
+                  const filhos = childrenOf(pasta.id)
+                  const qtd = docs.filter(d => descendantIds(pasta.id).includes(resolveDocPastaId(d) ?? '')).length
+                  const ativa = pastaAtiva === pasta.id
+                  const expandida = pastasAbertas[pasta.id] !== false // aberta por padrão
+                  const temFilhos = filhos.length > 0
+
                   return (
-                    <div key={nomePasta} className="group relative">
-                      <button
-                        onClick={() => setPastaAtiva(nomePasta)}
-                        className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors mb-0.5 ${ativa ? 'bg-[#EEF2FF] text-[#4F7CFF] font-medium' : 'text-[#374151] hover:bg-[#F1F5F9]'}`}
-                      >
-                        <Folder size={15} className={ativa ? 'text-[#4F7CFF]' : 'text-[#94A3B8]'} />
-                        <span className="flex-1 text-left truncate">{nomePasta}</span>
-                        <span className="text-xs text-[#94A3B8]">{qtd}</span>
-                      </button>
-                      {pastaObj && (
+                    <div key={pasta.id}>
+                      {/* Pasta raiz */}
+                      <div className="group/pasta relative flex items-center">
+                        {temFilhos && (
+                          <button onClick={() => togglePasta(pasta.id)} className="shrink-0 w-4 h-6 flex items-center justify-center text-[#94A3B8] hover:text-[#64748B]">
+                            {expandida ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                          </button>
+                        )}
                         <button
-                          onClick={() => excluirPasta(pastaObj.id, nomePasta)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 transition-all"
+                          onClick={() => setPastaAtiva(pasta.id)}
+                          className={`flex-1 flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg text-sm transition-colors ${!temFilhos ? 'ml-4' : ''} ${ativa ? 'bg-[#EEF2FF] text-[#4F7CFF] font-medium' : 'text-[#374151] hover:bg-[#F1F5F9]'}`}
                         >
-                          <Trash2 size={11} className="text-red-400" />
+                          <Folder size={14} className={ativa ? 'text-[#4F7CFF]' : 'text-[#94A3B8]'} />
+                          <span className="flex-1 text-left truncate text-xs">{pasta.nome}</span>
+                          <span className="text-[10px] text-[#94A3B8]">{qtd}</span>
                         </button>
+                        {/* Ações hover: add subpasta + excluir */}
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 hidden group-hover/pasta:flex items-center gap-0.5 bg-white pl-1">
+                          <button
+                            title="Nova subpasta"
+                            onClick={() => { setCriandoSubpastaEm(pasta.id); setPastasAbertas(p => ({ ...p, [pasta.id]: true })) }}
+                            className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                            <Plus size={11} />
+                          </button>
+                          <button
+                            title="Excluir pasta"
+                            onClick={() => excluirPasta(pasta.id, pasta.nome)}
+                            className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                            <Trash2 size={10} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Subpastas */}
+                      {expandida && (
+                        <div className="ml-4 border-l border-[#F1F5F9] pl-1.5 mt-0.5 space-y-0.5">
+                          {filhos.map(sub => {
+                            const subQtd = docs.filter(d => resolveDocPastaId(d) === sub.id).length
+                            const subAtiva = pastaAtiva === sub.id
+                            return (
+                              <div key={sub.id} className="group/sub relative flex items-center">
+                                <button
+                                  onClick={() => setPastaAtiva(sub.id)}
+                                  className={`flex-1 flex items-center gap-1.5 px-1.5 py-1 rounded-lg text-xs transition-colors ${subAtiva ? 'bg-[#EEF2FF] text-[#4F7CFF] font-medium' : 'text-[#374151] hover:bg-[#F1F5F9]'}`}
+                                >
+                                  <Folder size={12} className={subAtiva ? 'text-[#4F7CFF]' : 'text-[#94A3B8]'} />
+                                  <span className="flex-1 text-left truncate">{sub.nome}</span>
+                                  <span className="text-[10px] text-[#94A3B8]">{subQtd}</span>
+                                </button>
+                                <div className="absolute right-0 top-1/2 -translate-y-1/2 hidden group-hover/sub:flex items-center bg-white pl-0.5">
+                                  <button
+                                    title="Excluir subpasta"
+                                    onClick={() => excluirPasta(sub.id, sub.nome)}
+                                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                                    <Trash2 size={10} />
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+
+                          {/* Input inline de nova subpasta */}
+                          {criandoSubpastaEm === pasta.id && (
+                            <NovaPastaInline
+                              onConfirm={nome => { criarPasta(nome, pasta.id); setCriandoSubpastaEm(null) }}
+                              onCancel={() => setCriandoSubpastaEm(null)}
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
                   )
                 })}
 
-                {/* Nova pasta inline */}
+                {/* Nova pasta raiz inline */}
                 {showNovaPasta && (
                   <NovaPastaInline
                     onConfirm={nome => { criarPasta(nome); setShowNovaPasta(false) }}
@@ -602,12 +688,17 @@ export default function ObraDetailPage() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <div className="min-w-0">
                   <h2 className="font-syne text-lg font-bold text-[#0F172A] break-words">
-                    {pastaAtiva === '__todas__' ? 'Todos os Documentos' : pastaAtiva}
+                    {pastaAtiva === '__todas__' ? 'Todos os Documentos' : (() => {
+                      const p = pastas.find(pp => pp.id === pastaAtiva)
+                      if (!p) return 'Documentos'
+                      const pai = p.parent_id ? pastas.find(pp => pp.id === p.parent_id) : null
+                      return pai ? `${pai.nome} / ${p.nome}` : p.nome
+                    })()}
                   </h2>
                   <p className="text-xs text-[#64748B]">{docsFiltrados.length} documento{docsFiltrados.length !== 1 ? 's' : ''}</p>
                 </div>
                 <button
-                  onClick={() => { setPastaParaDoc(pastaAtiva === '__todas__' ? 'Geral' : pastaAtiva); setShowAddDoc(true) }}
+                  onClick={() => { setPastaParaDoc(pastaAtiva === '__todas__' ? null : pastaAtiva); setShowAddDoc(true) }}
                   className="btn-primary w-full sm:w-auto shrink-0"
                 >
                   <Upload size={16} /> Adicionar Documentos
@@ -617,25 +708,69 @@ export default function ObraDetailPage() {
               {/* Visualização por pasta (modo todas) ou lista */}
               {pastaAtiva === '__todas__' ? (
                 <div className="space-y-4">
-                  {todasPastasNomes.map(nomePasta => {
-                    const docsNaPasta = docs.filter(d => (d.pasta || 'Geral') === nomePasta)
-                    if (docsNaPasta.length === 0) return null
-                    const aberta = pastasAbertas[nomePasta] !== false
+                  {rootPastas.map(pasta => {
+                    // Docs diretos nesta pasta (não nos filhos)
+                    const docsNaPasta = docs.filter(d => resolveDocPastaId(d) === pasta.id)
+                    const filhos = childrenOf(pasta.id)
+                    const totalPasta = docs.filter(d => descendantIds(pasta.id).includes(resolveDocPastaId(d) ?? '')).length
+                    if (totalPasta === 0 && filhos.length === 0) return null
+                    const aberta = pastasAbertas[pasta.id] !== false
                     return (
-                      <div key={nomePasta} className="card p-0 overflow-hidden">
+                      <div key={pasta.id} className="card p-0 overflow-hidden">
                         <button
-                          onClick={() => togglePasta(nomePasta)}
+                          onClick={() => togglePasta(pasta.id)}
                           className="w-full flex items-center gap-3 px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0] hover:bg-[#F1F5F9] transition-colors"
                         >
                           {aberta ? <ChevronDown size={15} className="text-[#64748B]" /> : <ChevronRight size={15} className="text-[#64748B]" />}
                           <FolderOpen size={16} className="text-[#4F7CFF]" />
-                          <span className="font-syne font-semibold text-sm text-[#0F172A]">{nomePasta}</span>
-                          <span className="text-xs text-[#94A3B8] ml-auto">{docsNaPasta.length} arquivo{docsNaPasta.length !== 1 ? 's' : ''}</span>
+                          <span className="font-syne font-semibold text-sm text-[#0F172A]">{pasta.nome}</span>
+                          <span className="text-xs text-[#94A3B8] ml-auto">{totalPasta} arquivo{totalPasta !== 1 ? 's' : ''}</span>
                         </button>
-                        {aberta && <DocTable docs={docsNaPasta} onDelete={excluirDoc} />}
+                        {aberta && (
+                          <>
+                            {docsNaPasta.length > 0 && <DocTable docs={docsNaPasta} onDelete={excluirDoc} />}
+                            {filhos.map(sub => {
+                              const docsSub = docs.filter(d => resolveDocPastaId(d) === sub.id)
+                              if (docsSub.length === 0) return null
+                              const subAberta = pastasAbertas[sub.id] !== false
+                              return (
+                                <div key={sub.id} className="border-t border-[#F1F5F9]">
+                                  <button
+                                    onClick={() => togglePasta(sub.id)}
+                                    className="w-full flex items-center gap-2 px-6 py-2 bg-[#FAFBFF] hover:bg-[#F1F5F9] transition-colors"
+                                  >
+                                    {subAberta ? <ChevronDown size={13} className="text-[#94A3B8]" /> : <ChevronRight size={13} className="text-[#94A3B8]" />}
+                                    <Folder size={13} className="text-[#94A3B8]" />
+                                    <span className="text-xs font-medium text-[#374151]">{sub.nome}</span>
+                                    <span className="text-[10px] text-[#94A3B8] ml-auto">{docsSub.length} arquivo{docsSub.length !== 1 ? 's' : ''}</span>
+                                  </button>
+                                  {subAberta && <DocTable docs={docsSub} onDelete={excluirDoc} />}
+                                </div>
+                              )
+                            })}
+                          </>
+                        )}
                       </div>
                     )
                   })}
+                  {/* Docs sem pasta */}
+                  {(() => {
+                    const semPasta = docs.filter(d => !resolveDocPastaId(d))
+                    if (semPasta.length === 0) return null
+                    const aberta = pastasAbertas['__sem_pasta__'] !== false
+                    return (
+                      <div className="card p-0 overflow-hidden">
+                        <button onClick={() => togglePasta('__sem_pasta__')}
+                          className="w-full flex items-center gap-3 px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0] hover:bg-[#F1F5F9] transition-colors">
+                          {aberta ? <ChevronDown size={15} className="text-[#64748B]" /> : <ChevronRight size={15} className="text-[#64748B]" />}
+                          <FolderOpen size={16} className="text-[#94A3B8]" />
+                          <span className="font-syne font-semibold text-sm text-[#64748B]">Sem pasta</span>
+                          <span className="text-xs text-[#94A3B8] ml-auto">{semPasta.length} arquivo{semPasta.length !== 1 ? 's' : ''}</span>
+                        </button>
+                        {aberta && <DocTable docs={semPasta} onDelete={excluirDoc} />}
+                      </div>
+                    )
+                  })()}
                   {docs.length === 0 && (
                     <div className="card text-center py-12">
                       <FolderOpen size={32} className="text-[#CBD5E1] mx-auto mb-3" />
@@ -916,8 +1051,8 @@ export default function ObraDetailPage() {
       {showAddDoc && (
         <ModalAddDoc
           obraId={id}
-          pastaInicial={pastaParaDoc}
-          pastasDisponiveis={todasPastasNomes}
+          pastaInicialId={pastaParaDoc}
+          pastas={pastas}
           onClose={() => setShowAddDoc(false)}
           onCreated={() => { setShowAddDoc(false); load() }}
         />
@@ -1219,10 +1354,10 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
   )
 }
 
-function ModalAddDoc({ obraId, pastaInicial, pastasDisponiveis, onClose, onCreated }: {
-  obraId: string; pastaInicial: string; pastasDisponiveis: string[]; onClose: () => void; onCreated: () => void
+function ModalAddDoc({ obraId, pastaInicialId, pastas, onClose, onCreated }: {
+  obraId: string; pastaInicialId: string | null; pastas: DocPasta[]; onClose: () => void; onCreated: () => void
 }) {
-  const [pasta, setPasta] = useState(pastaInicial)
+  const [pastaId, setPastaId] = useState<string>(pastaInicialId ?? '')
   const [categoria, setCategoria] = useState<CategoriaDoc>('Financeiro')
   const [fornecedor, setFornecedor] = useState('')
   const [dataDoc, setDataDoc] = useState('')
@@ -1257,7 +1392,7 @@ function ModalAddDoc({ obraId, pastaInicial, pastasDisponiveis, onClose, onCreat
         obra_id: obraId,
         nome: file.name.replace(/\.[^/.]+$/, ''),
         categoria,
-        pasta,
+        pasta: pastaId || null,
         fornecedor: fornecedor || null,
         data_documento: dataDoc || null,
         arquivo_url: urlData.publicUrl,
@@ -1309,8 +1444,16 @@ function ModalAddDoc({ obraId, pastaInicial, pastasDisponiveis, onClose, onCreat
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Pasta de destino</label>
-              <select className="field" value={pasta} onChange={e => setPasta(e.target.value)}>
-                {pastasDisponiveis.map(p => <option key={p} value={p}>{p}</option>)}
+              <select className="field" value={pastaId} onChange={e => setPastaId(e.target.value)}>
+                <option value="">— Sem pasta —</option>
+                {pastas.filter(p => !p.parent_id).map(p => (
+                  <optgroup key={p.id} label={p.nome}>
+                    <option value={p.id}>{p.nome}</option>
+                    {pastas.filter(s => s.parent_id === p.id).map(s => (
+                      <option key={s.id} value={s.id}>{'  ↳ ' + s.nome}</option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </div>
             <div>

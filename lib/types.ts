@@ -66,6 +66,7 @@ export interface DocPasta {
   nome: string
   cor: string
   ordem: number
+  parent_id?: string | null
   created_at: string
 }
 
