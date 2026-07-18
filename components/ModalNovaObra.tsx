@@ -25,7 +25,6 @@ export default function ModalNovaObra({ clientes, onClose, onCreated, obra }: Pr
     engenheiro_responsavel: obra?.engenheiro_responsavel ?? '',
     numero_contrato: obra?.numero_contrato ?? '',
     endereco: obra?.endereco ?? '',
-    valor_estimado: obra?.valor_estimado?.toString() ?? '',
     data_inicio: obra?.data_inicio ?? '',
     previsao_termino: obra?.previsao_termino ?? '',
     descricao: obra?.descricao ?? '',
@@ -50,7 +49,6 @@ export default function ModalNovaObra({ clientes, onClose, onCreated, obra }: Pr
       engenheiro_responsavel: form.engenheiro_responsavel || null,
       numero_contrato: form.numero_contrato || null,
       endereco: form.endereco || null,
-      valor_estimado: form.valor_estimado ? parseFloat(form.valor_estimado) : null,
       data_inicio: form.data_inicio || null,
       previsao_termino: form.previsao_termino || null,
       descricao: form.descricao || null,
@@ -134,12 +132,6 @@ export default function ModalNovaObra({ clientes, onClose, onCreated, obra }: Pr
             <div className="col-span-2">
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Endereço da Obra</label>
               <input type="text" placeholder="Rua, Número, Bairro, Cidade – UF" value={form.endereco} onChange={e => set('endereco', e.target.value)} className="field" />
-            </div>
-
-            {/* Valor */}
-            <div>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor Estimado</label>
-              <input type="number" placeholder="R$ 0,00" value={form.valor_estimado} onChange={e => set('valor_estimado', e.target.value)} className="field" />
             </div>
 
             {/* Data inicio */}

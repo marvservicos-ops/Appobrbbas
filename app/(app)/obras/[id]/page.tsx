@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, DollarSign, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package } from 'lucide-react'
+import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
@@ -465,7 +465,6 @@ export default function ObraDetailPage() {
                   <InfoRow icon={<Calendar size={14} />} label="Início" value={formatDate(obra.data_inicio)} />
                   <InfoRow icon={<Hash size={14} />} label="Contrato" value={obra.numero_contrato} />
                   <InfoRow icon={<MapPin size={14} />} label="Endereço" value={obra.endereco} className="col-span-2" />
-                  <InfoRow icon={<DollarSign size={14} />} label="Valor do Contrato" value={formatCurrency(obra.valor_estimado)} highlight />
                   <InfoRow icon={<Calendar size={14} />} label="Previsão Término" value={formatDate(obra.previsao_termino)} />
                 </div>
               </div>

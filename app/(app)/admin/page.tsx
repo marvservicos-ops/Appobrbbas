@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 type Linha = {
   id: string; obra_id: string; percentual: number; valor_previsto: number
   valor_faturado?: number; valor_recebido?: number; status: string; data_vencimento?: string
-  obra?: { id: string; titulo: string; valor_estimado?: number } | null
+  obra?: { id: string; titulo: string } | null
 }
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
@@ -22,7 +22,7 @@ export default function AdminFinanceiroPage() {
       const supabase = createClient()
       const { data } = await supabase
         .from('obra_medicoes')
-        .select('id,obra_id,percentual,valor_previsto,valor_faturado,valor_recebido,status,data_vencimento,obra:obras(id,titulo,valor_estimado)')
+        .select('id,obra_id,percentual,valor_previsto,valor_faturado,valor_recebido,status,data_vencimento,obra:obras(id,titulo)')
         .neq('status', 'cancelada')
       setLinhas((data ?? []) as unknown as Linha[])
       setLoading(false)

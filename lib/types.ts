@@ -21,7 +21,6 @@ export interface Obra {
   engenheiro_responsavel?: string
   numero_contrato?: string
   endereco?: string
-  valor_estimado?: number
   data_inicio?: string
   previsao_termino?: string
   descricao?: string

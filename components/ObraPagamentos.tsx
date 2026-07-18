@@ -21,6 +21,8 @@ const STATUS = {
 export default function ObraPagamentos({ obraId }: { obraId: string }) {
   const [obra, setObra] = useState<Obra | null>(null)
   const [medicoes, setMedicoes] = useState<ObraMedicao[]>([])
+  const [valorContrato, setValorContrato] = useState(0)
+  const [contratoInput, setContratoInput] = useState('')
   const [drafts, setDrafts] = useState<EtapaDraft[]>([
     { nome: '1ª medição', percentual: 50, data_prevista: '' },
     { nome: '2ª medição', percentual: 50, data_prevista: '' },
@@ -32,12 +34,15 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
 
   async function load() {
     const supabase = createClient()
-    const [{ data: obraData }, { data: medicaoData }] = await Promise.all([
+    const [{ data: obraData }, { data: medicaoData }, { data: financeiro }] = await Promise.all([
       supabase.from('obras').select('*').eq('id', obraId).single(),
       supabase.from('obra_medicoes').select('*').eq('obra_id', obraId).order('ordem'),
+      supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
     ])
     setObra(obraData as Obra)
     setMedicoes((medicaoData ?? []) as ObraMedicao[])
+    setValorContrato(Number(financeiro?.valor_contrato || 0))
+    setContratoInput(financeiro?.valor_contrato ? String(financeiro.valor_contrato) : '')
     setLoading(false)
   }
   useEffect(() => { load() }, [obraId])
@@ -49,12 +54,22 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     const faturado = ativas.reduce((s, x) => s + Number(x.valor_faturado || 0), 0)
     const recebido = ativas.reduce((s, x) => s + Number(x.valor_recebido || 0), 0)
     const percentualFaturado = ativas.filter(x => x.status === 'faturada' || x.status === 'recebida').reduce((s, x) => s + Number(x.percentual), 0)
-    return { planejado, faturado, recebido, aberto: Math.max(0, faturado - recebido), saldo: Math.max(0, Number(obra?.valor_estimado || 0) - faturado), percentualFaturado }
-  }, [medicoes, obra])
+    return { planejado, faturado, recebido, aberto: Math.max(0, faturado - recebido), saldo: Math.max(0, valorContrato - faturado), percentualFaturado }
+  }, [medicoes, valorContrato])
+
+  async function salvarContrato() {
+    const valor = Number(contratoInput)
+    if (!valor || valor <= 0) { setError('Informe um valor de contrato válido.'); return }
+    setSaving(true)
+    const supabase = createClient()
+    const { error: contractError } = await supabase.from('obra_financeiro').upsert({ obra_id: obraId, valor_contrato: valor, updated_at: new Date().toISOString() })
+    if (contractError) setError(contractError.message); else setValorContrato(valor)
+    setSaving(false)
+  }
 
   async function criarPlano() {
     setError('')
-    if (!obra?.valor_estimado) { setError('Defina o valor do contrato na obra antes de criar o plano.'); return }
+    if (!valorContrato) { setError('Defina o valor do contrato nesta área financeira antes de criar o plano.'); return }
     if (drafts.some(x => !x.nome.trim() || x.percentual <= 0)) { setError('Preencha o nome e um percentual válido em todas as etapas.'); return }
     if (Math.abs(totalPercentual - 100) > 0.001) { setError('A soma das etapas precisa ser exatamente 100%.'); return }
     setSaving(true)
@@ -62,7 +77,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     const { data: { user } } = await supabase.auth.getUser()
     const payload = drafts.map((x, i) => ({
       obra_id: obraId, ordem: i + 1, nome: x.nome.trim(), percentual: x.percentual,
-      valor_previsto: Number(obra.valor_estimado) * x.percentual / 100,
+      valor_previsto: valorContrato * x.percentual / 100,
       data_prevista: x.data_prevista || null, created_by: user?.id,
     }))
     const { error: insertError } = await supabase.from('obra_medicoes').insert(payload)
@@ -109,7 +124,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   if (!obra) return <div className="p-6">Obra não encontrada.</div>
 
   const cards = [
-    { label: 'Contrato', value: Number(obra.valor_estimado || 0), icon: CircleDollarSign, tone: 'bg-slate-100 text-slate-700' },
+    { label: 'Contrato', value: valorContrato, icon: CircleDollarSign, tone: 'bg-slate-100 text-slate-700' },
     { label: 'Faturado', value: resumo.faturado, icon: ReceiptText, tone: 'bg-blue-50 text-blue-700' },
     { label: 'Recebido', value: resumo.recebido, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-700' },
     { label: 'Saldo a faturar', value: resumo.saldo, icon: CalendarDays, tone: 'bg-amber-50 text-amber-700' },
@@ -123,6 +138,16 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         <h1 className="font-syne text-xl md:text-3xl font-bold text-[#0F172A] mt-1">Plano de medições</h1>
         <p className="text-sm text-[#64748B] mt-1 line-clamp-2">{obra.titulo}</p>
       </div>
+
+      <section className="card mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <label className="text-sm font-medium text-[#374151] flex-1">Valor do contrato
+            <input type="number" min="0" step="0.01" className="field mt-1.5" placeholder="0,00" value={contratoInput} onChange={e => setContratoInput(e.target.value)} />
+          </label>
+          <button onClick={salvarContrato} disabled={saving || Boolean(medicoes.length)} className="btn-primary sm:w-auto">{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Salvar valor</button>
+        </div>
+        {medicoes.length > 0 && <p className="text-xs text-[#64748B] mt-2">O valor fica bloqueado após a criação do plano para preservar os cálculos das etapas.</p>}
+      </section>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {cards.map(({ label, value, icon: Icon, tone }) => <div key={label} className="card p-4"><div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tone}`}><Icon size={17} /></div><p className="text-xs text-[#64748B] mt-3">{label}</p><p className="font-syne text-base md:text-xl font-bold text-[#0F172A] mt-0.5">{moeda(value)}</p></div>)}
