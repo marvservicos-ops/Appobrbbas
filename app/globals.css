@@ -29,6 +29,7 @@ body {
   min-width: 320px;
   min-height: 100dvh;
   overflow-wrap: break-word;
+  overflow-x: hidden;
 }
 
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }

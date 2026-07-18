@@ -379,13 +379,13 @@ export default function ObraDetailPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-screen min-w-0 overflow-x-hidden">
+    <div className="flex flex-col min-h-[calc(100dvh-7.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:min-h-full min-w-0 overflow-x-hidden">
       {/* Topbar */}
-      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-3 md:px-6 gap-3 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-10">
-        <button onClick={() => router.push('/obras')} className="shrink-0 flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F172A] transition-colors">
+      <header className="min-h-14 bg-white border-b border-[#E2E8F0] flex items-start md:items-center px-3 md:px-6 py-3 md:py-0 gap-3 relative md:sticky md:top-0 z-10">
+        <button aria-label="Voltar para obras" onClick={() => router.push('/obras')} className="w-8 h-8 -ml-1 shrink-0 flex items-center justify-center text-sm text-[#64748B] hover:text-[#0F172A] transition-colors">
           <ArrowLeft size={16} />
         </button>
-        <h1 className="font-syne font-semibold text-[#0F172A] text-sm md:text-base truncate flex-1 min-w-0">{obra.titulo}</h1>
+        <h1 className="font-syne font-semibold text-[#0F172A] text-sm md:text-base leading-5 line-clamp-2 md:truncate flex-1 min-w-0 pt-1.5 md:pt-0">{obra.titulo}</h1>
         <div className="ml-auto hidden md:flex items-center gap-3">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
