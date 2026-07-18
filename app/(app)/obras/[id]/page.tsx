@@ -806,19 +806,19 @@ export default function ObraDetailPage() {
         {/* ===== MATERIAIS ===== */}
         {tab === 'materiais' && (
           <div>
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="font-syne font-semibold text-[#0F172A]">Materiais da Obra</h2>
-                <p className="text-xs text-[#64748B] mt-0.5">Controle de compras, chegada e destino dos materiais</p>
+            <div className="mb-5">
+              <div className="mb-4">
+                <h2 className="font-syne text-xl font-bold text-[#0F172A]">Materiais da Obra</h2>
+                <p className="text-sm text-[#64748B] mt-1">Controle de compras, chegada e destino dos materiais</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="grid grid-cols-3 gap-2 sm:flex sm:items-center">
                 <button onClick={() => setShowNFManual(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-[#E2E8F0] text-[#64748B] text-sm font-medium hover:bg-[#F8FAFC] transition-colors">
-                  <FileText size={15} /> Lançar NF
+                  className="min-h-12 flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-xl border-2 border-[#E2E8F0] text-[#64748B] text-xs sm:text-sm font-medium hover:bg-[#F8FAFC] transition-colors">
+                  <FileText size={15} className="shrink-0" /> <span>Lançar NF</span>
                 </button>
-                <label className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-xl border-2 border-[#4F7CFF] text-[#4F7CFF] text-sm font-medium hover:bg-[#EEF2FF] transition-colors ${importandoNF ? 'opacity-60 pointer-events-none' : ''}`}>
-                  {importandoNF ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                  {importandoNF ? 'Lendo NF...' : 'Importar NF'}
+                <label className={`min-h-12 flex items-center justify-center gap-1.5 cursor-pointer px-2 sm:px-4 py-2 rounded-xl border-2 border-[#4F7CFF] text-[#4F7CFF] text-xs sm:text-sm font-medium hover:bg-[#EEF2FF] transition-colors ${importandoNF ? 'opacity-60 pointer-events-none' : ''}`}>
+                  {importandoNF ? <Loader2 size={15} className="animate-spin shrink-0" /> : <Upload size={15} className="shrink-0" />}
+                  <span>{importandoNF ? 'Lendo NF...' : 'Importar NF'}</span>
                   <input type="file" accept=".pdf" className="hidden" disabled={importandoNF}
                     onChange={async e => {
                       const f = e.target.files?.[0]; if (!f) return
@@ -839,8 +839,8 @@ export default function ObraDetailPage() {
                     }} />
                 </label>
                 <button onClick={() => { setShowNovoMaterial(true); setEditandoMaterial(null) }}
-                  className="btn-primary text-sm flex items-center gap-2">
-                  <PlusCircle size={15} /> Novo Material
+                  className="btn-primary min-h-12 text-xs sm:text-sm flex items-center gap-1.5 px-2 sm:px-4">
+                  <PlusCircle size={15} className="shrink-0" /> <span>Novo Material</span>
                 </button>
               </div>
             </div>
@@ -1588,7 +1588,7 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
   return (
     <div className="card p-0 overflow-hidden">
       {/* Cabeçalho da NF */}
-      <div className="flex items-center justify-between px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-4 sm:py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${ref.tipo_compra === 'cliente' ? 'bg-purple-50' : 'bg-blue-50'}`}>
             <FileText size={15} className={ref.tipo_compra === 'cliente' ? 'text-purple-600' : 'text-blue-600'} />
@@ -1611,13 +1611,13 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 shrink-0 ml-3">
-          <span className="font-syne font-bold text-sm text-[#0F172A]">{fmtMoeda(totalNF)}</span>
+        <div className="flex items-center gap-2 shrink-0 sm:ml-3 pl-11 sm:pl-0">
+          <span className="font-syne font-bold text-sm text-[#0F172A] mr-auto sm:mr-1">{fmtMoeda(totalNF)}</span>
           <a href={nfUrl} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-2.5 py-1 rounded-lg hover:bg-[#dce8ff] transition-colors">
+            className="min-h-9 flex items-center gap-1 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-1 rounded-lg hover:bg-[#dce8ff] transition-colors">
             <ExternalLink size={11} /> Ver NF
           </a>
-          <button onClick={() => setAberto(a => !a)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+          <button aria-label={aberto ? 'Recolher itens' : 'Mostrar itens'} onClick={() => setAberto(a => !a)} className="w-9 h-9 flex items-center justify-center text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
             {aberto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
         </div>
@@ -1625,7 +1625,33 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
 
       {/* Tabela de itens */}
       {aberto && (
-        <table className="w-full">
+        <>
+          <div className="divide-y divide-[#E2E8F0] md:hidden">
+            {itens.map(m => {
+              const st = STATUS_MATERIAL[m.status] ?? STATUS_MATERIAL.pendente
+              return (
+                <article key={m.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-semibold leading-5 text-[#0F172A] break-words">{m.descricao}</h3>
+                      <span className={`inline-flex mt-2 text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button aria-label={`Editar ${m.descricao}`} onClick={() => onEdit(m)} className="w-10 h-10 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF]"><Pencil size={14} /></button>
+                      <button aria-label={`Excluir ${m.descricao}`} onClick={() => onDelete(m)} className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-50 text-red-500"><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-4 text-xs">
+                    <div><span className="block text-[#94A3B8]">Quantidade</span><span className="font-medium text-[#374151]">{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</span></div>
+                    <div><span className="block text-[#94A3B8]">Valor unitário</span><span className="font-medium text-[#374151]">{m.valor_unitario != null ? fmtMoeda(m.valor_unitario) : '—'}</span></div>
+                    <div><span className="block text-[#94A3B8]">Valor total</span><span className="font-semibold text-[#0F172A]">{m.valor_total != null ? fmtMoeda(m.valor_total) : '—'}</span></div>
+                    <div><span className="block text-[#94A3B8]">Chegada</span><span className="font-medium text-[#374151]">{m.data_chegada ? fmt(m.data_chegada) : m.data_prevista_chegada ? `Prev. ${fmt(m.data_prevista_chegada)}` : '—'}</span></div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+          <table className="hidden md:table w-full">
           <thead>
             <tr className="border-b border-[#F1F5F9]">
               <th className="text-left text-xs font-semibold text-[#94A3B8] px-4 py-2">Descrição</th>
@@ -1660,7 +1686,8 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
               )
             })}
           </tbody>
-        </table>
+          </table>
+        </>
       )}
     </div>
   )
