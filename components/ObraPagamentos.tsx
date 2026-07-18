@@ -120,6 +120,18 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     if (signedError) alert(signedError.message); else window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
+  async function removerNF(m: ObraMedicao) {
+    if (!m.nf_path || !confirm(`Remover o anexo "${m.nf_nome || 'Nota fiscal'}"?`)) return
+    setUploading(m.id)
+    const supabase = createClient()
+    const { error: storageError } = await supabase.storage.from('notas-fiscais-emitidas').remove([m.nf_path])
+    if (storageError) { alert(storageError.message); setUploading(null); return }
+    const { error: updateError } = await supabase.from('obra_medicoes').update({ nf_path: null, nf_nome: null }).eq('id', m.id)
+    if (updateError) alert(updateError.message)
+    else setMedicoes(list => list.map(x => x.id === m.id ? { ...x, nf_path: undefined, nf_nome: undefined } : x))
+    setUploading(null)
+  }
+
   if (loading) return <div className="h-64 flex items-center justify-center"><Loader2 className="animate-spin text-[#4F7CFF]" /></div>
   if (!obra) return <div className="p-6">Obra não encontrada.</div>
 
@@ -198,9 +210,14 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                         <input type="file" accept=".pdf,image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) anexarNF(m, f); e.target.value = '' }} />
                       </label>
                       {m.nf_path && (
-                        <button type="button" onClick={() => abrirNF(m)} className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]" aria-label={`Abrir ${m.nf_nome || 'nota fiscal'}`} title="Abrir nota fiscal">
-                          <FileText size={16} />
-                        </button>
+                        <>
+                          <button type="button" onClick={() => abrirNF(m)} className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]" aria-label={`Abrir ${m.nf_nome || 'nota fiscal'}`} title="Abrir nota fiscal">
+                            <FileText size={16} />
+                          </button>
+                          <button type="button" disabled={uploading === m.id} onClick={() => removerNF(m)} className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-50" aria-label={`Remover ${m.nf_nome || 'nota fiscal'}`} title="Remover anexo">
+                            <Trash2 size={16} />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
