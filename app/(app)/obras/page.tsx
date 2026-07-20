@@ -26,7 +26,6 @@ function formatDate(d?: string) {
 
 export default function ObrasPage() {
   const [obras, setObras] = useState<Obra[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editObra, setEditObra] = useState<Obra | null>(null)
@@ -36,12 +35,8 @@ export default function ObrasPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const [obrasRes, clientesRes] = await Promise.all([
-      supabase.from('obras').select('*, cliente:clientes(*)').order('created_at', { ascending: false }),
-      supabase.from('clientes').select('*').order('nome'),
-    ])
-    if (obrasRes.data) setObras(obrasRes.data as Obra[])
-    if (clientesRes.data) setClientes(clientesRes.data as Cliente[])
+    const { data } = await supabase.from('obras').select('*, cliente:clientes(*), gestor:clientes!gestor_id(*), comprador:clientes!comprador_id(*)').order('created_at', { ascending: false })
+    if (data) setObras(data as Obra[])
     setLoading(false)
   }
 
@@ -49,7 +44,8 @@ export default function ObrasPage() {
 
   const filtered = obras.filter(o =>
     o.titulo.toLowerCase().includes(search.toLowerCase()) ||
-    (o.cliente as Cliente | undefined)?.nome?.toLowerCase().includes(search.toLowerCase())
+    (o.cliente as Cliente | undefined)?.nome?.toLowerCase().includes(search.toLowerCase()) ||
+    (o.gestor as Cliente | undefined)?.nome?.toLowerCase().includes(search.toLowerCase())
   )
 
   const stats = {
@@ -184,14 +180,12 @@ export default function ObrasPage() {
 
       {showModal && (
         <ModalNovaObra
-          clientes={clientes}
           onClose={() => setShowModal(false)}
           onCreated={() => { setShowModal(false); load() }}
         />
       )}
       {editObra && (
         <ModalNovaObra
-          clientes={clientes}
           obra={editObra}
           onClose={() => setEditObra(null)}
           onCreated={() => { setEditObra(null); load() }}

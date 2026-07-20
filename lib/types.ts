@@ -1,5 +1,10 @@
 export type StatusObra = 'Em Orçamento' | 'Aprovada' | 'Em Andamento' | 'Concluída'
-export type TipoServico = 'HVAC' | 'Elétrico' | 'Hidráulico' | 'Civil'
+export interface TipoServico {
+  id: string
+  nome: string
+  ordem: number
+  created_at: string
+}
 export type StatusEtapa = 'Pendente' | 'Em Andamento' | 'Concluída' | 'Atrasada'
 export type CategoriaDoc = 'Financeiro' | 'Técnico' | 'Jurídico' | 'Outros'
 
@@ -36,14 +41,20 @@ export interface Obra {
   titulo: string
   cliente_id: string
   cliente?: Cliente
-  tipo_servico: TipoServico
+  tipo_servico: string
   status: StatusObra
   engenheiro_responsavel?: string
   numero_contrato?: string
   endereco?: string
+  pavimento?: string
   data_inicio?: string
   previsao_termino?: string
+  data_aprovacao_contrato?: string
   descricao?: string
+  gestor_id?: string | null
+  comprador_id?: string | null
+  gestor?: Cliente
+  comprador?: Cliente
   created_at: string
   updated_at: string
 }
