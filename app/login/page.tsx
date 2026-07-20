@@ -63,7 +63,7 @@ export default function LoginPage() {
     })
     setLoading(false)
     if (error) {
-      setError('Erro ao enviar email. Verifique o endereço.')
+      setError(error.message)
     } else {
       setInfo('Link de redefinição enviado! Verifique sua caixa de entrada.')
     }
