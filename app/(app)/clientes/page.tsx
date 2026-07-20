@@ -275,8 +275,12 @@ export default function ClientesPage() {
   useEffect(() => { load() }, [])
 
   async function excluirCliente(c: Cliente) {
-    if (!confirm(`Excluir "${c.nome}"?`)) return
-    const { error } = await createClient().from('clientes').delete().eq('id', c.id)
+    if (!confirm(`Excluir "${c.nome}"? Obras vinculadas a este cliente serão desvinculadas.`)) return
+    const supabase = createClient()
+    // Desvincular obras antes de excluir (FK obras.cliente_id)
+    const { error: errObras } = await supabase.from('obras').update({ cliente_id: null }).eq('cliente_id', c.id)
+    if (errObras) { alert('Erro ao desvincular obras: ' + errObras.message); return }
+    const { error } = await supabase.from('clientes').delete().eq('id', c.id)
     if (error) { alert('Erro ao excluir: ' + error.message); return }
     load()
   }
