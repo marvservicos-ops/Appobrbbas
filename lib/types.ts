@@ -5,6 +5,20 @@ export type CategoriaDoc = 'Financeiro' | 'Técnico' | 'Jurídico' | 'Outros'
 
 export type TipoCliente = 'Gestor' | 'Comprador'
 
+export interface Empresa {
+  id: string
+  razao_social: string
+  apelido?: string
+  cnpj?: string
+  endereco?: string
+  cidade?: string
+  estado?: string
+  cep?: string
+  telefone?: string
+  email?: string
+  created_at: string
+}
+
 export interface Cliente {
   id: string
   nome: string
@@ -12,6 +26,8 @@ export interface Cliente {
   telefone?: string
   tipo?: TipoCliente
   cargo?: string
+  empresa_id?: string | null
+  empresa?: Empresa
   created_at: string
 }
 
