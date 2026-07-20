@@ -3,11 +3,15 @@ export type TipoServico = 'HVAC' | 'Elétrico' | 'Hidráulico' | 'Civil'
 export type StatusEtapa = 'Pendente' | 'Em Andamento' | 'Concluída' | 'Atrasada'
 export type CategoriaDoc = 'Financeiro' | 'Técnico' | 'Jurídico' | 'Outros'
 
+export type TipoCliente = 'Gestor' | 'Comprador'
+
 export interface Cliente {
   id: string
   nome: string
   email?: string
   telefone?: string
+  tipo?: TipoCliente
+  cargo?: string
   created_at: string
 }
 
