@@ -35,7 +35,8 @@ export default function ObrasPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const { data } = await supabase.from('obras').select('*, cliente:clientes(*)').order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('obras').select('*').order('created_at', { ascending: false })
+    if (error) console.error('obras load error:', error)
     if (data) setObras(data as Obra[])
     setLoading(false)
   }
