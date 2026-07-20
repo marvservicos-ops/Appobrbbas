@@ -265,7 +265,7 @@ export default function ObraDetailPage() {
     setLoading(true)
     const supabase = createClient()
     const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes] = await Promise.all([
-      supabase.from('obras').select('*, cliente:clientes(*)').eq('id', id).single(),
+      supabase.from('obras').select('*').eq('id', id).single(),
       supabase.from('cronograma_etapas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('documentos').select('*').eq('obra_id', id).order('pasta').order('created_at', { ascending: false }),
       supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
