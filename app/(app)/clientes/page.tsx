@@ -20,10 +20,12 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
   const [telefone, setTelefone] = useState(empresa?.telefone ?? '')
   const [email, setEmail] = useState(empresa?.email ?? '')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
+    setError('')
     const supabase = createClient()
     const payload = {
       razao_social: razaoSocial.trim(),
@@ -36,12 +38,11 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
       telefone: telefone.trim() || null,
       email: email.trim() || null,
     }
-    if (editing) {
-      await supabase.from('empresas').update(payload).eq('id', empresa!.id)
-    } else {
-      await supabase.from('empresas').insert(payload)
-    }
+    const { error: err } = editing
+      ? await supabase.from('empresas').update(payload).eq('id', empresa!.id)
+      : await supabase.from('empresas').insert(payload)
     setLoading(false)
+    if (err) { setError(err.message); return }
     onSaved()
   }
 
@@ -100,6 +101,7 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
             <input type="email" className="field" value={email} onChange={e => setEmail(e.target.value)} placeholder="contato@empresa.com.br" />
           </div>
 
+          {error && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
           <div className="flex justify-end gap-3 pt-2 border-t border-[#E2E8F0]">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
             <button type="submit" disabled={loading} className="btn-primary">
@@ -123,10 +125,12 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
   const [tipo, setTipo] = useState<TipoCliente>(cliente?.tipo ?? 'Comprador')
   const [empresaId, setEmpresaId] = useState<string>(cliente?.empresa_id ?? '')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
+    setError('')
     const supabase = createClient()
     const payload = {
       nome,
@@ -135,12 +139,11 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
       tipo,
       empresa_id: empresaId || null,
     }
-    if (editing) {
-      await supabase.from('clientes').update(payload).eq('id', cliente!.id)
-    } else {
-      await supabase.from('clientes').insert(payload)
-    }
+    const { error: err } = editing
+      ? await supabase.from('clientes').update(payload).eq('id', cliente!.id)
+      : await supabase.from('clientes').insert(payload)
     setLoading(false)
+    if (err) { setError(err.message); return }
     onSaved()
   }
 
@@ -201,6 +204,7 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
             </div>
           </div>
 
+          {error && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
           <div className="flex justify-end gap-3 pt-2 border-t border-[#E2E8F0]">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
             <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : editing ? 'Salvar Alterações' : 'Criar'}</button>
