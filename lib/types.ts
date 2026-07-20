@@ -112,6 +112,7 @@ export interface Perfil {
 export interface ObraMedicao {
   id: string
   obra_id: string
+  aditivo_id?: string | null
   ordem: number
   nome: string
   percentual: number
