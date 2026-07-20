@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Cliente, TipoCliente } from '@/lib/types'
 import { Plus, X, Pencil, Building2, ShoppingCart } from 'lucide-react'
 
-const CARGOS_GESTOR = ['Diretor', 'Gerente', 'Coordenador', 'Engenheiro', 'Arquiteto', 'Fiscal', 'Outro']
 
 function ModalCliente({ cliente, onClose, onSaved }: {
   cliente: Cliente | null
@@ -17,7 +16,7 @@ function ModalCliente({ cliente, onClose, onSaved }: {
   const [email, setEmail] = useState(cliente?.email ?? '')
   const [telefone, setTelefone] = useState(cliente?.telefone ?? '')
   const [tipo, setTipo] = useState<TipoCliente>(cliente?.tipo ?? 'Comprador')
-  const [cargo, setCargo] = useState(cliente?.cargo ?? '')
+  const [empresa, setEmpresa] = useState(cliente?.cargo ?? '')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -29,7 +28,7 @@ function ModalCliente({ cliente, onClose, onSaved }: {
       email: email || null,
       telefone: telefone || null,
       tipo,
-      cargo: tipo === 'Gestor' ? (cargo || null) : null,
+      cargo: empresa || null,
     }
     if (editing) {
       await supabase.from('clientes').update(payload).eq('id', cliente!.id)
@@ -73,15 +72,10 @@ function ModalCliente({ cliente, onClose, onSaved }: {
             <input required className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome da empresa ou pessoa" />
           </div>
 
-          {tipo === 'Gestor' && (
-            <div>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">Cargo / Função</label>
-              <select className="field" value={cargo} onChange={e => setCargo(e.target.value)}>
-                <option value="">Selecione...</option>
-                {CARGOS_GESTOR.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          )}
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Empresa</label>
+            <input className="field" value={empresa} onChange={e => setEmpresa(e.target.value)} placeholder="Nome da empresa" />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
