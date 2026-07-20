@@ -492,11 +492,21 @@ export default function ObraDetailPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                   <InfoRow icon={<Wrench size={14} />} label="Tipo de Serviço" value={obra.tipo_servico} />
                   <InfoRow icon={<User size={14} />} label="Responsável Técnico" value={obra.engenheiro_responsavel} />
-                  <InfoRow icon={<Calendar size={14} />} label="Início" value={formatDate(obra.data_inicio)} />
                   <InfoRow icon={<Hash size={14} />} label="Contrato" value={obra.numero_contrato} />
-                  <InfoRow icon={<MapPin size={14} />} label="Endereço" value={obra.endereco} className="col-span-2" />
+                  <InfoRow icon={<Calendar size={14} />} label="Aprovação do Contrato" value={formatDate(obra.data_aprovacao_contrato)} />
+                  <InfoRow icon={<Calendar size={14} />} label="Início" value={formatDate(obra.data_inicio)} />
                   <InfoRow icon={<Calendar size={14} />} label="Previsão Término" value={formatDate(obra.previsao_termino)} />
+                  <InfoRow icon={<MapPin size={14} />} label="Endereço" value={obra.endereco} />
+                  {obra.pavimento && <InfoRow icon={<MapPin size={14} />} label="Pavimento" value={obra.pavimento} />}
                 </div>
+
+                {/* Contatos do Projeto */}
+                {(obra.gestor_id || obra.comprador_id) && (
+                  <div className="mt-4 pt-4 border-t border-[#E2E8F0]">
+                    <p className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider mb-3">Contatos do Projeto</p>
+                    <GestorCompradorCards obraId={obra.id} gestorId={obra.gestor_id} compradorId={obra.comprador_id} />
+                  </div>
+                )}
               </div>
 
               {/* Map placeholder */}
@@ -1062,6 +1072,44 @@ export default function ObraDetailPage() {
 }
 
 // ---- Sub components ----
+
+function GestorCompradorCards({ obraId, gestorId, compradorId }: { obraId: string; gestorId?: string | null; compradorId?: string | null }) {
+  const [gestor, setGestor] = useState<{ nome: string; telefone?: string; email?: string; empresa?: { apelido?: string; razao_social: string } } | null>(null)
+  const [comprador, setComprador] = useState<{ nome: string; telefone?: string; email?: string; empresa?: { apelido?: string; razao_social: string } } | null>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    if (gestorId) {
+      supabase.from('clientes').select('nome,telefone,email,empresa:empresas(razao_social,apelido)').eq('id', gestorId).single()
+        .then(({ data }) => { if (data) setGestor(data as unknown as typeof gestor) })
+    }
+    if (compradorId) {
+      supabase.from('clientes').select('nome,telefone,email,empresa:empresas(razao_social,apelido)').eq('id', compradorId).single()
+        .then(({ data }) => { if (data) setComprador(data as unknown as typeof comprador) })
+    }
+  }, [gestorId, compradorId])
+
+  function Card({ pessoa, titulo }: { pessoa: typeof gestor; titulo: string }) {
+    if (!pessoa) return null
+    const empresaNome = pessoa.empresa ? (pessoa.empresa.apelido || pessoa.empresa.razao_social) : null
+    return (
+      <div className="flex-1 min-w-[160px] p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg space-y-1">
+        <p className="text-xs text-[#94A3B8] font-medium mb-1">{titulo}</p>
+        <p className="font-semibold text-[#0F172A] text-sm">{pessoa.nome}</p>
+        {empresaNome && <p className="text-xs text-[#64748B] flex items-center gap-1"><span>🏢</span>{empresaNome}</p>}
+        {pessoa.telefone && <p className="text-xs text-[#64748B] flex items-center gap-1"><span>📞</span>{pessoa.telefone}</p>}
+        {pessoa.email && <p className="text-xs text-[#64748B] flex items-center gap-1"><span>✉️</span>{pessoa.email}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-3 flex-wrap">
+      {gestorId && <Card pessoa={gestor} titulo="Gestor Responsável" />}
+      {compradorId && <Card pessoa={comprador} titulo="Comprador" />}
+    </div>
+  )
+}
 
 function InfoRow({ icon, label, value, highlight, className }: { icon: React.ReactNode; label: string; value?: string | null; highlight?: boolean; className?: string }) {
   return (
