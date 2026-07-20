@@ -341,10 +341,12 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
 
   const resumo = useMemo(() => {
     const ativas = medicoes.filter(x => x.status !== 'cancelada')
+    // Medições BASE (sem aditivo) — são as únicas que devem somar 100%
+    const ativasBase = ativas.filter(x => !x.aditivo_id)
     const faturado = ativas.reduce((s, x) => s + Number(x.valor_faturado || 0), 0)
     const recebido = ativas.reduce((s, x) => s + Number(x.valor_recebido || 0), 0)
     const percentualFaturado = ativas.filter(x => x.status === 'faturada' || x.status === 'recebida').reduce((s, x) => s + Number(x.percentual), 0)
-    const somaPercentuais = ativas.reduce((s, x) => s + Number(x.percentual), 0)
+    const somaPercentuais = ativasBase.reduce((s, x) => s + Number(x.percentual), 0)
     return { faturado, recebido, saldo: Math.max(0, valorTotal - faturado), percentualFaturado, somaPercentuais }
   }, [medicoes, valorTotal])
 
