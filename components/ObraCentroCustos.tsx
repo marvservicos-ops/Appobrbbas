@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2 } from 'lucide-react'
+import { Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2, Users, ShoppingCart, ArrowUpCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
-const dataBR = (v?: string) => v ? new Date(v).toLocaleDateString('pt-BR') : '—'
+const dataBR = (v?: string) => v ? new Date(v + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
 
-interface Registro {
+// ── tipos ─────────────────────────────────────────────
+interface RegistroEstoque {
   id: string
   produto_id?: string | null
   produto_nome: string
@@ -23,37 +24,118 @@ interface Registro {
   estoque_nome?: string
 }
 
+interface MaterialObra {
+  id: string
+  descricao: string
+  tipo_compra: 'interna' | 'cliente'
+  fornecedor?: string | null
+  quantidade?: number | null
+  unidade?: string | null
+  valor_unitario?: number | null
+  valor_total?: number | null
+  preco_venda_unitario?: number | null
+  valor_venda_total?: number | null
+  custos_extras?: { descricao: string; valor: number }[] | null
+  nota_fiscal_url?: string | null
+  status: string
+  numero_oc?: string | null
+  obra_id: string
+}
+
+interface AlocacaoFuncionario {
+  id: string
+  funcionario?: { nome: string; cargo: string | null } | null
+  dias_trabalhados: number
+  custo_diario_epoca: number
+  custo_total: number
+  data_inicio?: string | null
+  data_fim?: string | null
+}
+
+interface Estoque {
+  id: string
+  nome: string
+}
+
+interface EstoqueProduto {
+  id: string
+  nome: string
+  estoque_id: string
+  quantidade_atual: number
+  unidade: string
+}
+
+// ── componente principal ──────────────────────────────
 export default function ObraCentroCustos({ obraId }: { obraId: string }) {
-  const [saidas, setSaidas] = useState<Registro[]>([])
-  const [devolucoes, setDevolucoes] = useState<Registro[]>([])
+  const [saidas, setSaidas] = useState<RegistroEstoque[]>([])
+  const [devolucoes, setDevolucoes] = useState<RegistroEstoque[]>([])
+  const [materiais, setMateriais] = useState<MaterialObra[]>([])
+  const [equipe, setEquipe] = useState<AlocacaoFuncionario[]>([])
   const [loading, setLoading] = useState(true)
-  const [devolvendoRegistro, setDevolvendoRegistro] = useState<Registro | null>(null)
+
+  const [devolvendoRegistro, setDevolvendoRegistro] = useState<RegistroEstoque | null>(null)
+  const [enviandoEstoque, setEnviandoEstoque] = useState<MaterialObra | null>(null)
+
+  const [secaoEstoque, setSecaoEstoque] = useState(true)
+  const [secaoMateriais, setSecaoMateriais] = useState(true)
+  const [secaoMaoDeObra, setSecaoMaoDeObra] = useState(true)
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const { data } = await supabase
-        .from('estoque_registros')
-        .select('*, estoque:estoques(nome)')
-        .eq('obra_id', obraId)
-        .order('data', { ascending: false })
+      const [regRes, matRes, eqRes] = await Promise.all([
+        supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false }),
+        supabase.from('obra_materiais').select('*').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
+        supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(nome, cargo)').eq('obra_id', obraId),
+      ])
 
-      if (data) {
-        const mapped = data.map((r: any) => ({
-          ...r,
-          estoque_nome: r.estoque?.nome,
-        }))
-        setSaidas(mapped.filter((r: Registro) => r.tipo === 'saida'))
-        setDevolucoes(mapped.filter((r: Registro) => r.tipo === 'entrada'))
+      if (regRes.data) {
+        const mapped = regRes.data.map((r: any) => ({ ...r, estoque_nome: r.estoque?.nome }))
+        setSaidas(mapped.filter((r: RegistroEstoque) => r.tipo === 'saida'))
+        setDevolucoes(mapped.filter((r: RegistroEstoque) => r.tipo === 'entrada'))
       }
+      if (matRes.data) setMateriais(matRes.data as MaterialObra[])
+      if (eqRes.data) setEquipe(eqRes.data as AlocacaoFuncionario[])
       setLoading(false)
     }
     load()
   }, [obraId])
 
-  const totalSaidas = saidas.reduce((sum, r) => sum + (r.valor_total || 0), 0)
-  const totalDevolucoes = devolucoes.reduce((sum, r) => sum + (r.valor_total || 0), 0)
-  const custoLiquido = totalSaidas - totalDevolucoes
+  // ── totais ────────────────────────────────────────
+  const totalSaidas = saidas.reduce((s, r) => s + (r.valor_total || 0), 0)
+  const totalDevolucoes = devolucoes.reduce((s, r) => s + (r.valor_total || 0), 0)
+  const custoEstoque = totalSaidas - totalDevolucoes
+
+  // Agrupar materiais por orçamento
+  const grupos = new Map<string, MaterialObra[]>()
+  const avulsos: MaterialObra[] = []
+  for (const m of materiais) {
+    if (m.nota_fiscal_url) {
+      if (!grupos.has(m.nota_fiscal_url)) grupos.set(m.nota_fiscal_url, [])
+      grupos.get(m.nota_fiscal_url)!.push(m)
+    } else {
+      avulsos.push(m)
+    }
+  }
+
+  const custoMateriais = materiais.reduce((s, m) => {
+    const extras = (m.custos_extras ?? []).reduce((e, c) => e + c.valor, 0)
+    return s + (m.valor_total ?? 0) + (m.nota_fiscal_url ? 0 : extras) // extras só no primeiro item do grupo seria duplicado
+  }, 0)
+  // Calcular extras por grupo (1 vez por grupo)
+  const extrasGrupos = Array.from(grupos.values()).reduce((s, itens) => {
+    const extras = (itens[0].custos_extras ?? []).reduce((e, c) => e + c.valor, 0)
+    return s + extras
+  }, 0)
+  const custoMateriaisReal = materiais.reduce((s, m) => s + (m.valor_total ?? 0), 0) + extrasGrupos
+  const vendaMateriais = materiais.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
+  const margemMateriais = vendaMateriais - custoMateriaisReal
+
+  const custoMaoDeObra = equipe.reduce((s, e) => s + (e.custo_total ?? 0), 0)
+
+  const custoTotal = custoEstoque + custoMateriaisReal + custoMaoDeObra
+  const receitaMateriais = vendaMateriais
+  const resultado = receitaMateriais - custoTotal
 
   if (loading) return (
     <div className="flex items-center justify-center h-48">
@@ -63,79 +145,59 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      {/* Cards resumo */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+      {/* ── Cards resumo ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="card p-4 border-l-4 border-l-red-400">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingDown size={14} className="text-red-400" />
-            <p className="text-xs text-[#64748B] font-medium">Total Consumido</p>
-          </div>
-          <p className="font-syne font-bold text-2xl text-[#0F172A]">{moeda(totalSaidas)}</p>
-          <p className="text-xs text-[#94A3B8] mt-1">{saidas.length} saídas de material</p>
+          <p className="text-xs text-[#64748B] font-medium mb-1">Custo Estoque</p>
+          <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(custoEstoque)}</p>
         </div>
-        <div className="card p-4 border-l-4 border-l-green-400">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp size={14} className="text-green-500" />
-            <p className="text-xs text-[#64748B] font-medium">Total Devolvido</p>
-          </div>
-          <p className="font-syne font-bold text-2xl text-green-600">{moeda(totalDevolucoes)}</p>
-          <p className="text-xs text-[#94A3B8] mt-1">{devolucoes.length} devoluções ao estoque</p>
+        <div className="card p-4 border-l-4 border-l-blue-400">
+          <p className="text-xs text-[#64748B] font-medium mb-1">Custo Materiais</p>
+          <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(custoMateriaisReal)}</p>
         </div>
-        <div className="card p-4 border-l-4 border-l-[#4F7CFF]">
-          <div className="flex items-center gap-2 mb-1">
-            <Scale size={14} className="text-[#4F7CFF]" />
-            <p className="text-xs text-[#64748B] font-medium">Custo Líquido</p>
-          </div>
-          <p className="font-syne font-bold text-2xl text-[#0F172A]">{moeda(custoLiquido)}</p>
-          <p className="text-xs text-[#94A3B8] mt-1">consumido − devolvido</p>
+        <div className="card p-4 border-l-4 border-l-violet-400">
+          <p className="text-xs text-[#64748B] font-medium mb-1">Mão de Obra</p>
+          <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(custoMaoDeObra)}</p>
+        </div>
+        <div className="card p-4 border-l-4 border-l-emerald-400">
+          <p className="text-xs text-[#64748B] font-medium mb-1">Venda Materiais</p>
+          <p className="font-syne font-bold text-lg text-emerald-700">{moeda(vendaMateriais)}</p>
         </div>
       </div>
 
-      {/* Tabela de saídas */}
-      <div className="card p-0 overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center gap-2">
-          <TrendingDown size={15} className="text-red-400" />
-          <h2 className="font-syne font-semibold text-sm text-[#0F172A]">Materiais Consumidos</h2>
-        </div>
-
+      {/* ── Seção 1: Consumo de Estoque ── */}
+      <Section
+        icon={<TrendingDown size={15} className="text-red-400" />}
+        title="Consumo de Estoque"
+        total={moeda(custoEstoque)}
+        totalClass="text-red-700"
+        aberto={secaoEstoque}
+        onToggle={() => setSecaoEstoque(a => !a)}
+      >
         {saidas.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Package size={20} className="text-[#CBD5E1] mb-2" />
-            <p className="text-sm font-medium text-[#374151]">Nenhum material registrado</p>
-            <p className="text-xs text-[#94A3B8] mt-1">As saídas vinculadas a esta obra aparecerão aqui.</p>
-          </div>
+          <EmptyState text="Nenhuma saída de estoque vinculada a esta obra." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px]">
+            <table className="w-full min-w-[580px]">
               <thead>
-                <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Material</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Estoque</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Qtd</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Custo Unit.</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Total</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Data</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Responsável</th>
-                  <th className="px-4 py-3 w-10" />
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <Th>Material</Th><Th>Estoque</Th><Th>Qtd</Th><Th>Custo Unit.</Th><Th>Total</Th><Th>Data</Th><th className="w-10" />
                 </tr>
               </thead>
               <tbody>
                 {saidas.map(r => (
                   <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
-                    <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{r.produto_nome}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B] hidden sm:table-cell">{r.estoque_nome ?? '—'}</td>
-                    <td className="px-4 py-3 text-sm text-[#374151]">{r.quantidade} {r.unidade ?? ''}</td>
-                    <td className="px-4 py-3 text-sm text-[#374151]">{r.preco_unitario_custo ? moeda(r.preco_unitario_custo) : '—'}</td>
+                    <Td bold>{r.produto_nome}</Td>
+                    <Td>{r.estoque_nome ?? '—'}</Td>
+                    <Td>{r.quantidade} {r.unidade ?? ''}</Td>
+                    <Td>{r.preco_unitario_custo ? moeda(r.preco_unitario_custo) : '—'}</Td>
                     <td className="px-4 py-3 text-sm font-semibold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B] hidden md:table-cell">{dataBR(r.data)}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B] hidden md:table-cell">{r.responsavel}</td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => setDevolvendoRegistro(r)}
-                        title="Registrar devolução"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"
-                      >
-                        <Undo2 size={14} />
+                    <Td>{dataBR(r.data)}</Td>
+                    <td className="px-3 py-3">
+                      <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600">
+                        <Undo2 size={13} />
                       </button>
                     </td>
                   </tr>
@@ -143,102 +205,276 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
               </tbody>
               <tfoot>
                 <tr className="bg-[#F8FAFC] border-t-2 border-[#E2E8F0]">
-                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-[#374151]">Subtotal saídas</td>
-                  <td className="px-4 py-3 text-sm font-bold text-red-700">{moeda(totalSaidas)}</td>
-                  <td colSpan={2} className="hidden md:table-cell" />
+                  <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-[#374151]">Saídas</td>
+                  <td className="px-4 py-2.5 text-sm font-bold text-red-600">{moeda(totalSaidas)}</td>
+                  <td colSpan={2} />
+                </tr>
+                {devolucoes.length > 0 && (
+                  <tr className="bg-[#F0FDF4] border-t border-[#BBF7D0]">
+                    <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-[#374151]">Devoluções</td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-green-600">−{moeda(totalDevolucoes)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                )}
+                <tr className="bg-red-50 border-t-2 border-red-200">
+                  <td colSpan={4} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Custo líquido estoque</td>
+                  <td className="px-4 py-2.5 text-sm font-bold text-red-700">{moeda(custoEstoque)}</td>
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
-      </div>
+      </Section>
 
-      {/* Tabela de devoluções */}
-      {devolucoes.length > 0 && (
-        <div className="card p-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center gap-2">
-            <TrendingUp size={15} className="text-green-500" />
-            <h2 className="font-syne font-semibold text-sm text-[#0F172A]">Devoluções ao Estoque</h2>
-          </div>
+      {/* ── Seção 2: Materiais da Obra (Compra Interna) ── */}
+      <Section
+        icon={<ShoppingCart size={15} className="text-blue-500" />}
+        title="Materiais da Obra — Compra Interna"
+        total={`Custo ${moeda(custoMateriaisReal)} · Venda ${moeda(vendaMateriais)}`}
+        totalClass="text-blue-700"
+        aberto={secaoMateriais}
+        onToggle={() => setSecaoMateriais(a => !a)}
+      >
+        {materiais.length === 0 ? (
+          <EmptyState text="Nenhum material de compra interna cadastrado." />
+        ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px]">
+            <table className="w-full min-w-[680px]">
               <thead>
-                <tr className="border-b border-[#E2E8F0] bg-[#F0FDF4]">
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Material</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Estoque</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Qtd</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Custo Unit.</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Crédito</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Data</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Responsável</th>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <Th>Descrição</Th><Th>Qtd</Th><Th>Custo Unit.</Th><Th>Custo Total</Th><Th>Venda Total</Th><Th>Margem</Th><th className="w-10" />
                 </tr>
               </thead>
               <tbody>
-                {devolucoes.map(r => (
-                  <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F0FDF4] transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{r.produto_nome}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B] hidden sm:table-cell">{r.estoque_nome ?? '—'}</td>
-                    <td className="px-4 py-3 text-sm text-[#374151]">{r.quantidade} {r.unidade ?? ''}</td>
-                    <td className="px-4 py-3 text-sm text-[#374151]">{r.preco_unitario_custo ? moeda(r.preco_unitario_custo) : '—'}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-green-600">−{r.valor_total ? moeda(r.valor_total) : '—'}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B] hidden md:table-cell">{dataBR(r.data)}</td>
-                    <td className="px-4 py-3 text-sm text-[#64748B] hidden md:table-cell">{r.responsavel}</td>
-                  </tr>
-                ))}
+                {Array.from(grupos.entries()).map(([url, itens]) => {
+                  const extras = (itens[0].custos_extras ?? []) as { descricao: string; valor: number }[]
+                  const totalExtras = extras.reduce((s, c) => s + c.valor, 0)
+                  const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
+                  const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
+                  const margemGrupo = vendaGrupo - custoGrupo
+                  const orcNum = itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 12)
+                  return (
+                    <>
+                      <tr key={`grupo-${url}`} className="bg-[#F0F4FF] border-b border-[#E2E8F0]">
+                        <td colSpan={7} className="px-4 py-2 text-xs font-semibold text-[#4F7CFF]">
+                          Orçamento {orcNum ? `· ${orcNum}` : ''} · {itens[0].fornecedor ?? '—'} · {itens.length} iten{itens.length === 1 ? 's' : 's'}
+                        </td>
+                      </tr>
+                      {itens.map(m => {
+                        const margem = (m.valor_venda_total ?? 0) - (m.valor_total ?? 0)
+                        return (
+                          <tr key={m.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                            <td className="px-4 py-2.5 pl-8 text-sm text-[#374151]">{m.descricao}</td>
+                            <Td>{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</Td>
+                            <Td>{m.valor_unitario ? moeda(m.valor_unitario) : '—'}</Td>
+                            <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
+                            <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
+                            <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {m.valor_venda_total ? moeda(margem) : '—'}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <button onClick={() => setEnviandoEstoque(m)} title="Enviar sobra ao estoque"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600">
+                                <ArrowUpCircle size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      {extras.map((c, i) => (
+                        <tr key={`extra-${url}-${i}`} className="border-b border-[#F1F5F9] bg-[#FAFAFA]">
+                          <td className="px-4 py-1.5 pl-8 text-xs italic text-[#94A3B8]">{c.descricao}</td>
+                          <td colSpan={2} />
+                          <td className="px-4 py-1.5 text-xs text-[#64748B]">{moeda(c.valor)}</td>
+                          <td colSpan={3} />
+                        </tr>
+                      ))}
+                      <tr key={`sub-${url}`} className="border-b-2 border-[#E2E8F0] bg-[#F8FAFF]">
+                        <td className="px-4 py-2 pl-8 text-xs font-bold text-[#374151]">Subtotal orçamento</td>
+                        <td colSpan={2} />
+                        <td className="px-4 py-2 text-xs font-bold text-blue-700">{moeda(custoGrupo)}</td>
+                        <td className="px-4 py-2 text-xs font-bold text-emerald-700">{moeda(vendaGrupo)}</td>
+                        <td className={`px-4 py-2 text-xs font-bold ${margemGrupo >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(margemGrupo)}</td>
+                        <td />
+                      </tr>
+                    </>
+                  )
+                })}
+                {avulsos.map(m => {
+                  const margem = (m.valor_venda_total ?? 0) - (m.valor_total ?? 0)
+                  return (
+                    <tr key={m.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                      <Td bold>{m.descricao}</Td>
+                      <Td>{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</Td>
+                      <Td>{m.valor_unitario ? moeda(m.valor_unitario) : '—'}</Td>
+                      <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
+                      <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
+                      <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {m.valor_venda_total ? moeda(margem) : '—'}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <button onClick={() => setEnviandoEstoque(m)} title="Enviar sobra ao estoque"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600">
+                          <ArrowUpCircle size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
               <tfoot>
-                <tr className="bg-[#F0FDF4] border-t-2 border-[#BBF7D0]">
-                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-[#374151]">Subtotal devoluções</td>
-                  <td className="px-4 py-3 text-sm font-bold text-green-700">−{moeda(totalDevolucoes)}</td>
-                  <td colSpan={2} className="hidden md:table-cell" />
+                <tr className="bg-blue-50 border-t-2 border-blue-200">
+                  <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Total materiais</td>
+                  <td className="px-4 py-2.5 text-sm font-bold text-blue-700">{moeda(custoMateriaisReal)}</td>
+                  <td className="px-4 py-2.5 text-sm font-bold text-emerald-700">{moeda(vendaMateriais)}</td>
+                  <td className={`px-4 py-2.5 text-sm font-bold ${margemMateriais >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(margemMateriais)}</td>
+                  <td />
                 </tr>
               </tfoot>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </Section>
 
-      {/* Balanço final */}
-      {(saidas.length > 0 || devolucoes.length > 0) && (
-        <div className="card p-4 flex items-center justify-between bg-[#F8FAFF] border-[#C7D2FE]">
-          <div className="flex items-center gap-2">
-            <Scale size={16} className="text-[#4F7CFF]" />
-            <span className="font-syne font-semibold text-[#374151]">Custo Líquido da Obra</span>
+      {/* ── Seção 3: Mão de Obra ── */}
+      <Section
+        icon={<Users size={15} className="text-violet-500" />}
+        title="Mão de Obra"
+        total={moeda(custoMaoDeObra)}
+        totalClass="text-violet-700"
+        aberto={secaoMaoDeObra}
+        onToggle={() => setSecaoMaoDeObra(a => !a)}
+      >
+        {equipe.length === 0 ? (
+          <EmptyState text="Nenhum funcionário alocado. Acesse a aba Equipe para adicionar." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px]">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <Th>Funcionário</Th><Th>Cargo</Th><Th>Dias</Th><Th>Custo/Dia</Th><Th>Total</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {equipe.map(e => (
+                  <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
+                    <Td bold>{e.funcionario?.nome ?? '—'}</Td>
+                    <Td>{e.funcionario?.cargo ?? '—'}</Td>
+                    <Td>{e.dias_trabalhados}d</Td>
+                    <Td>{moeda(e.custo_diario_epoca)}</Td>
+                    <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-violet-50 border-t-2 border-violet-200">
+                  <td colSpan={4} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Total mão de obra</td>
+                  <td className="px-4 py-2.5 text-sm font-bold text-violet-700">{moeda(custoMaoDeObra)}</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
-          <span className="font-syne font-bold text-xl text-[#4F7CFF]">{moeda(custoLiquido)}</span>
-        </div>
-      )}
+        )}
+      </Section>
 
+      {/* ── Resultado Final ── */}
+      <div className="card p-5 bg-[#F8FAFF] border-[#C7D2FE] space-y-3">
+        <h3 className="font-syne font-bold text-[#0F172A] flex items-center gap-2">
+          <Scale size={16} className="text-[#4F7CFF]" /> Resultado da Obra
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="bg-white rounded-xl p-3 border border-[#E2E8F0]">
+            <p className="text-xs text-[#64748B] mb-1">Custo Total</p>
+            <p className="font-syne font-bold text-lg text-red-600">{moeda(custoTotal)}</p>
+            <div className="text-xs text-[#94A3B8] mt-1 space-y-0.5">
+              <p>Estoque: {moeda(custoEstoque)}</p>
+              <p>Materiais: {moeda(custoMateriaisReal)}</p>
+              <p>Mão de obra: {moeda(custoMaoDeObra)}</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl p-3 border border-[#E2E8F0]">
+            <p className="text-xs text-[#64748B] mb-1">Receita Materiais</p>
+            <p className="font-syne font-bold text-lg text-emerald-600">{moeda(receitaMateriais)}</p>
+            <p className="text-xs text-[#94A3B8] mt-1">Valor de venda (OC)</p>
+          </div>
+          <div className={`rounded-xl p-3 border ${resultado >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+            <p className="text-xs text-[#64748B] mb-1">Resultado Bruto</p>
+            <p className={`font-syne font-bold text-lg ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{moeda(resultado)}</p>
+            <p className="text-xs text-[#94A3B8] mt-1">Receita − Custo total</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Modals */}
       {devolvendoRegistro && (
         <ModalDevolucao
           registro={devolvendoRegistro}
           onClose={() => setDevolvendoRegistro(null)}
           onSaved={async () => {
             setDevolvendoRegistro(null)
-            // Recarrega registros
             const supabase = createClient()
-            const { data } = await supabase
-              .from('estoque_registros')
-              .select('*, estoque:estoques(nome)')
-              .eq('obra_id', obraId)
-              .order('data', { ascending: false })
+            const { data } = await supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false })
             if (data) {
               const mapped = data.map((r: any) => ({ ...r, estoque_nome: r.estoque?.nome }))
-              setSaidas(mapped.filter((r: Registro) => r.tipo === 'saida'))
-              setDevolucoes(mapped.filter((r: Registro) => r.tipo === 'entrada'))
+              setSaidas(mapped.filter((r: RegistroEstoque) => r.tipo === 'saida'))
+              setDevolucoes(mapped.filter((r: RegistroEstoque) => r.tipo === 'entrada'))
             }
           }}
+        />
+      )}
+
+      {enviandoEstoque && (
+        <ModalEnviarEstoque
+          material={enviandoEstoque}
+          onClose={() => setEnviandoEstoque(null)}
+          onSaved={() => setEnviandoEstoque(null)}
         />
       )}
     </div>
   )
 }
 
-// ── Modal devolução ───────────────────────────────────
+// ── helpers de layout ─────────────────────────────────
+function Section({ icon, title, total, totalClass, aberto, onToggle, children }: {
+  icon: React.ReactNode; title: string; total: string; totalClass: string
+  aberto: boolean; onToggle: () => void; children: React.ReactNode
+}) {
+  return (
+    <div className="card p-0 overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0] hover:bg-[#F1F5F9] transition-colors">
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="font-syne font-semibold text-sm text-[#0F172A]">{title}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`text-sm font-bold ${totalClass}`}>{total}</span>
+          {aberto ? <ChevronDown size={15} className="text-[#94A3B8]" /> : <ChevronRight size={15} className="text-[#94A3B8]" />}
+        </div>
+      </button>
+      {aberto && children}
+    </div>
+  )
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">{children}</th>
+}
+function Td({ children, bold }: { children: React.ReactNode; bold?: boolean }) {
+  return <td className={`px-4 py-3 text-sm ${bold ? 'font-medium text-[#0F172A]' : 'text-[#374151]'}`}>{children}</td>
+}
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 text-center">
+      <Package size={20} className="text-[#CBD5E1] mb-2" />
+      <p className="text-xs text-[#94A3B8]">{text}</p>
+    </div>
+  )
+}
+
+// ── Modal Devolução ao Estoque ─────────────────────────
 function ModalDevolucao({ registro, onClose, onSaved }: {
-  registro: Registro
-  onClose: () => void
-  onSaved: () => void
+  registro: RegistroEstoque; onClose: () => void; onSaved: () => void
 }) {
   const [qtd, setQtd] = useState('')
   const [responsavel, setResponsavel] = useState(registro.responsavel)
@@ -251,16 +487,12 @@ function ModalDevolucao({ registro, onClose, onSaved }: {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade a devolver.'); return }
-    if (qtdNum > registro.quantidade) {
-      setError(`Não pode devolver mais do que a saída original (${registro.quantidade} ${registro.unidade ?? ''}).`)
-      return
-    }
+    if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade.'); return }
+    if (qtdNum > registro.quantidade) { setError(`Máximo: ${registro.quantidade} ${registro.unidade ?? ''}`); return }
     setSaving(true)
-    setError('')
     const supabase = createClient()
 
-    const { error: regErr } = await supabase.from('estoque_registros').insert({
+    await supabase.from('estoque_registros').insert({
       estoque_id: registro.estoque_id,
       produto_id: registro.produto_id ?? null,
       produto_nome: registro.produto_nome,
@@ -272,33 +504,19 @@ function ModalDevolucao({ registro, onClose, onSaved }: {
       obra_id: registro.obra_id ?? null,
       preco_unitario_custo: precoAtual || null,
       valor_total: valorCredito || null,
-      observacoes: `Devolução de saída de ${new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}`,
+      observacoes: `Devolução de saída de ${dataBR(registro.data)}`,
     })
 
-    if (regErr) { setError(regErr.message); setSaving(false); return }
-
-    // Atualiza estoque e CMP do produto
     if (registro.produto_id) {
-      const { data: prod } = await supabase
-        .from('estoque_produtos')
-        .select('quantidade_atual, preco_unitario')
-        .eq('id', registro.produto_id)
-        .single()
-
+      const { data: prod } = await supabase.from('estoque_produtos').select('quantidade_atual, preco_unitario').eq('id', registro.produto_id).single()
       if (prod) {
         const novaQtd = prod.quantidade_atual + qtdNum
-        const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
-        if (precoAtual > 0) {
-          const cmpAtual = prod.preco_unitario || 0
-          const novoCMP = prod.quantidade_atual > 0
-            ? (prod.quantidade_atual * cmpAtual + qtdNum * precoAtual) / novaQtd
-            : precoAtual
-          prodUpdate.preco_unitario = novoCMP
-        }
-        await supabase.from('estoque_produtos').update(prodUpdate).eq('id', registro.produto_id)
+        const novoCMP = prod.quantidade_atual > 0 && precoAtual > 0
+          ? (prod.quantidade_atual * (prod.preco_unitario || 0) + qtdNum * precoAtual) / novaQtd
+          : prod.preco_unitario
+        await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd, preco_unitario: novoCMP }).eq('id', registro.produto_id)
       }
     }
-
     setSaving(false)
     onSaved()
   }
@@ -314,42 +532,156 @@ function ModalDevolucao({ registro, onClose, onSaved }: {
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSave} className="p-5 space-y-4">
-          <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800 space-y-1">
-            <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-            {precoAtual > 0 && <p>Preço unitário (CMP): <strong>{moeda(precoAtual)}</strong></p>}
+          <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800">
+            <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {dataBR(registro.data)}</p>
+            {precoAtual > 0 && <p>CMP: <strong>{moeda(precoAtual)}</strong></p>}
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">
-              Quantidade a devolver * <span className="text-[#94A3B8] font-normal">(máx. {registro.quantidade} {registro.unidade ?? ''})</span>
-            </label>
-            <input
-              type="number" step="0.01" min="0.01" max={registro.quantidade}
-              className="field" placeholder="0" autoFocus
-              value={qtd} onChange={e => setQtd(e.target.value)}
-            />
-            {qtdNum > 0 && precoAtual > 0 && (
-              <p className="text-xs text-emerald-600 mt-1">
-                Crédito ao estoque: {moeda(valorCredito)}
-              </p>
-            )}
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade a devolver *</label>
+            <input type="number" step="0.01" min="0.01" max={registro.quantidade} className="field" autoFocus
+              value={qtd} onChange={e => setQtd(e.target.value)} />
+            {qtdNum > 0 && precoAtual > 0 && <p className="text-xs text-emerald-600 mt-1">Crédito: {moeda(valorCredito)}</p>}
           </div>
-
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável *</label>
             <input required className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} />
           </div>
-
           {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-
-          <div className="flex justify-end gap-3 pt-1">
+          <div className="flex justify-end gap-3">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
             <button type="submit" disabled={saving} className="btn-primary text-sm flex items-center gap-2">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-              {saving ? 'Registrando...' : 'Confirmar Devolução'}
+              {saving ? 'Registrando...' : 'Confirmar'}
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal Enviar ao Estoque (sobra de material da obra) ─
+function ModalEnviarEstoque({ material, onClose, onSaved }: {
+  material: MaterialObra; onClose: () => void; onSaved: () => void
+}) {
+  const [estoques, setEstoques] = useState<Estoque[]>([])
+  const [produtos, setProdutos] = useState<EstoqueProduto[]>([])
+  const [estoqueId, setEstoqueId] = useState('')
+  const [produtoId, setProdutoId] = useState('')
+  const [nomeProduto, setNomeProduto] = useState(material.descricao)
+  const [quantidade, setQuantidade] = useState('')
+  const [responsavel, setResponsavel] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.from('estoques').select('id, nome').order('nome').then(({ data }) => { if (data) setEstoques(data as Estoque[]) })
+  }, [])
+
+  useEffect(() => {
+    if (!estoqueId) { setProdutos([]); return }
+    createClient().from('estoque_produtos').select('id, nome, estoque_id, quantidade_atual, unidade').eq('estoque_id', estoqueId).eq('ativo', true).order('nome')
+      .then(({ data }) => { if (data) setProdutos(data as EstoqueProduto[]) })
+  }, [estoqueId])
+
+  const qtdNum = parseFloat(quantidade) || 0
+  const custoUnit = material.valor_unitario ?? 0
+
+  async function salvar() {
+    if (!estoqueId || !qtdNum || !responsavel.trim()) return
+    setSaving(true)
+    const supabase = createClient()
+
+    const prodSelecionado = produtoId ? produtos.find(p => p.id === produtoId) : null
+
+    await supabase.from('estoque_registros').insert({
+      estoque_id: estoqueId,
+      produto_id: produtoId || null,
+      produto_nome: prodSelecionado?.nome ?? nomeProduto.trim(),
+      tipo: 'entrada',
+      quantidade: qtdNum,
+      unidade: material.unidade ?? 'un',
+      responsavel: responsavel.trim(),
+      data: new Date().toISOString().split('T')[0],
+      preco_unitario_custo: custoUnit || null,
+      valor_total: custoUnit ? qtdNum * custoUnit : null,
+      observacoes: `Sobra de material — obra`,
+    })
+
+    if (produtoId && prodSelecionado) {
+      const novaQtd = prodSelecionado.quantidade_atual + qtdNum
+      const cmpAtual = 0
+      const novoCMP = custoUnit > 0
+        ? (prodSelecionado.quantidade_atual * cmpAtual + qtdNum * custoUnit) / novaQtd
+        : undefined
+      await supabase.from('estoque_produtos').update({
+        quantidade_atual: novaQtd,
+        ...(novoCMP !== undefined ? { preco_unitario: novoCMP } : {}),
+      }).eq('id', produtoId)
+    }
+
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[440px]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <div>
+            <h3 className="font-syne font-semibold text-[#0F172A]">Enviar Sobra ao Estoque</h3>
+            <p className="text-xs text-[#94A3B8] mt-0.5">{material.descricao}</p>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Estoque de destino *</label>
+            <select className="field" value={estoqueId} onChange={e => { setEstoqueId(e.target.value); setProdutoId('') }}>
+              <option value="">Selecionar estoque...</option>
+              {estoques.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+            </select>
+          </div>
+          {estoqueId && (
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Produto no estoque (opcional)</label>
+              <select className="field" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
+                <option value="">Criar novo produto com este nome</option>
+                {produtos.map(p => <option key={p.id} value={p.id}>{p.nome} ({p.quantidade_atual} {p.unidade})</option>)}
+              </select>
+              {!produtoId && (
+                <div className="mt-2">
+                  <label className="block text-xs text-[#64748B] mb-1">Nome do produto</label>
+                  <input className="field text-sm" value={nomeProduto} onChange={e => setNomeProduto(e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade *</label>
+              <input type="number" min="0.01" step="0.01" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)}
+                placeholder={`máx. ${material.quantidade ?? '?'} ${material.unidade ?? ''}`} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável *</label>
+              <input className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} />
+            </div>
+          </div>
+          {qtdNum > 0 && custoUnit > 0 && (
+            <p className="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+              Entrará no estoque com custo unitário de {moeda(custoUnit)} → total {moeda(qtdNum * custoUnit)}
+            </p>
+          )}
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
+            <button onClick={salvar} disabled={saving || !estoqueId || !qtdNum || !responsavel.trim()}
+              className="btn-primary text-sm flex items-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpCircle size={14} />}
+              {saving ? 'Enviando...' : 'Enviar ao Estoque'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -9,7 +9,27 @@ import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
 import { useAccess } from '@/lib/useAccess'
 
-type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais'
+type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais' | 'equipe'
+
+interface Funcionario {
+  id: string
+  nome: string
+  cargo: string | null
+  custo_diario: number | null
+}
+
+interface ObraFuncionario {
+  id: string
+  obra_id: string
+  funcionario_id: string
+  funcionario?: Funcionario
+  dias_trabalhados: number
+  custo_diario_epoca: number
+  custo_total: number
+  data_inicio?: string | null
+  data_fim?: string | null
+  observacoes?: string | null
+}
 
 interface ObraMaterial {
   id: string
@@ -175,6 +195,7 @@ export default function ObraDetailPage() {
   const [pastas, setPastas] = useState<DocPasta[]>([])
   const [rdos, setRdos] = useState<RDO[]>([])
   const [materiais, setMateriais] = useState<ObraMaterial[]>([])
+  const [equipe, setEquipe] = useState<ObraFuncionario[]>([])
   const [criandoRdo, setCriandoRdo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showNovoMaterial, setShowNovoMaterial] = useState(false)
@@ -271,13 +292,14 @@ export default function ObraDetailPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes] = await Promise.all([
+    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes, equipeRes] = await Promise.all([
       supabase.from('obras').select('*').eq('id', id).single(),
       supabase.from('cronograma_etapas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('documentos').select('*').eq('obra_id', id).order('pasta').order('created_at', { ascending: false }),
       supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('rdos').select('*').eq('obra_id', id).order('numero', { ascending: false }),
       supabase.from('obra_materiais').select('*').eq('obra_id', id).order('created_at', { ascending: false }),
+      supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(id, nome, cargo, custo_diario)').eq('obra_id', id).order('created_at', { ascending: false }),
     ])
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (etapasRes.data) setEtapas(etapasRes.data as CronogramaEtapa[])
@@ -285,6 +307,7 @@ export default function ObraDetailPage() {
     if (pastasRes.data) setPastas(pastasRes.data as DocPasta[])
     if (rdosRes.data) setRdos(rdosRes.data as RDO[])
     if (materiaisRes.data) setMateriais(materiaisRes.data as ObraMaterial[])
+    if (equipeRes.data) setEquipe(equipeRes.data as ObraFuncionario[])
     setLoading(false)
   }
 
@@ -441,13 +464,14 @@ export default function ObraDetailPage() {
       {/* Tabs */}
       <div className="bg-white border-b border-[#E2E8F0] px-2 md:px-6 min-w-0">
         <div className="flex gap-0 overflow-x-auto overscroll-x-contain scrollbar-none">
-          {(['visao-geral', 'relatorios', 'materiais', 'documentos', 'cronograma'] as Tab[]).map(t => (
+          {(['visao-geral', 'relatorios', 'materiais', 'equipe', 'documentos', 'cronograma'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 md:px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${tab === t ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
               {t === 'visao-geral' ? 'Visão Geral'
                 : t === 'documentos' ? 'Documentos'
                 : t === 'cronograma' ? 'Cronograma'
                 : t === 'relatorios' ? `Relatórios (${rdos.length})`
+                : t === 'equipe' ? `Equipe (${equipe.length})`
                 : `Materiais (${materiais.length})`}
             </button>
           ))}
@@ -1014,6 +1038,11 @@ export default function ObraDetailPage() {
               />
             )}
           </div>
+        )}
+
+        {/* ===== EQUIPE ===== */}
+        {tab === 'equipe' && (
+          <AbaEquipe obraId={id} equipe={equipe} onRefresh={load} />
         )}
       </div>
 
@@ -3241,6 +3270,237 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
               {saving ? 'Salvando...' : `Salvar ${itensValidos} ite${itensValidos === 1 ? 'm' : 'ns'}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AbaEquipe ────────────────────────────────────────
+function AbaEquipe({ obraId, equipe, onRefresh }: {
+  obraId: string
+  equipe: ObraFuncionario[]
+  onRefresh: () => void
+}) {
+  const [showModal, setShowModal] = useState(false)
+  const [editando, setEditando] = useState<ObraFuncionario | null>(null)
+
+  const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
+  const totalMaoDeObra = equipe.reduce((s, e) => s + (e.custo_total ?? 0), 0)
+
+  async function remover(id: string) {
+    if (!confirm('Remover alocação?')) return
+    const supabase = createClient()
+    await supabase.from('obra_funcionarios').delete().eq('id', id)
+    onRefresh()
+  }
+
+  return (
+    <div className="p-4 md:p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-syne text-lg font-bold text-[#0F172A]">Equipe da Obra</h2>
+          <p className="text-sm text-[#64748B] mt-0.5">Mão de obra alocada e custo por funcionário</p>
+        </div>
+        <button onClick={() => { setEditando(null); setShowModal(true) }}
+          className="btn-primary flex items-center gap-2 text-sm">
+          <Plus size={14} /> Alocar
+        </button>
+      </div>
+
+      {/* Card total */}
+      {equipe.length > 0 && (
+        <div className="card p-4 border-l-4 border-l-violet-400 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-[#64748B] font-medium">Custo Total Mão de Obra</p>
+            <p className="font-syne font-bold text-2xl text-[#0F172A]">{moeda(totalMaoDeObra)}</p>
+          </div>
+          <p className="text-xs text-[#94A3B8]">{equipe.length} alocaç{equipe.length === 1 ? 'ão' : 'ões'}</p>
+        </div>
+      )}
+
+      {equipe.length === 0 ? (
+        <div className="card flex flex-col items-center justify-center py-16 text-center">
+          <Package size={28} className="text-[#CBD5E1] mb-3" />
+          <p className="text-sm font-medium text-[#374151]">Nenhum funcionário alocado</p>
+          <p className="text-xs text-[#94A3B8] mt-1 mb-4">Aloque funcionários e registre os dias trabalhados</p>
+          <button onClick={() => { setEditando(null); setShowModal(true) }} className="btn-primary text-sm">
+            <Plus size={14} /> Alocar Funcionário
+          </button>
+        </div>
+      ) : (
+        <div className="card p-0 overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Funcionário</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Cargo</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Dias</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Custo/Dia</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Total</th>
+                <th className="px-4 py-3 w-16" />
+              </tr>
+            </thead>
+            <tbody>
+              {equipe.map(e => (
+                <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                  <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-[#64748B] hidden sm:table-cell">{e.funcionario?.cargo ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-[#374151]">{e.dias_trabalhados}d</td>
+                  <td className="px-4 py-3 text-sm text-[#374151] hidden sm:table-cell">{moeda(e.custo_diario_epoca)}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => { setEditando(e); setShowModal(true) }}
+                        className="p-1.5 rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={13} /></button>
+                      <button onClick={() => remover(e.id)}
+                        className="p-1.5 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500"><Trash2 size={13} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-[#F8FAFC] border-t-2 border-[#E2E8F0]">
+                <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-[#374151]">Total mão de obra</td>
+                <td className="px-4 py-3 text-sm font-bold text-violet-700">{moeda(totalMaoDeObra)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {showModal && (
+        <ModalAlocarFuncionario
+          obraId={obraId}
+          alocacao={editando}
+          onClose={() => setShowModal(false)}
+          onSaved={() => { setShowModal(false); onRefresh() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── ModalAlocarFuncionario ────────────────────────────
+function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
+  obraId: string
+  alocacao: ObraFuncionario | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
+  const [funcionarioId, setFuncionarioId] = useState(alocacao?.funcionario_id ?? '')
+  const [dias, setDias] = useState(alocacao ? String(alocacao.dias_trabalhados) : '')
+  const [custoDia, setCustoDia] = useState(alocacao ? String(alocacao.custo_diario_epoca) : '')
+  const [dataInicio, setDataInicio] = useState(alocacao?.data_inicio ?? '')
+  const [dataFim, setDataFim] = useState(alocacao?.data_fim ?? '')
+  const [observacoes, setObservacoes] = useState(alocacao?.observacoes ?? '')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    createClient().from('funcionarios').select('id, nome, cargo, custo_diario').eq('ativo', true).order('nome')
+      .then(({ data }) => { if (data) setFuncionarios(data as Funcionario[]) })
+  }, [])
+
+  function onSelectFuncionario(id: string) {
+    setFuncionarioId(id)
+    const f = funcionarios.find(f => f.id === id)
+    if (f?.custo_diario && !custoDia) setCustoDia(String(f.custo_diario))
+  }
+
+  const preview = (parseFloat(dias) || 0) * (parseFloat(custoDia) || 0)
+  const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
+  async function salvar() {
+    if (!funcionarioId || !dias || !custoDia) return
+    setSaving(true)
+    const supabase = createClient()
+    const payload = {
+      obra_id: obraId,
+      funcionario_id: funcionarioId,
+      dias_trabalhados: parseFloat(dias),
+      custo_diario_epoca: parseFloat(custoDia),
+      data_inicio: dataInicio || null,
+      data_fim: dataFim || null,
+      observacoes: observacoes.trim() || null,
+    }
+    if (alocacao) {
+      await supabase.from('obra_funcionarios').update(payload).eq('id', alocacao.id)
+    } else {
+      await supabase.from('obra_funcionarios').insert(payload)
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white">
+          <h2 className="font-syne font-semibold text-[#0F172A]">{alocacao ? 'Editar Alocação' : 'Alocar Funcionário'}</h2>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-[#374151] mb-1.5">Funcionário *</label>
+            <select className="field" value={funcionarioId} onChange={e => onSelectFuncionario(e.target.value)} disabled={!!alocacao}>
+              <option value="">Selecionar...</option>
+              {funcionarios.map(f => (
+                <option key={f.id} value={f.id}>{f.nome}{f.cargo ? ` — ${f.cargo}` : ''}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias trabalhados *</label>
+              <input className="field" type="number" min="0.5" step="0.5" value={dias}
+                onChange={e => setDias(e.target.value)} placeholder="0" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Custo/dia (R$) *</label>
+              <input className="field" type="number" min="0" step="0.01" value={custoDia}
+                onChange={e => setCustoDia(e.target.value)} placeholder="0,00" />
+            </div>
+          </div>
+
+          {preview > 0 && (
+            <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2.5 text-sm">
+              <span className="text-violet-600 font-medium">Custo total: </span>
+              <span className="font-syne font-bold text-violet-700">{moeda(preview)}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Data início</label>
+              <input type="date" className="field" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Data fim</label>
+              <input type="date" className="field" value={dataFim} onChange={e => setDataFim(e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[#374151] mb-1.5">Observações</label>
+            <textarea className="field resize-none" rows={2} value={observacoes}
+              onChange={e => setObservacoes(e.target.value)} placeholder="Ex: Instalação de dutos, 3º andar..." />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+              Cancelar
+            </button>
+            <button onClick={salvar} disabled={saving || !funcionarioId || !dias || !custoDia}
+              className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              {saving ? 'Salvando...' : 'Salvar'}
             </button>
           </div>
         </div>

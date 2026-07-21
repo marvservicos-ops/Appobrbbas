@@ -10,6 +10,7 @@ const navItems = [
   { href: '/obras', label: 'Obras', icon: Wrench },
   { href: '/estoque', label: 'Estoque', icon: Package },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
+  { href: '/funcionarios', label: 'Funcionários', icon: Users },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/documentos', label: 'Documentos', icon: FileText },
