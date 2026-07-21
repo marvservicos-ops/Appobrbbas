@@ -361,6 +361,7 @@ export default function EstoqueDetalhe() {
                     <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Unidade</th>
                     <th className="text-left text-xs font-semibold text-[#64748B] px-3 py-3">Qtd</th>
                     <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Mín.</th>
+                    <th className="hidden md:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Preço (CMP)</th>
                     <th className="px-3 py-3 w-16" />
                   </tr>
                 </thead>
@@ -389,6 +390,9 @@ export default function EstoqueDetalhe() {
                           {p.quantidade_atual}
                         </td>
                         <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#374151]">{p.quantidade_minima}</td>
+                        <td className="hidden md:table-cell px-3 py-3 text-sm text-[#374151]">
+                          {p.preco_unitario ? p.preco_unitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                        </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => setEditandoProduto(p)} className="text-[#94A3B8] hover:text-[#4F7CFF]">
