@@ -6,6 +6,8 @@ import { ArrowLeft, ArrowUpCircle, ArrowDownCircle, Search, Package } from 'luci
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, Obra, TipoMovimentacao } from '@/lib/types'
 
+const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
+
 function MovimentacaoForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -22,6 +24,7 @@ function MovimentacaoForm() {
   const [error, setError] = useState('')
   const [form, setForm] = useState({
     quantidade: '',
+    preco_unitario_entrada: '',
     responsavel: '',
     obra_id: '',
     motivo: '',
@@ -34,7 +37,7 @@ function MovimentacaoForm() {
     const supabase = createClient()
     Promise.all([
       supabase.from('estoque_itens').select('*, categoria:estoque_categorias(nome, cor)').eq('ativo', true).order('nome'),
-      supabase.from('obras').select('id, titulo').in('status', ['Em Andamento', 'Em Planejamento']).order('titulo'),
+      supabase.from('obras').select('id, titulo').in('status', ['Em Andamento', 'Aprovada']).order('titulo'),
     ]).then(([itensRes, obrasRes]) => {
       if (itensRes.data) {
         setItens(itensRes.data as EstoqueItem[])
@@ -47,28 +50,66 @@ function MovimentacaoForm() {
     })
   }, [itemIdParam])
 
+  // Preenche preço de entrada com CMP atual ao selecionar item
+  useEffect(() => {
+    if (selectedItem && tipo === 'entrada') {
+      setForm(f => ({ ...f, preco_unitario_entrada: selectedItem.preco_unitario ? String(selectedItem.preco_unitario) : '' }))
+    }
+  }, [selectedItem, tipo])
+
   function set(field: string, value: string | boolean) { setForm(f => ({ ...f, [field]: value })) }
 
   const filteredItens = itens.filter(i => i.nome.toLowerCase().includes(itemSearch.toLowerCase())).slice(0, 8)
 
+  const qtd = parseFloat(form.quantidade) || 0
+  const precoEntrada = parseFloat(form.preco_unitario_entrada) || 0
+  const valorTotalEntrada = qtd * precoEntrada
+
+  // Custo médio ponderado calculado em tempo real
+  const cmpAtual = selectedItem?.preco_unitario || 0
+  const qtdAtual = selectedItem?.quantidade_atual || 0
+  const novoCMP = tipo === 'entrada' && qtd > 0 && precoEntrada > 0
+    ? (qtdAtual * cmpAtual + qtd * precoEntrada) / (qtdAtual + qtd)
+    : cmpAtual
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!selectedItem) { setError('Selecione um item.'); return }
-    const qtd = parseFloat(form.quantidade)
     if (!qtd || qtd <= 0) { setError('Informe uma quantidade válida.'); return }
-    if (tipo === 'saida' && qtd > selectedItem.quantidade_atual) {
-      setError(`Quantidade insuficiente. Disponível: ${selectedItem.quantidade_atual} ${selectedItem.unidade}`)
+    if (tipo === 'saida') {
+      if (qtd > selectedItem.quantidade_atual) {
+        setError(`Quantidade insuficiente. Disponível: ${selectedItem.quantidade_atual} ${selectedItem.unidade}`)
+        return
+      }
+      if (!form.obra_id) { setError('Selecione a obra de destino para a saída.'); return }
+    }
+    if (tipo === 'entrada' && !precoEntrada) {
+      setError('Informe o preço unitário desta entrada para calcular o custo médio.')
       return
     }
+
     setLoading(true)
     setError('')
     const supabase = createClient()
 
     const novaQtd = tipo === 'entrada'
-      ? selectedItem.quantidade_atual + qtd
-      : selectedItem.quantidade_atual - qtd
+      ? qtdAtual + qtd
+      : qtdAtual - qtd
 
     const status = tipo === 'saida' && form.requer_devolucao ? 'pendente_devolucao' : 'concluido'
+
+    // Custo unitário snapshot: para entrada = preço informado; para saída = CMP atual do item
+    const preco_unitario_custo = tipo === 'entrada' ? precoEntrada : (cmpAtual || 0)
+    const valor_total = tipo === 'entrada' ? valorTotalEntrada : (qtd * preco_unitario_custo)
+
+    // Para entrada: atualiza CMP no item; para saída: só atualiza quantidade
+    const itemUpdate: Record<string, unknown> = {
+      quantidade_atual: novaQtd,
+      updated_at: new Date().toISOString(),
+    }
+    if (tipo === 'entrada' && precoEntrada > 0) {
+      itemUpdate.preco_unitario = novoCMP
+    }
 
     const [movRes] = await Promise.all([
       supabase.from('estoque_movimentacoes').insert({
@@ -80,12 +121,11 @@ function MovimentacaoForm() {
         motivo: form.motivo || null,
         observacoes: form.observacoes || null,
         status,
+        preco_unitario_custo,
+        valor_total,
         data_prevista_devolucao: form.requer_devolucao && form.data_prevista_devolucao ? form.data_prevista_devolucao : null,
       }),
-      supabase.from('estoque_itens').update({
-        quantidade_atual: novaQtd,
-        updated_at: new Date().toISOString(),
-      }).eq('id', selectedItem.id),
+      supabase.from('estoque_itens').update(itemUpdate).eq('id', selectedItem.id),
     ])
 
     if (movRes.error) { setError(movRes.error.message); setLoading(false); return }
@@ -156,8 +196,13 @@ function MovimentacaoForm() {
                           <div className="text-sm font-medium text-[#0F172A]">{item.nome}</div>
                           {cat && <div className="text-xs" style={{ color: cat.cor }}>{cat.nome}</div>}
                         </div>
-                        <div className={`text-xs font-semibold ${disponivel <= item.quantidade_minima ? 'text-amber-500' : 'text-[#64748B]'}`}>
-                          {disponivel} {item.unidade}
+                        <div className="text-right">
+                          <div className={`text-xs font-semibold ${disponivel <= item.quantidade_minima ? 'text-amber-500' : 'text-[#64748B]'}`}>
+                            {disponivel} {item.unidade}
+                          </div>
+                          {item.preco_unitario && (
+                            <div className="text-xs text-[#94A3B8]">{moeda(item.preco_unitario)}</div>
+                          )}
                         </div>
                       </button>
                     )
@@ -166,18 +211,22 @@ function MovimentacaoForm() {
               )}
             </div>
 
-            {/* Item selecionado */}
             {selectedItem && (
               <div className={`mt-3 p-3 rounded-lg border ${isEntrada ? 'bg-emerald-50 border-emerald-100' : 'bg-blue-50 border-blue-100'}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-[#0F172A]">{selectedItem.nome}</span>
-                  <span className="text-xs text-[#64748B]">Disponível: <strong>{selectedItem.quantidade_atual} {selectedItem.unidade}</strong></span>
+                  <div className="text-right">
+                    <div className="text-xs text-[#64748B]">Disponível: <strong>{selectedItem.quantidade_atual} {selectedItem.unidade}</strong></div>
+                    {selectedItem.preco_unitario && (
+                      <div className="text-xs text-[#64748B]">CMP atual: <strong>{moeda(selectedItem.preco_unitario)}</strong></div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Quantidade e responsável */}
+          {/* Quantidade, preço e responsável */}
           <div className="card">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -194,24 +243,74 @@ function MovimentacaoForm() {
                   onChange={e => set('quantidade', e.target.value)}
                   placeholder="0"
                 />
-                {tipo === 'saida' && selectedItem && form.quantidade && parseFloat(form.quantidade) > selectedItem.quantidade_atual && (
+                {tipo === 'saida' && selectedItem && qtd > selectedItem.quantidade_atual && (
                   <p className="text-xs text-red-500 mt-1">Quantidade maior que o disponível!</p>
                 )}
               </div>
-              <div>
+
+              {isEntrada ? (
+                <div>
+                  <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    className="field"
+                    value={form.preco_unitario_entrada}
+                    onChange={e => set('preco_unitario_entrada', e.target.value)}
+                    placeholder="0,00"
+                  />
+                  {qtd > 0 && precoEntrada > 0 && (
+                    <p className="text-xs text-emerald-600 mt-1">Total: {moeda(valorTotalEntrada)}</p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-[#374151] mb-1.5">Custo (CMP)</label>
+                  <div className="field bg-[#F8FAFC] text-[#64748B] select-none">
+                    {cmpAtual > 0 ? moeda(cmpAtual) : '—'}
+                  </div>
+                  {qtd > 0 && cmpAtual > 0 && (
+                    <p className="text-xs text-red-400 mt-1">Custo total: {moeda(qtd * cmpAtual)}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável *</label>
                 <input required className="field" value={form.responsavel} onChange={e => set('responsavel', e.target.value)} placeholder="Nome de quem movimenta" />
               </div>
             </div>
+
+            {/* Preview CMP resultante para entrada */}
+            {isEntrada && qtd > 0 && precoEntrada > 0 && selectedItem && (
+              <div className="mt-3 p-3 bg-[#F8FAFF] border border-[#E0E7FF] rounded-lg">
+                <p className="text-xs text-[#4F7CFF] font-medium">Após esta entrada:</p>
+                <div className="flex gap-4 mt-1">
+                  <span className="text-xs text-[#64748B]">Estoque: <strong>{qtdAtual + qtd} {selectedItem.unidade}</strong></span>
+                  <span className="text-xs text-[#64748B]">Novo CMP: <strong>{moeda(novoCMP)}</strong></span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Obra vinculada */}
           <div className="card">
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Vincular a uma Obra</label>
-            <select className="field" value={form.obra_id} onChange={e => set('obra_id', e.target.value)}>
-              <option value="">Sem obra vinculada</option>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">
+              {isEntrada ? 'Vincular a uma Obra (opcional)' : 'Obra de Destino *'}
+            </label>
+            <select
+              className="field"
+              value={form.obra_id}
+              onChange={e => set('obra_id', e.target.value)}
+              required={!isEntrada}
+            >
+              <option value="">{isEntrada ? 'Sem obra vinculada' : 'Selecione a obra...'}</option>
               {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
             </select>
+            {!isEntrada && !form.obra_id && (
+              <p className="text-xs text-amber-500 mt-1">Saídas devem estar vinculadas a uma obra.</p>
+            )}
           </div>
 
           {/* Motivo e observações */}
@@ -222,7 +321,7 @@ function MovimentacaoForm() {
                   {isEntrada ? 'Origem / Fornecedor' : 'Motivo da Saída'}
                 </label>
                 <input className="field" value={form.motivo} onChange={e => set('motivo', e.target.value)}
-                  placeholder={isEntrada ? 'Ex: Compra, Devolução de obra...' : 'Ex: Utilização na obra, Manutenção...'} />
+                  placeholder={isEntrada ? 'Ex: Compra NF 1234, Fornecedor XYZ...' : 'Ex: Utilização na obra, Manutenção...'} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Observações</label>

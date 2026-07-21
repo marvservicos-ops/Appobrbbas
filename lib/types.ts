@@ -253,6 +253,8 @@ export interface EstoqueMovimentacao {
   motivo?: string
   observacoes?: string
   status: StatusMovimentacao
+  preco_unitario_custo?: number
+  valor_total?: number
   data_prevista_devolucao?: string
   data_devolucao?: string
   created_at: string
