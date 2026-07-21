@@ -1740,7 +1740,7 @@ function MateriaisLista({ materiais, onEdit, onDelete }: {
       {Array.from(grupos.entries()).map(([url, itens]) => (
         <OrcamentoCard key={url} itens={itens} orcamentoUrl={url} onEdit={onEdit} onDelete={onDelete} />
       ))}
-      {semNF.map(m => (
+      {semOrc.map(m => (
         <MaterialCard key={m.id} material={m} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)} />
       ))}
     </div>
