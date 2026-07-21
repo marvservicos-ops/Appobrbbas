@@ -35,6 +35,7 @@ interface ObraMaterial {
   nota_fiscal_path?: string
   nf_pagamento_url?: string
   nf_pagamento_path?: string
+  custos_extras?: { descricao: string; valor: number }[] | null
   observacoes?: string
   created_at: string
 }
@@ -1773,7 +1774,10 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
   const fmtMoeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
   const ref = itens[0]
-  const totalOrc = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
+  const totalItens = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
+  const custosExtras = (ref.custos_extras ?? []) as { descricao: string; valor: number }[]
+  const totalExtras = custosExtras.reduce((s, c) => s + c.valor, 0)
+  const totalOrc = totalItens + totalExtras
   const orcNumero = ref.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
   const nfPagamentoUrl = itens.find(m => m.nf_pagamento_url)?.nf_pagamento_url
 
@@ -1887,6 +1891,22 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
               )
             })}
           </tbody>
+          {(custosExtras.length > 0) && (
+            <tfoot>
+              {custosExtras.map((c, i) => (
+                <tr key={i} className="border-t border-[#F1F5F9] bg-[#FAFAFA]">
+                  <td colSpan={4} className="px-4 py-2 text-xs text-[#64748B] italic">{c.descricao}</td>
+                  <td className="px-3 py-2 text-xs font-medium text-[#64748B]">{fmtMoeda(c.valor)}</td>
+                  <td colSpan={2} />
+                </tr>
+              ))}
+              <tr className="border-t-2 border-[#E2E8F0] bg-[#F8FAFC]">
+                <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-[#374151]">Total com extras</td>
+                <td className="px-3 py-2.5 text-sm font-bold text-[#0F172A]">{fmtMoeda(totalOrc)}</td>
+                <td colSpan={2} />
+              </tr>
+            </tfoot>
+          )}
           </table>
         </>
       )}
@@ -2717,9 +2737,18 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
   const [nfPath, setNfPath] = useState(ref.nota_fiscal_path ?? '')
   const [nfPagamentoUrl, setNfPagamentoUrl] = useState(itens.find(m => m.nf_pagamento_url)?.nf_pagamento_url ?? '')
   const [nfPagamentoPath, setNfPagamentoPath] = useState(itens.find(m => m.nf_pagamento_path)?.nf_pagamento_path ?? '')
+  const [custosExtras, setCustosExtras] = useState<{ descricao: string; valor: string }[]>(
+    () => (ref.custos_extras as { descricao: string; valor: number }[] | null)?.map(c => ({ descricao: c.descricao, valor: String(c.valor) })) ?? []
+  )
   const [uploadingNf, setUploadingNf] = useState(false)
   const [uploadingNfPag, setUploadingNfPag] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  function addExtra() { setCustosExtras(p => [...p, { descricao: '', valor: '' }]) }
+  function removeExtra(i: number) { setCustosExtras(p => p.filter((_, idx) => idx !== i)) }
+  function updateExtra(i: number, field: 'descricao' | 'valor', v: string) {
+    setCustosExtras(p => p.map((c, idx) => idx === i ? { ...c, [field]: v } : c))
+  }
 
   async function uploadOrc(file: File) {
     setUploadingNf(true)
@@ -2746,6 +2775,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
     const supabase = createClient()
     const obs = [nfNumero.trim() ? `NF: ${nfNumero.trim()}` : '', observacoes.trim()].filter(Boolean).join(' | ') || null
     const ids = itens.map(m => m.id)
+    const extrasValidos = custosExtras.filter(c => c.descricao.trim() && parseFloat(c.valor) > 0)
     await supabase.from('obra_materiais').update({
       tipo_compra: tipCompra,
       fornecedor: fornecedor.trim() || null,
@@ -2757,6 +2787,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
       nf_pagamento_url: nfPagamentoUrl || null,
       nf_pagamento_path: nfPagamentoPath || null,
       observacoes: obs,
+      custos_extras: extrasValidos.length > 0 ? extrasValidos.map(c => ({ descricao: c.descricao.trim(), valor: parseFloat(c.valor) })) : null,
     }).in('id', ids)
     setSaving(false)
     onSaved()
@@ -2848,6 +2879,39 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
             </div>
           </F>
 
+          {/* Custos Extras */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-[#374151]">Custos Extras (frete, impostos, etc.)</span>
+              <button type="button" onClick={addExtra}
+                className="flex items-center gap-1 text-xs text-[#4F7CFF] hover:text-blue-700 font-medium">
+                <PlusCircle size={13} /> Adicionar
+              </button>
+            </div>
+            {custosExtras.length === 0 ? (
+              <p className="text-xs text-[#94A3B8]">Nenhum custo extra cadastrado.</p>
+            ) : (
+              <div className="space-y-2">
+                {custosExtras.map((c, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input className="field flex-1 text-sm" placeholder="Descrição (ex: Frete, ICMS)" value={c.descricao}
+                      onChange={e => updateExtra(i, 'descricao', e.target.value)} />
+                    <input className="field w-32 text-sm" placeholder="R$ 0,00" type="number" min="0" step="0.01" value={c.valor}
+                      onChange={e => updateExtra(i, 'valor', e.target.value)} />
+                    <button type="button" onClick={() => removeExtra(i)} className="text-[#94A3B8] hover:text-red-500 shrink-0"><X size={14} /></button>
+                  </div>
+                ))}
+                <div className="flex justify-end pt-1">
+                  <span className="text-xs font-semibold text-[#374151]">
+                    Total extras: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                      custosExtras.reduce((s, c) => s + (parseFloat(c.valor) || 0), 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
           <p className="text-xs text-[#94A3B8] bg-[#F8FAFC] rounded-lg px-3 py-2">
             Estes campos serão aplicados a todos os {itens.length} ite{itens.length === 1 ? 'm' : 'ns'} deste orçamento. Para editar descrição, quantidade e valores de cada item, use o lápis individual.
           </p>
@@ -2892,7 +2956,14 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
   const [uploadingNf, setUploadingNf] = useState(false)
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemNF[]>([ITEM_VAZIO()])
+  const [custosExtrasNF, setCustosExtrasNF] = useState<{ descricao: string; valor: string }[]>([])
   const [saving, setSaving] = useState(false)
+
+  function addExtraNF() { setCustosExtrasNF(p => [...p, { descricao: '', valor: '' }]) }
+  function removeExtraNF(i: number) { setCustosExtrasNF(p => p.filter((_, idx) => idx !== i)) }
+  function updateExtraNF(i: number, field: 'descricao' | 'valor', v: string) {
+    setCustosExtrasNF(p => p.map((c, idx) => idx === i ? { ...c, [field]: v } : c))
+  }
 
   async function uploadNF(file: File) {
     setUploadingNf(true)
@@ -2954,6 +3025,8 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
       observacoes: obs,
+      custos_extras: custosExtrasNF.filter(c => c.descricao.trim() && parseFloat(c.valor) > 0)
+        .map(c => ({ descricao: c.descricao.trim(), valor: parseFloat(c.valor) })),
     }))
     await supabase.from('obra_materiais').insert(payload)
     setSaving(false)
@@ -3129,6 +3202,30 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
               {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
             </div>
           </F>
+
+          {/* Custos Extras */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-[#374151]">Custos Extras (frete, impostos, etc.)</span>
+              <button type="button" onClick={addExtraNF}
+                className="flex items-center gap-1 text-xs text-[#4F7CFF] hover:text-blue-700 font-medium">
+                <PlusCircle size={13} /> Adicionar
+              </button>
+            </div>
+            {custosExtrasNF.length > 0 && (
+              <div className="space-y-2">
+                {custosExtrasNF.map((c, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input className="field flex-1 text-sm" placeholder="Descrição (ex: Frete, ICMS)" value={c.descricao}
+                      onChange={e => updateExtraNF(i, 'descricao', e.target.value)} />
+                    <input className="field w-32 text-sm" placeholder="R$ 0,00" type="number" min="0" step="0.01" value={c.valor}
+                      onChange={e => updateExtraNF(i, 'valor', e.target.value)} />
+                    <button type="button" onClick={() => removeExtraNF(i)} className="text-[#94A3B8] hover:text-red-500 shrink-0"><X size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Observações */}
           <F label="Observações">
