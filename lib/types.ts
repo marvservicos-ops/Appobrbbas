@@ -160,6 +160,7 @@ export interface EstoqueProduto {
   unidade: string
   quantidade_atual: number
   quantidade_minima: number
+  preco_unitario?: number | null
   foto_url?: string
   ativo: boolean
   created_at: string
