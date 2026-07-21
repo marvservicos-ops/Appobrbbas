@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Package, TrendingDown, TrendingUp, Scale } from 'lucide-react'
+import { Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
@@ -9,6 +9,7 @@ const dataBR = (v?: string) => v ? new Date(v).toLocaleDateString('pt-BR') : '�
 
 interface Registro {
   id: string
+  produto_id?: string | null
   produto_nome: string
   quantidade: number
   unidade?: string
@@ -17,6 +18,8 @@ interface Registro {
   data: string
   responsavel: string
   tipo: 'entrada' | 'saida'
+  estoque_id: string
+  obra_id?: string | null
   estoque_nome?: string
 }
 
@@ -24,6 +27,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   const [saidas, setSaidas] = useState<Registro[]>([])
   const [devolucoes, setDevolucoes] = useState<Registro[]>([])
   const [loading, setLoading] = useState(true)
+  const [devolvendoRegistro, setDevolvendoRegistro] = useState<Registro | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -112,11 +116,12 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Total</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Data</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Responsável</th>
+                  <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
               <tbody>
                 {saidas.map(r => (
-                  <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
+                  <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
                     <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{r.produto_nome}</td>
                     <td className="px-4 py-3 text-sm text-[#64748B] hidden sm:table-cell">{r.estoque_nome ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-[#374151]">{r.quantidade} {r.unidade ?? ''}</td>
@@ -124,6 +129,15 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                     <td className="px-4 py-3 text-sm font-semibold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</td>
                     <td className="px-4 py-3 text-sm text-[#64748B] hidden md:table-cell">{dataBR(r.data)}</td>
                     <td className="px-4 py-3 text-sm text-[#64748B] hidden md:table-cell">{r.responsavel}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setDevolvendoRegistro(r)}
+                        title="Registrar devolução"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"
+                      >
+                        <Undo2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -194,6 +208,149 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
           <span className="font-syne font-bold text-xl text-[#4F7CFF]">{moeda(custoLiquido)}</span>
         </div>
       )}
+
+      {devolvendoRegistro && (
+        <ModalDevolucao
+          registro={devolvendoRegistro}
+          onClose={() => setDevolvendoRegistro(null)}
+          onSaved={async () => {
+            setDevolvendoRegistro(null)
+            // Recarrega registros
+            const supabase = createClient()
+            const { data } = await supabase
+              .from('estoque_registros')
+              .select('*, estoque:estoques(nome)')
+              .eq('obra_id', obraId)
+              .order('data', { ascending: false })
+            if (data) {
+              const mapped = data.map((r: any) => ({ ...r, estoque_nome: r.estoque?.nome }))
+              setSaidas(mapped.filter((r: Registro) => r.tipo === 'saida'))
+              setDevolucoes(mapped.filter((r: Registro) => r.tipo === 'entrada'))
+            }
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal devolução ───────────────────────────────────
+function ModalDevolucao({ registro, onClose, onSaved }: {
+  registro: Registro
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [qtd, setQtd] = useState('')
+  const [responsavel, setResponsavel] = useState(registro.responsavel)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const qtdNum = parseFloat(qtd) || 0
+  const precoAtual = registro.preco_unitario_custo || 0
+  const valorCredito = qtdNum * precoAtual
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade a devolver.'); return }
+    if (qtdNum > registro.quantidade) {
+      setError(`Não pode devolver mais do que a saída original (${registro.quantidade} ${registro.unidade ?? ''}).`)
+      return
+    }
+    setSaving(true)
+    setError('')
+    const supabase = createClient()
+
+    const { error: regErr } = await supabase.from('estoque_registros').insert({
+      estoque_id: registro.estoque_id,
+      produto_id: registro.produto_id ?? null,
+      produto_nome: registro.produto_nome,
+      tipo: 'entrada',
+      quantidade: qtdNum,
+      unidade: registro.unidade ?? 'un',
+      responsavel: responsavel.trim(),
+      data: new Date().toISOString().split('T')[0],
+      obra_id: registro.obra_id ?? null,
+      preco_unitario_custo: precoAtual || null,
+      valor_total: valorCredito || null,
+      observacoes: `Devolução de saída de ${new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}`,
+    })
+
+    if (regErr) { setError(regErr.message); setSaving(false); return }
+
+    // Atualiza estoque e CMP do produto
+    if (registro.produto_id) {
+      const { data: prod } = await supabase
+        .from('estoque_produtos')
+        .select('quantidade_atual, preco_unitario')
+        .eq('id', registro.produto_id)
+        .single()
+
+      if (prod) {
+        const novaQtd = prod.quantidade_atual + qtdNum
+        const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
+        if (precoAtual > 0) {
+          const cmpAtual = prod.preco_unitario || 0
+          const novoCMP = prod.quantidade_atual > 0
+            ? (prod.quantidade_atual * cmpAtual + qtdNum * precoAtual) / novaQtd
+            : precoAtual
+          prodUpdate.preco_unitario = novoCMP
+        }
+        await supabase.from('estoque_produtos').update(prodUpdate).eq('id', registro.produto_id)
+      }
+    }
+
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[420px]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <div>
+            <h3 className="font-syne font-semibold text-[#0F172A]">Registrar Devolução</h3>
+            <p className="text-xs text-[#94A3B8] mt-0.5">{registro.produto_nome}</p>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <form onSubmit={handleSave} className="p-5 space-y-4">
+          <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800 space-y-1">
+            <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+            {precoAtual > 0 && <p>Preço unitário (CMP): <strong>{moeda(precoAtual)}</strong></p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">
+              Quantidade a devolver * <span className="text-[#94A3B8] font-normal">(máx. {registro.quantidade} {registro.unidade ?? ''})</span>
+            </label>
+            <input
+              type="number" step="0.01" min="0.01" max={registro.quantidade}
+              className="field" placeholder="0" autoFocus
+              value={qtd} onChange={e => setQtd(e.target.value)}
+            />
+            {qtdNum > 0 && precoAtual > 0 && (
+              <p className="text-xs text-emerald-600 mt-1">
+                Crédito ao estoque: {moeda(valorCredito)}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável *</label>
+            <input required className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} />
+          </div>
+
+          {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          <div className="flex justify-end gap-3 pt-1">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
+            <button type="submit" disabled={saving} className="btn-primary text-sm flex items-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
+              {saving ? 'Registrando...' : 'Confirmar Devolução'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
