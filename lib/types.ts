@@ -184,6 +184,9 @@ export interface EstoqueRegistro {
   assinatura_url?: string
   data: string
   observacoes?: string
+  obra_id?: string | null
+  preco_unitario_custo?: number | null
+  valor_total?: number | null
   created_at: string
   valores?: EstoqueRegistroValor[]
 }

@@ -33,6 +33,7 @@ export default function RegistrarPage() {
   const [scanMsg, setScanMsg] = useState('')
   const [obraId, setObraId] = useState('')
   const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
+  const [precoEntrada, setPrecoEntrada] = useState('')
 
   // Canvas signature
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -56,6 +57,14 @@ export default function RegistrarPage() {
     }
     load()
   }, [estoqueId])
+
+  // Preenche preço com CMP atual ao selecionar produto (entrada)
+  useEffect(() => {
+    if (tipo === 'entrada') {
+      const prod = produtos.find(p => p.id === produtoId)
+      if (prod?.preco_unitario) setPrecoEntrada(String(prod.preco_unitario))
+    }
+  }, [produtoId, tipo, produtos])
 
   // Atualiza unidade e auto-preenche campos quando produto muda
   useEffect(() => {
@@ -159,6 +168,15 @@ export default function RegistrarPage() {
       }
     }
 
+    if (tipo === 'saida' && !obraId) {
+      setError('Selecione a obra de destino para registrar a saída.')
+      return
+    }
+    if (tipo === 'entrada' && !precoEntrada) {
+      setError('Informe o preço unitário desta entrada para calcular o custo médio.')
+      return
+    }
+
     setSaving(true)
     setError('')
     const supabase = createClient()
@@ -178,19 +196,29 @@ export default function RegistrarPage() {
       }
     }
 
+    // Calcular custo snapshot
+    const qtd = parseFloat(quantidade)
+    const prod = produtos.find(p => p.id === produtoId)
+    const cmpAtual = prod?.preco_unitario || 0
+    const precoEntradaNum = parseFloat(precoEntrada) || 0
+    const preco_unitario_custo = tipo === 'entrada' ? precoEntradaNum : cmpAtual
+    const valor_total = qtd * preco_unitario_custo
+
     // Inserir registro
     const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
       estoque_id: estoqueId,
       produto_id: produtoId || null,
       produto_nome: produtoNome.trim(),
       tipo,
-      quantidade: parseFloat(quantidade),
+      quantidade: qtd,
       unidade,
       responsavel: responsavel.trim(),
       assinatura_url,
       data,
       observacoes: observacoes || null,
       obra_id: obraId || null,
+      preco_unitario_custo: preco_unitario_custo || null,
+      valor_total: valor_total || null,
     }).select().single()
 
     if (regErr) { setError(regErr.message); setSaving(false); return }
@@ -204,13 +232,21 @@ export default function RegistrarPage() {
       await supabase.from('estoque_registro_valores').insert(valores)
     }
 
-    // Atualizar quantidade do produto
-    if (produtoId) {
-      const prod = produtos.find(p => p.id === produtoId)
-      if (prod) {
-        const delta = tipo === 'entrada' ? parseFloat(quantidade) : -parseFloat(quantidade)
-        await supabase.from('estoque_produtos').update({ quantidade_atual: prod.quantidade_atual + delta }).eq('id', produtoId)
+    // Atualizar quantidade e CMP do produto
+    if (produtoId && prod) {
+      const delta = tipo === 'entrada' ? qtd : -qtd
+      const novaQtd = prod.quantidade_atual + delta
+      const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
+
+      // Recalcular CMP apenas na entrada
+      if (tipo === 'entrada' && precoEntradaNum > 0) {
+        const novoCMP = prod.quantidade_atual > 0
+          ? (prod.quantidade_atual * cmpAtual + qtd * precoEntradaNum) / novaQtd
+          : precoEntradaNum
+        prodUpdate.preco_unitario = novoCMP
       }
+
+      await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produtoId)
     }
 
     router.push(`/estoque/${estoqueId}`)
@@ -321,6 +357,36 @@ export default function RegistrarPage() {
           </div>
         </div>
 
+        {/* Preço — entrada exige, saída mostra CMP read-only */}
+        {tipo === 'entrada' ? (
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$) *</label>
+            <input type="number" step="0.01" min="0.01" required className="field" placeholder="0,00"
+              value={precoEntrada} onChange={e => setPrecoEntrada(e.target.value)} />
+            {quantidade && precoEntrada && (
+              <p className="text-xs text-emerald-600 mt-1">
+                Total desta entrada: R$ {(parseFloat(quantidade) * parseFloat(precoEntrada)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            )}
+          </div>
+        ) : (
+          (() => {
+            const prod = produtos.find(p => p.id === produtoId)
+            if (!prod?.preco_unitario) return null
+            const custo = prod.preco_unitario
+            const total = (parseFloat(quantidade) || 0) * custo
+            return (
+              <div className="px-3 py-2.5 bg-[#FFF7ED] border border-orange-100 rounded-lg">
+                <p className="text-xs font-medium text-orange-700">Custo desta saída (CMP)</p>
+                <p className="text-sm font-semibold text-orange-800 mt-0.5">
+                  {custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} / un
+                  {quantidade && <span> · Total: {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>}
+                </p>
+              </div>
+            )
+          })()
+        )}
+
         {/* Campos customizados */}
         {campos.map(c => (
           <div key={c.id}>
@@ -345,13 +411,14 @@ export default function RegistrarPage() {
         </div>
 
         {/* Destino / Obra */}
-        {tipo === 'saida' && obras.length > 0 && (
+        {tipo === 'saida' && (
           <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Destino / Obra (Centro de Custo)</label>
-            <select className="field" value={obraId} onChange={e => setObraId(e.target.value)}>
-              <option value="">Sem vínculo com obra</option>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Obra de Destino *</label>
+            <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
+              <option value="">Selecione a obra...</option>
               {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
             </select>
+            {!obraId && <p className="text-xs text-amber-500 mt-1">Saídas devem estar vinculadas a uma obra.</p>}
           </div>
         )}
 

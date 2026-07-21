@@ -443,6 +443,7 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
   const [unidade, setUnidade] = useState(produto.unidade)
   const [qtdAtual, setQtdAtual] = useState(String(produto.quantidade_atual))
   const [qtdMin, setQtdMin] = useState(String(produto.quantidade_minima))
+  const [precoUnitario, setPrecoUnitario] = useState(produto.preco_unitario ? String(produto.preco_unitario) : '')
   const [fotoUrl, setFotoUrl] = useState(produto.foto_url ?? '')
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -475,6 +476,7 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
       unidade: unidade.trim() || 'un',
       quantidade_atual: novaQtd,
       quantidade_minima: parseFloat(qtdMin) || 0,
+      preco_unitario: precoUnitario ? parseFloat(precoUnitario) : null,
       foto_url: fotoUrl || null,
     }).eq('id', produto.id)
 
@@ -543,6 +545,12 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd Mínima</label>
               <input type="number" step="any" className="field" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$) — CMP</label>
+            <input type="number" step="0.01" min="0" className="field" placeholder="0,00"
+              value={precoUnitario} onChange={e => setPrecoUnitario(e.target.value)} />
+            <p className="text-xs text-[#94A3B8] mt-1">Custo médio ponderado atual. Será recalculado automaticamente em novas entradas.</p>
           </div>
           {parseFloat(qtdAtual) !== qtdOriginal && (
             <div>
