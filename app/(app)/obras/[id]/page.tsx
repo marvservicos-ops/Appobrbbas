@@ -33,6 +33,8 @@ interface ObraMaterial {
   status: 'pendente' | 'orcado' | 'comprado' | 'em_transito' | 'recebido' | 'instalado'
   nota_fiscal_url?: string
   nota_fiscal_path?: string
+  nf_pagamento_url?: string
+  nf_pagamento_path?: string
   observacoes?: string
   created_at: string
 }
@@ -944,11 +946,11 @@ export default function ObraDetailPage() {
               <div className="grid grid-cols-3 gap-2 sm:flex sm:items-center">
                 <button onClick={() => setShowNFManual(true)}
                   className="min-h-12 flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-xl border-2 border-[#E2E8F0] text-[#64748B] text-xs sm:text-sm font-medium hover:bg-[#F8FAFC] transition-colors">
-                  <FileText size={15} className="shrink-0" /> <span>Lançar NF</span>
+                  <FileText size={15} className="shrink-0" /> <span>Lançar Orçamento</span>
                 </button>
                 <label className={`min-h-12 flex items-center justify-center gap-1.5 cursor-pointer px-2 sm:px-4 py-2 rounded-xl border-2 border-[#4F7CFF] text-[#4F7CFF] text-xs sm:text-sm font-medium hover:bg-[#EEF2FF] transition-colors ${importandoNF ? 'opacity-60 pointer-events-none' : ''}`}>
                   {importandoNF ? <Loader2 size={15} className="animate-spin shrink-0" /> : <Upload size={15} className="shrink-0" />}
-                  <span>{importandoNF ? 'Lendo NF...' : 'Importar NF'}</span>
+                  <span>{importandoNF ? 'Importando...' : 'Importar Orçamento'}</span>
                   <input type="file" accept=".pdf" className="hidden" disabled={importandoNF}
                     onChange={async e => {
                       const f = e.target.files?.[0]; if (!f) return
@@ -1721,13 +1723,13 @@ function MateriaisLista({ materiais, onEdit, onDelete }: {
   onEdit: (m: ObraMaterial) => void
   onDelete: (m: ObraMaterial) => void
 }) {
-  // Separar materiais com NF (agrupados) dos avulsos
-  const comNF = materiais.filter(m => m.nota_fiscal_url)
-  const semNF = materiais.filter(m => !m.nota_fiscal_url)
+  // Separar materiais com orçamento (agrupados) dos avulsos
+  const comOrc = materiais.filter(m => m.nota_fiscal_url)
+  const semOrc = materiais.filter(m => !m.nota_fiscal_url)
 
-  // Agrupar por nota_fiscal_url
+  // Agrupar por nota_fiscal_url (url do orçamento)
   const grupos = new Map<string, ObraMaterial[]>()
-  for (const m of comNF) {
+  for (const m of comOrc) {
     const key = m.nota_fiscal_url!
     if (!grupos.has(key)) grupos.set(key, [])
     grupos.get(key)!.push(m)
@@ -1736,7 +1738,7 @@ function MateriaisLista({ materiais, onEdit, onDelete }: {
   return (
     <div className="space-y-3">
       {Array.from(grupos.entries()).map(([url, itens]) => (
-        <NFCard key={url} itens={itens} nfUrl={url} onEdit={onEdit} onDelete={onDelete} />
+        <OrcamentoCard key={url} itens={itens} orcamentoUrl={url} onEdit={onEdit} onDelete={onDelete} />
       ))}
       {semNF.map(m => (
         <MaterialCard key={m.id} material={m} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)} />
@@ -1745,10 +1747,10 @@ function MateriaisLista({ materiais, onEdit, onDelete }: {
   )
 }
 
-// ── NFCard ────────────────────────────────────────────
-function NFCard({ itens, nfUrl, onEdit, onDelete }: {
+// ── OrcamentoCard ─────────────────────────────────────
+function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete }: {
   itens: ObraMaterial[]
-  nfUrl: string
+  orcamentoUrl: string
   onEdit: (m: ObraMaterial) => void
   onDelete: (m: ObraMaterial) => void
 }) {
@@ -1757,13 +1759,13 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
   const fmtMoeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
   const ref = itens[0]
-  const totalNF = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
-  // Extrair número da NF das observações
-  const nfNumero = ref.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
+  const totalOrc = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
+  const orcNumero = ref.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
+  const nfPagamentoUrl = itens.find(m => m.nf_pagamento_url)?.nf_pagamento_url
 
   return (
     <div className="card p-0 overflow-hidden">
-      {/* Cabeçalho da NF */}
+      {/* Cabeçalho do Orçamento */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-4 sm:py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${ref.tipo_compra === 'cliente' ? 'bg-purple-50' : 'bg-blue-50'}`}>
@@ -1772,7 +1774,7 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-syne font-semibold text-sm text-[#0F172A]">
-                {nfNumero ? `NF ${nfNumero}` : 'Nota Fiscal'}
+                {orcNumero ? `Orçamento ${orcNumero}` : 'Orçamento'}
               </span>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ref.tipo_compra === 'cliente' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
                 {ref.tipo_compra === 'cliente' ? 'Compra Cliente' : 'Compra Interna'}
@@ -1783,16 +1785,22 @@ function NFCard({ itens, nfUrl, onEdit, onDelete }: {
               {ref.fornecedor && <span>{ref.fornecedor}</span>}
               {ref.data_compra && <span>· {fmt(ref.data_compra)}</span>}
               {ref.comprador && <span>· {ref.comprador}</span>}
-              {ref.destino && <span>· Destino: {ref.destino}</span>}
+              {ref.numero_oc && <span>· OC: {ref.numero_oc}</span>}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 sm:ml-3 pl-11 sm:pl-0">
-          <span className="font-syne font-bold text-sm text-[#0F172A] mr-auto sm:mr-1">{fmtMoeda(totalNF)}</span>
-          <a href={nfUrl} target="_blank" rel="noopener noreferrer"
+          <span className="font-syne font-bold text-sm text-[#0F172A] mr-auto sm:mr-1">{fmtMoeda(totalOrc)}</span>
+          <a href={orcamentoUrl} target="_blank" rel="noopener noreferrer"
             className="min-h-9 flex items-center gap-1 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-1 rounded-lg hover:bg-[#dce8ff] transition-colors">
-            <ExternalLink size={11} /> Ver NF
+            <ExternalLink size={11} /> Ver Orçamento
           </a>
+          {nfPagamentoUrl && (
+            <a href={nfPagamentoUrl} target="_blank" rel="noopener noreferrer"
+              className="min-h-9 flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg hover:bg-emerald-100 transition-colors">
+              <ExternalLink size={11} /> Ver NF
+            </a>
+          )}
           <button aria-label={aberto ? 'Recolher itens' : 'Mostrar itens'} onClick={() => setAberto(a => !a)} className="w-9 h-9 flex items-center justify-center text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
             {aberto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
@@ -2245,7 +2253,10 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
   const [observacoes, setObservacoes] = useState(material?.observacoes ?? '')
   const [nfUrl, setNfUrl] = useState(material?.nota_fiscal_url ?? '')
   const [nfPath, setNfPath] = useState(material?.nota_fiscal_path ?? '')
+  const [nfPagamentoUrl, setNfPagamentoUrl] = useState(material?.nf_pagamento_url ?? '')
+  const [nfPagamentoPath, setNfPagamentoPath] = useState(material?.nf_pagamento_path ?? '')
   const [uploadingNf, setUploadingNf] = useState(false)
+  const [uploadingNfPag, setUploadingNfPag] = useState(false)
   const [saving, setSaving] = useState(false)
   const [nfDados, setNfDados] = useState<{ emitente?: string; nfNumero?: string; dataEmissao?: string; valorTotal?: number; produtos?: { descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }[] } | null>(null)
 
@@ -2285,6 +2296,17 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
     setUploadingNf(false)
   }
 
+  async function uploadNfPagamento(file: File) {
+    setUploadingNfPag(true)
+    const supabase = createClient()
+    const path = `nf-pagamento/${obraId}/${Date.now()}_${file.name}`
+    await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+    setNfPagamentoUrl(data.publicUrl)
+    setNfPagamentoPath(path)
+    setUploadingNfPag(false)
+  }
+
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
     if (!descricao.trim()) return
@@ -2311,6 +2333,8 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
       status,
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
+      nf_pagamento_url: nfPagamentoUrl || null,
+      nf_pagamento_path: nfPagamentoPath || null,
       observacoes: observacoes.trim() || null,
     }
     if (material?.id) {
@@ -2444,18 +2468,18 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
             </div>
           )}
 
-          {/* Nota Fiscal */}
-          <F label="Nota Fiscal (PDF ou imagem)">
+          {/* Orçamento */}
+          <F label="Orçamento (PDF ou imagem)">
             <div className="flex items-center gap-3 flex-wrap">
               {nfUrl && (
                 <a href={nfUrl} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg">
-                  <FileText size={13} /> Ver NF anexada
+                  <FileText size={13} /> Ver Orçamento
                 </a>
               )}
               <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                 {uploadingNf ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                {uploadingNf ? 'Lendo NF...' : nfUrl ? 'Trocar NF' : 'Anexar NF'}
+                {uploadingNf ? 'Carregando...' : nfUrl ? 'Trocar Orçamento' : 'Anexar Orçamento'}
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadNF(f) }} />
               </label>
@@ -2477,6 +2501,25 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
                 </div>
               </div>
             )}
+          </F>
+
+          {/* NF de Pagamento */}
+          <F label="NF de Pagamento (opcional)">
+            <div className="flex items-center gap-3 flex-wrap">
+              {nfPagamentoUrl && (
+                <a href={nfPagamentoUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-medium text-[#059669] bg-[#ECFDF5] px-3 py-2 rounded-lg">
+                  <FileText size={13} /> Ver NF
+                </a>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
+                {uploadingNfPag ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {uploadingNfPag ? 'Carregando...' : nfPagamentoUrl ? 'Trocar NF' : 'Anexar NF'}
+                <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNfPag}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadNfPagamento(f) }} />
+              </label>
+              {nfPagamentoUrl && <button type="button" onClick={() => { setNfPagamentoUrl(''); setNfPagamentoPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+            </div>
           </F>
 
           <F label="Observações">
@@ -2550,7 +2593,7 @@ function ModalImportNF({ obraId, onClose, onSaved }: {
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <div>
-            <h2 className="font-syne font-semibold text-[#0F172A]">Importar itens da NF</h2>
+            <h2 className="font-syne font-semibold text-[#0F172A]">Importar Orçamento</h2>
             {nf.nfNumero && <p className="text-xs text-[#64748B] mt-0.5">{nf.nfNumero} · {nf.emitente}</p>}
           </div>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
@@ -2733,7 +2776,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
-          <h2 className="font-syne font-semibold text-[#0F172A]">Lançar NF Manual</h2>
+          <h2 className="font-syne font-semibold text-[#0F172A]">Lançar Orçamento</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
 
@@ -2877,18 +2920,18 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
             </div>
           </div>
 
-          {/* Nota Fiscal anexo */}
-          <F label="Nota Fiscal (PDF ou imagem)">
+          {/* Orçamento anexo */}
+          <F label="Orçamento (PDF ou imagem)">
             <div className="flex items-center gap-3 flex-wrap">
               {nfUrl && (
                 <a href={nfUrl} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg">
-                  <FileText size={13} /> Ver NF anexada
+                  <FileText size={13} /> Ver Orçamento
                 </a>
               )}
               <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                 {uploadingNf ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                {uploadingNf ? 'Enviando...' : nfUrl ? 'Trocar NF' : 'Anexar NF'}
+                {uploadingNf ? 'Carregando...' : nfUrl ? 'Trocar Orçamento' : 'Anexar Orçamento'}
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadNF(f) }} />
               </label>
