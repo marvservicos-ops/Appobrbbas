@@ -47,7 +47,7 @@ export default function RegistrarPage() {
         supabase.from('estoques').select('*').eq('id', estoqueId).single(),
         supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
         supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
-        supabase.from('obras').select('id, titulo, status').in('status', ['Em andamento', 'Paralisada']).order('titulo'),
+        supabase.from('obras').select('id, titulo, status').in('status', ['Em Andamento', 'Aprovada', 'Em Orçamento']).order('titulo'),
       ])
       setEstoque(est)
       setCampos(cam ?? [])
