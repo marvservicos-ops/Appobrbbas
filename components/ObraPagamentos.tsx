@@ -26,8 +26,8 @@ const STATUS = {
 } as const
 
 // ─── Modal editar medição (nome / percentual / previsão) ──────────────────────
-function ModalEditarMedicao({ medicao, onClose, onSaved }: {
-  medicao: ObraMedicao; onClose: () => void
+function ModalEditarMedicao({ medicao, valorBase, onClose, onSaved }: {
+  medicao: ObraMedicao; valorBase: number; onClose: () => void
   onSaved: (c: Partial<ObraMedicao>) => void
 }) {
   const [nome, setNome] = useState(medicao.nome)
@@ -35,9 +35,17 @@ function ModalEditarMedicao({ medicao, onClose, onSaved }: {
   const [dataPrevista, setDataPrevista] = useState(medicao.data_prevista ?? '')
   const [saving, setSaving] = useState(false)
 
+  const pctNum = Number(percentual || 0)
+  const valorPrevisto = valorBase * pctNum / 100
+
   async function handleSave() {
     setSaving(true)
-    const changes: Partial<ObraMedicao> = { nome: nome.trim(), percentual: Number(percentual), data_prevista: dataPrevista || undefined }
+    const changes: Partial<ObraMedicao> = {
+      nome: nome.trim(),
+      percentual: pctNum,
+      data_prevista: dataPrevista || undefined,
+      ...(medicao.status === 'planejada' ? { valor_previsto: valorPrevisto } : {}),
+    }
     const { error } = await createClient().from('obra_medicoes').update(changes).eq('id', medicao.id)
     setSaving(false)
     if (error) { alert(error.message); return }
@@ -60,6 +68,7 @@ function ModalEditarMedicao({ medicao, onClose, onSaved }: {
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Percentual (%)</label>
               <input type="number" step="0.001" min="0" max="100" className="field" value={percentual} onChange={e => setPercentual(e.target.value)} />
+              {medicao.status === 'planejada' && percentual && <p className="text-xs text-[#64748B] mt-1">= {moeda(valorPrevisto)}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Previsão</label>
@@ -645,6 +654,9 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
       {editandoMedicao && (
         <ModalEditarMedicao
           medicao={editandoMedicao}
+          valorBase={editandoMedicao.aditivo_id
+            ? (aditivos.find(a => a.id === editandoMedicao.aditivo_id)?.valor ?? 0)
+            : valorContrato}
           onClose={() => setEditandoMedicao(null)}
           onSaved={changes => { setMedicoes(list => list.map(x => x.id === editandoMedicao.id ? { ...x, ...changes } : x)); setEditandoMedicao(null) }}
         />
