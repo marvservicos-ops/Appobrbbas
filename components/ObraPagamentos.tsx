@@ -362,14 +362,15 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     const supabase = createClient()
     const { error: contractError } = await supabase.from('obra_financeiro').upsert({ obra_id: obraId, valor_contrato: novoValor, updated_at: new Date().toISOString() })
     if (contractError) { setError(contractError.message); setSaving(false); return }
-    if (medicoes.length > 0) {
-      const baseTotal = novoValor + totalAditivos
-      await Promise.all(medicoes.map(m => {
+    // Só recalcula medições BASE (sem aditivo_id) — aditivos têm seu próprio valor
+    const medicoesBase = medicoes.filter(m => !m.aditivo_id)
+    if (medicoesBase.length > 0) {
+      await Promise.all(medicoesBase.map(m => {
         if (m.status === 'planejada') {
-          return supabase.from('obra_medicoes').update({ valor_previsto: baseTotal * Number(m.percentual) / 100 }).eq('id', m.id)
+          return supabase.from('obra_medicoes').update({ valor_previsto: novoValor * Number(m.percentual) / 100 }).eq('id', m.id)
         } else {
           const valorRef = Number(m.valor_faturado || m.valor_previsto || 0)
-          return supabase.from('obra_medicoes').update({ percentual: baseTotal > 0 ? valorRef / baseTotal * 100 : Number(m.percentual) }).eq('id', m.id)
+          return supabase.from('obra_medicoes').update({ percentual: novoValor > 0 ? valorRef / novoValor * 100 : Number(m.percentual) }).eq('id', m.id)
         }
       }))
     }
@@ -386,7 +387,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     const { data: { user } } = await supabase.auth.getUser()
     const payload = drafts.map((x, i) => ({
       obra_id: obraId, aditivo_id: null, ordem: i + 1, nome: x.nome.trim(), percentual: x.percentual,
-      valor_previsto: valorTotal * x.percentual / 100, data_prevista: x.data_prevista || null, created_by: user?.id,
+      valor_previsto: valorContrato * x.percentual / 100, data_prevista: x.data_prevista || null, created_by: user?.id,
     }))
     const { error: insertError } = await supabase.from('obra_medicoes').insert(payload)
     if (insertError) setError(insertError.message); else await load()
@@ -651,7 +652,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
       {showNovaMedicao && (
         <ModalNovaMedicao
           obraId={obraId}
-          valorBase={valorTotal}
+          valorBase={valorContrato}
           aditivoId={novaMedicaoAditivo?.id}
           aditivoNome={novaMedicaoAditivo?.descricao}
           aditivoValor={novaMedicaoAditivo ? Number(novaMedicaoAditivo.valor) : undefined}
