@@ -27,6 +27,9 @@ interface ObraMaterial {
   unidade?: string
   valor_unitario?: number
   valor_total?: number
+  preco_venda_unitario?: number
+  valor_venda_total?: number
+  numero_oc?: string
   status: 'pendente' | 'orcado' | 'comprado' | 'em_transito' | 'recebido' | 'instalado'
   nota_fiscal_url?: string
   nota_fiscal_path?: string
@@ -2177,8 +2180,27 @@ function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMateria
         {m.local_chegada && <div><span className="text-[#94A3B8] block">Local chegada</span><span className="font-medium text-[#374151]">{m.local_chegada}</span></div>}
         {m.destino && <div><span className="text-[#94A3B8] block">Destino</span><span className="font-medium text-[#374151]">{m.destino}</span></div>}
         {m.quantidade != null && <div><span className="text-[#94A3B8] block">Quantidade</span><span className="font-medium text-[#374151]">{m.quantidade} {m.unidade ?? ''}</span></div>}
-        {m.valor_total != null && <div><span className="text-[#94A3B8] block">Valor total</span><span className="font-medium text-[#374151]">{fmtMoeda(m.valor_total)}</span></div>}
+        {m.valor_total != null && <div><span className="text-[#94A3B8] block">Custo total</span><span className="font-medium text-red-600">{fmtMoeda(m.valor_total)}</span></div>}
+        {m.valor_venda_total != null && <div><span className="text-[#94A3B8] block">Venda total</span><span className="font-medium text-emerald-600">{fmtMoeda(m.valor_venda_total)}</span></div>}
+        {m.numero_oc && <div><span className="text-[#94A3B8] block">OC</span><span className="font-medium text-[#374151]">{m.numero_oc}</span></div>}
       </div>
+
+      {m.valor_total != null && m.valor_venda_total != null && (
+        <div className="mt-3 pt-3 border-t border-[#F1F5F9] flex items-center justify-between">
+          <span className="text-xs text-[#64748B]">Margem</span>
+          <div className="flex items-center gap-2">
+            {(() => {
+              const margem = m.valor_venda_total - m.valor_total
+              const pct = m.valor_total > 0 ? (margem / m.valor_total * 100).toFixed(1) : null
+              return (
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${margem >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                  {fmtMoeda(margem)} {pct ? `(${pct}%)` : ''}
+                </span>
+              )
+            })()}
+          </div>
+        </div>
+      )}
 
       {(m.observacoes || m.nota_fiscal_url) && (
         <div className="mt-3 pt-3 border-t border-[#F1F5F9] flex items-center gap-3 flex-wrap">
@@ -2216,6 +2238,9 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
   const [unidade, setUnidade] = useState(material?.unidade ?? 'un')
   const [valorUnitario, setValorUnitario] = useState(material?.valor_unitario != null ? String(material.valor_unitario) : '')
   const [valorTotal, setValorTotal] = useState(material?.valor_total != null ? String(material.valor_total) : '')
+  const [precoVendaUnitario, setPrecoVendaUnitario] = useState(material?.preco_venda_unitario != null ? String(material.preco_venda_unitario) : '')
+  const [valorVendaTotal, setValorVendaTotal] = useState(material?.valor_venda_total != null ? String(material.valor_venda_total) : '')
+  const [numeroOC, setNumeroOC] = useState(material?.numero_oc ?? '')
   const [status, setStatus] = useState<ObraMaterial['status']>(material?.status ?? 'pendente')
   const [observacoes, setObservacoes] = useState(material?.observacoes ?? '')
   const [nfUrl, setNfUrl] = useState(material?.nota_fiscal_url ?? '')
@@ -2280,6 +2305,9 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
       unidade: unidade.trim() || null,
       valor_unitario: valorUnitario ? parseFloat(valorUnitario) : null,
       valor_total: valorTotal ? parseFloat(valorTotal) : null,
+      preco_venda_unitario: precoVendaUnitario ? parseFloat(precoVendaUnitario) : null,
+      valor_venda_total: valorVendaTotal ? parseFloat(valorVendaTotal) : null,
+      numero_oc: numeroOC.trim() || null,
       status,
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
@@ -2379,9 +2407,42 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
             </F>
           </div>
 
-          <F label="Valor total (R$)">
+          <F label="Valor total de custo (R$)">
             <input type="number" step="any" min="0" className="field" value={valorTotal} onChange={e => setValorTotal(e.target.value)} placeholder="Calculado automaticamente ou preencha manualmente" />
           </F>
+
+          {/* Preço de venda (OC do cliente) */}
+          {tipCompra === 'cliente' && (
+            <div className="border border-purple-100 bg-purple-50/50 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-purple-700">Preço de Venda — OC do Cliente</p>
+              <F label="Nº da OC">
+                <input className="field" value={numeroOC} onChange={e => setNumeroOC(e.target.value)} placeholder="Ex: OC-2024-0042" />
+              </F>
+              <div className="grid grid-cols-2 gap-3">
+                <F label="Preço venda unitário (R$)">
+                  <input type="number" step="any" min="0" className="field" value={precoVendaUnitario}
+                    onChange={e => {
+                      setPrecoVendaUnitario(e.target.value)
+                      if (quantidade && e.target.value) setValorVendaTotal(String((parseFloat(quantidade) * parseFloat(e.target.value)).toFixed(2)))
+                    }} placeholder="0,00" />
+                </F>
+                <F label="Total de venda (R$)">
+                  <input type="number" step="any" min="0" className="field" value={valorVendaTotal} onChange={e => setValorVendaTotal(e.target.value)} placeholder="0,00" />
+                </F>
+              </div>
+              {valorTotal && valorVendaTotal && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-purple-600">Margem estimada:</span>
+                  <span className={`font-bold ${parseFloat(valorVendaTotal) - parseFloat(valorTotal) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {(parseFloat(valorVendaTotal) - parseFloat(valorTotal)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {' '}({valorTotal && valorVendaTotal && parseFloat(valorTotal) > 0
+                      ? (((parseFloat(valorVendaTotal) - parseFloat(valorTotal)) / parseFloat(valorTotal)) * 100).toFixed(1) + '%'
+                      : '—'})
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Nota Fiscal */}
           <F label="Nota Fiscal (PDF ou imagem)">
@@ -2575,8 +2636,8 @@ function ModalImportNF({ obraId, onClose, onSaved }: {
 }
 
 // ── ModalNFManual ─────────────────────────────────────
-type ItemNF = { descricao: string; quantidade: string; unidade: string; valorUnitario: string; valorTotal: string }
-const ITEM_VAZIO = (): ItemNF => ({ descricao: '', quantidade: '1', unidade: 'UN', valorUnitario: '', valorTotal: '' })
+type ItemNF = { descricao: string; quantidade: string; unidade: string; valorUnitario: string; valorTotal: string; precoVendaUnitario: string; valorVendaTotal: string }
+const ITEM_VAZIO = (): ItemNF => ({ descricao: '', quantidade: '1', unidade: 'UN', valorUnitario: '', valorTotal: '', precoVendaUnitario: '', valorVendaTotal: '' })
 
 function ModalNFManual({ obraId, onClose, onSaved }: {
   obraId: string; onClose: () => void; onSaved: () => void
@@ -2591,6 +2652,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
   const [dataChegada, setDataChegada] = useState('')
   const [localChegada, setLocalChegada] = useState('')
   const [destino, setDestino] = useState('')
+  const [numeroOC, setNumeroOC] = useState('')
   const [nfUrl, setNfUrl] = useState('')
   const [nfPath, setNfPath] = useState('')
   const [uploadingNf, setUploadingNf] = useState(false)
@@ -2617,6 +2679,11 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
         const qty = parseFloat(field === 'quantidade' ? value : next[i].quantidade)
         const vu = parseFloat(field === 'valorUnitario' ? value : next[i].valorUnitario)
         if (!isNaN(qty) && !isNaN(vu)) next[i].valorTotal = (qty * vu).toFixed(2)
+      }
+      if (field === 'quantidade' || field === 'precoVendaUnitario') {
+        const qty = parseFloat(field === 'quantidade' ? value : next[i].quantidade)
+        const pv = parseFloat(field === 'precoVendaUnitario' ? value : next[i].precoVendaUnitario)
+        if (!isNaN(qty) && !isNaN(pv)) next[i].valorVendaTotal = (qty * pv).toFixed(2)
       }
       return next
     })
@@ -2646,6 +2713,9 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
       unidade: it.unidade.trim() || null,
       valor_unitario: parseFloat(it.valorUnitario) || null,
       valor_total: parseFloat(it.valorTotal) || null,
+      preco_venda_unitario: parseFloat(it.precoVendaUnitario) || null,
+      valor_venda_total: parseFloat(it.valorVendaTotal) || null,
+      numero_oc: tipCompra === 'cliente' && numeroOC.trim() ? numeroOC.trim() : null,
       status: statusPadrao,
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
@@ -2701,6 +2771,12 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
               <input type="date" className="field" value={dataCompra} onChange={e => setDataCompra(e.target.value)} />
             </F>
           </div>
+
+          {tipCompra === 'cliente' && (
+            <F label="Nº da OC do cliente">
+              <input className="field" value={numeroOC} onChange={e => setNumeroOC(e.target.value)} placeholder="Ex: OC-2024-0042" />
+            </F>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <F label="Fornecedor">
@@ -2767,16 +2843,35 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                         onChange={e => updateItem(i, 'unidade', e.target.value)} />
                     </div>
                     <div>
-                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Vl. unit.</label>
+                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Custo unit.</label>
                       <input type="number" min="0" step="any" className="field text-sm" value={item.valorUnitario}
                         onChange={e => updateItem(i, 'valorUnitario', e.target.value)} placeholder="0,00" />
                     </div>
                     <div>
-                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Total</label>
+                      <label className="text-xs text-[#94A3B8] mb-0.5 block">Total custo</label>
                       <input type="number" min="0" step="any" className="field text-sm" value={item.valorTotal}
                         onChange={e => updateItem(i, 'valorTotal', e.target.value)} placeholder="0,00" />
                     </div>
                   </div>
+                  {tipCompra === 'cliente' && (
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-purple-100">
+                      <div>
+                        <label className="text-xs text-purple-500 mb-0.5 block">Venda unit. (OC)</label>
+                        <input type="number" min="0" step="any" className="field text-sm border-purple-200 focus:border-purple-400" value={item.precoVendaUnitario}
+                          onChange={e => updateItem(i, 'precoVendaUnitario', e.target.value)} placeholder="0,00" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-purple-500 mb-0.5 block">Total venda</label>
+                        <input type="number" min="0" step="any" className="field text-sm border-purple-200 focus:border-purple-400" value={item.valorVendaTotal}
+                          onChange={e => updateItem(i, 'valorVendaTotal', e.target.value)} placeholder="0,00" />
+                      </div>
+                      {item.valorTotal && item.valorVendaTotal && (
+                        <p className="col-span-2 text-xs text-purple-600">
+                          Margem: {((parseFloat(item.valorVendaTotal) - parseFloat(item.valorTotal)) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
