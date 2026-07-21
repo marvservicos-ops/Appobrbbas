@@ -445,8 +445,8 @@ export default function ObraDetailPage() {
             </button>
           ))}
           {can('financeiro') && (
-            <Link href={`/obras/${id}/pagamentos`} className="px-3 md:px-4 py-3 text-sm font-medium border-b-2 border-transparent text-[#64748B] hover:text-[#0F172A] whitespace-nowrap shrink-0">
-              Pagamentos
+            <Link href={`/obras/${id}/financeiro`} className="px-3 md:px-4 py-3 text-sm font-medium border-b-2 border-transparent text-[#64748B] hover:text-[#0F172A] whitespace-nowrap shrink-0">
+              Financeiro
             </Link>
           )}
         </div>
