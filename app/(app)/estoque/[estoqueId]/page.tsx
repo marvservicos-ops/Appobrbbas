@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2 } from 'lucide-react'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
@@ -29,6 +29,7 @@ export default function EstoqueDetalhe() {
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [showEdit, setShowEdit] = useState(false)
   const [editandoProduto, setEditandoProduto] = useState<EstoqueProduto | null>(null)
+  const [devolvendoRegistro, setDevolvendoRegistro] = useState<EstoqueRegistro | null>(null)
 
   // Seleção em lote
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
@@ -285,10 +286,21 @@ export default function EstoqueDetalhe() {
                               : <span className="text-xs text-[#94A3B8]">—</span>}
                           </td>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => excluirRegistro(reg.id)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-[#94A3B8] hover:text-red-500">
-                              <Trash2 size={14} />
-                            </button>
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {reg.tipo === 'saida' && (
+                                <button
+                                  onClick={() => setDevolvendoRegistro(reg)}
+                                  title="Registrar devolução"
+                                  className="text-[#94A3B8] hover:text-amber-500"
+                                >
+                                  <Undo2 size={14} />
+                                </button>
+                              )}
+                              <button onClick={() => excluirRegistro(reg.id)}
+                                className="text-[#94A3B8] hover:text-red-500">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -416,6 +428,16 @@ export default function EstoqueDetalhe() {
       {/* Tab: Configurar */}
       {tab === 'configurar' && (
         <ConfigurarCampos estoqueId={estoqueId} campos={campos} onUpdated={load} />
+      )}
+
+      {/* Modal devolução */}
+      {devolvendoRegistro && (
+        <ModalDevolucao
+          registro={devolvendoRegistro}
+          produtos={produtos}
+          onClose={() => setDevolvendoRegistro(null)}
+          onSaved={() => { setDevolvendoRegistro(null); load() }}
+        />
       )}
 
       {/* Modal editar produto */}
@@ -590,6 +612,122 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
             <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal devolução ───────────────────────────────────
+function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
+  registro: EstoqueRegistro; produtos: EstoqueProduto[]
+  onClose: () => void; onSaved: () => void
+}) {
+  const [qtd, setQtd] = useState('')
+  const [responsavel, setResponsavel] = useState(registro.responsavel)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const produto = produtos.find(p => p.id === registro.produto_id)
+  const qtdNum = parseFloat(qtd) || 0
+  const precoAtual = produto?.preco_unitario || registro.preco_unitario_custo || 0
+  const valorCredito = qtdNum * precoAtual
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade a devolver.'); return }
+    if (qtdNum > registro.quantidade) {
+      setError(`Não pode devolver mais do que a saída original (${registro.quantidade} ${registro.unidade ?? ''}).`)
+      return
+    }
+    setSaving(true)
+    setError('')
+    const supabase = createClient()
+
+    // Novo registro de entrada representando a devolução
+    const { error: regErr } = await supabase.from('estoque_registros').insert({
+      estoque_id: registro.estoque_id,
+      produto_id: registro.produto_id ?? null,
+      produto_nome: registro.produto_nome,
+      tipo: 'entrada',
+      quantidade: qtdNum,
+      unidade: registro.unidade ?? 'un',
+      responsavel: responsavel.trim(),
+      data: new Date().toISOString().split('T')[0],
+      obra_id: registro.obra_id ?? null,
+      preco_unitario_custo: precoAtual || null,
+      valor_total: valorCredito || null,
+      observacoes: `Devolução de saída de ${new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}`,
+    })
+
+    if (regErr) { setError(regErr.message); setSaving(false); return }
+
+    // Atualiza estoque e CMP do produto
+    if (produto) {
+      const novaQtd = produto.quantidade_atual + qtdNum
+      const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
+      if (precoAtual > 0) {
+        // Recalcula CMP incluindo o retorno
+        const cmpAtual = produto.preco_unitario || 0
+        const novoCMP = produto.quantidade_atual > 0
+          ? (produto.quantidade_atual * cmpAtual + qtdNum * precoAtual) / novaQtd
+          : precoAtual
+        prodUpdate.preco_unitario = novoCMP
+      }
+      await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produto.id)
+    }
+
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[420px]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <div>
+            <h3 className="font-syne font-semibold text-[#0F172A]">Registrar Devolução</h3>
+            <p className="text-xs text-[#94A3B8] mt-0.5">{registro.produto_nome}</p>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <form onSubmit={handleSave} className="p-5 space-y-4">
+          {/* Info da saída original */}
+          <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800 space-y-1">
+            <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+            {precoAtual > 0 && <p>Preço atual do item (CMP): <strong>{precoAtual.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">
+              Quantidade a devolver * <span className="text-[#94A3B8] font-normal">(máx. {registro.quantidade} {registro.unidade ?? ''})</span>
+            </label>
+            <input
+              type="number" step="0.01" min="0.01" max={registro.quantidade}
+              className="field" placeholder="0" autoFocus
+              value={qtd} onChange={e => setQtd(e.target.value)}
+            />
+            {qtdNum > 0 && precoAtual > 0 && (
+              <p className="text-xs text-emerald-600 mt-1">
+                Crédito ao estoque: {valorCredito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável *</label>
+            <input required className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} />
+          </div>
+
+          {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          <div className="flex justify-end gap-3 pt-1">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
+            <button type="submit" disabled={saving} className="btn-primary text-sm">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
+              {saving ? 'Registrando...' : 'Confirmar Devolução'}
+            </button>
           </div>
         </form>
       </div>
