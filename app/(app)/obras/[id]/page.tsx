@@ -2412,7 +2412,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
           </F>
 
           {/* Preço de venda (OC do cliente) */}
-          {tipCompra === 'cliente' && (
+          {tipCompra === 'interna' && (
             <div className="border border-purple-100 bg-purple-50/50 rounded-xl p-4 space-y-3">
               <p className="text-xs font-semibold text-purple-700">Preço de Venda — OC do Cliente</p>
               <F label="Nº da OC">
@@ -2715,7 +2715,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
       valor_total: parseFloat(it.valorTotal) || null,
       preco_venda_unitario: parseFloat(it.precoVendaUnitario) || null,
       valor_venda_total: parseFloat(it.valorVendaTotal) || null,
-      numero_oc: tipCompra === 'cliente' && numeroOC.trim() ? numeroOC.trim() : null,
+      numero_oc: tipCompra === 'interna' && numeroOC.trim() ? numeroOC.trim() : null,
       status: statusPadrao,
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
@@ -2772,7 +2772,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
             </F>
           </div>
 
-          {tipCompra === 'cliente' && (
+          {tipCompra === 'interna' && (
             <F label="Nº da OC do cliente">
               <input className="field" value={numeroOC} onChange={e => setNumeroOC(e.target.value)} placeholder="Ex: OC-2024-0042" />
             </F>
@@ -2853,7 +2853,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                         onChange={e => updateItem(i, 'valorTotal', e.target.value)} placeholder="0,00" />
                     </div>
                   </div>
-                  {tipCompra === 'cliente' && (
+                  {tipCompra === 'interna' && (
                     <div className="grid grid-cols-2 gap-2 pt-1 border-t border-purple-100">
                       <div>
                         <label className="text-xs text-purple-500 mb-0.5 block">Venda unit. (OC)</label>
