@@ -840,21 +840,40 @@ function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
 
   useEffect(() => {
     if (!isMaterial) return
-    createClient()
-      .from('obra_notas_material')
-      .select('itens_ids, medicao_id')
-      .eq('medicao_id', medicao.id)
-      .maybeSingle()
-      .then(async ({ data: nota }) => {
-        const ids: string[] = nota?.itens_ids ?? (nota?.medicao_id ? [] : [])
-        if (ids.length === 0) return
-        const { data: itens } = await createClient()
-          .from('obra_materiais')
-          .select('id, descricao, quantidade, unidade, valor_venda_total')
-          .in('id', ids)
-        if (itens) setItensMaterial(itens as ItemMaterial[])
-      })
-  }, [medicao.id, isMaterial])
+    const sb = createClient()
+    const valorNFNum = Number(medicao.valor_faturado || medicao.valor_previsto)
+
+    async function fetchItens() {
+      // Tenta por medicao_id primeiro
+      let { data: nota } = await sb
+        .from('obra_notas_material')
+        .select('itens_ids')
+        .eq('medicao_id', medicao.id)
+        .maybeSingle()
+
+      // Fallback: busca por valor + data quando medicao_id não existe
+      if (!nota) {
+        const { data: notaFallback } = await sb
+          .from('obra_notas_material')
+          .select('itens_ids, material_id')
+          .eq('obra_id', medicao.obra_id)
+          .eq('valor', valorNFNum)
+          .maybeSingle()
+        nota = notaFallback
+      }
+
+      const ids: string[] = nota?.itens_ids ?? (nota?.material_id ? [nota.material_id] : [])
+      if (ids.length === 0) return
+
+      const { data: itens } = await sb
+        .from('obra_materiais')
+        .select('id, descricao, quantidade, unidade, valor_venda_total')
+        .in('id', ids)
+      if (itens) setItensMaterial(itens as ItemMaterial[])
+    }
+
+    fetchItens()
+  }, [medicao.id, medicao.obra_id, medicao.valor_faturado, medicao.valor_previsto, isMaterial])
 
   function copyAll() {
     const linhas: string[] = [
