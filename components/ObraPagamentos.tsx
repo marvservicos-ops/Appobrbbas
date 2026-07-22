@@ -790,6 +790,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         <ModalNotaMaterial
           obraId={obraId}
           totalOcMateriais={totalOcMateriais}
+          valorContrato={valorContrato}
+          proximaOrdem={proximaOrdem}
           onClose={() => setShowModalNota(false)}
           onSaved={() => { setShowModalNota(false); load() }}
         />
@@ -843,8 +845,9 @@ function buildGrupos(itens: OcInterna[]): GrupoOc[] {
   return grupos
 }
 
-function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
-  obraId: string; totalOcMateriais: number; onClose: () => void; onSaved: () => void
+function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrdem, onClose, onSaved }: {
+  obraId: string; totalOcMateriais: number; valorContrato: number; proximaOrdem: number
+  onClose: () => void; onSaved: () => void
 }) {
   const [grupos, setGrupos] = useState<GrupoOc[]>([])
   const [loadingOcs, setLoadingOcs] = useState(true)
@@ -901,11 +904,13 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
     return total
   }, [selecionados, grupos])
 
-  const percentualAuto = totalOcMateriais > 0 ? (valorSelecionado / totalOcMateriais) * 100 : 0
+  const percentualAuto = valorContrato > 0 ? (valorSelecionado / valorContrato) * 100 : 0
 
   async function save() {
     if (valorSelecionado <= 0) { setErro('Selecione ao menos um item.'); return }
     setSaving(true); setErro('')
+
+    const valor = Math.round(valorSelecionado * 100) / 100
 
     // Monta descrição a partir dos grupos envolvidos
     const gruposEnvolvidos = grupos.filter(g => g.itens.some(i => selecionados.has(i.id)))
@@ -916,17 +921,36 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
       return tudo ? label : `${label} (${itensSel.length} ite${itensSel.length > 1 ? 'ns' : 'm'})`
     })
     const descricao = descParts.join(' + ')
+    const nomeMedicao = `NF Material · ${descricao}`
 
-    const { error } = await createClient().from('obra_notas_material').insert({
+    const sb = createClient()
+
+    // Cria medição faturada — ela entra no cálculo financeiro e aparece na lista de etapas
+    const { error: errMedicao } = await sb.from('obra_medicoes').insert({
       obra_id: obraId,
-      valor: Math.round(valorSelecionado * 100) / 100,
+      ordem: proximaOrdem,
+      nome: nomeMedicao,
+      percentual: percentualAuto,
+      valor_previsto: valor,
+      valor_faturado: valor,
+      status: 'faturada',
+      data_emissao: dataEmissao,
+      numero_nf: numeroNf || null,
+      observacoes: 'medicao_material',
+    })
+    if (errMedicao) { setErro(errMedicao.message); setSaving(false); return }
+
+    // Registra também na tabela de controle de NF de material
+    await sb.from('obra_notas_material').insert({
+      obra_id: obraId,
+      valor,
       data_emissao: dataEmissao,
       descricao,
       numero_nf: numeroNf || null,
       material_id: selecionados.size === 1 ? Array.from(selecionados)[0] : null,
     })
+
     setSaving(false)
-    if (error) { setErro(error.message); return }
     onSaved()
   }
 
@@ -1005,7 +1029,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
           {valorSelecionado > 0 && (
             <div className="flex items-center justify-between bg-blue-50 rounded-xl px-4 py-2.5">
               <span className="text-xs text-[#374151]">
-                Valor selecionado {totalOcMateriais > 0 && <span className="text-[#94A3B8]">· {pct(percentualAuto)} do total</span>}
+                Valor selecionado {valorContrato > 0 && <span className="text-[#94A3B8]">· {pct(percentualAuto)} do contrato</span>}
               </span>
               <span className="font-syne font-bold text-sm text-[#3B82F6]">{moeda(valorSelecionado)}</span>
             </div>
