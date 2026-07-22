@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, CircleDollarSign, FileText, Loader2, Pencil, Plus, ReceiptText, Save, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Building2, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardList, Copy, FileText, Loader2, Pencil, Plus, ReceiptText, Save, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { Obra, ObraMedicao } from '@/lib/types'
+import type { Obra, ObraMedicao, Empresa } from '@/lib/types'
 
 type EtapaDraft = { nome: string; percentual: number; data_prevista: string }
 
@@ -252,11 +252,12 @@ function ModalAditivo({ obraId, aditivo, onClose, onSaved }: {
 }
 
 // ─── Card de medição ──────────────────────────────────────────────────────────
-function CardMedicao({ m, isAditivo, aditivoNome, uploading, onEditar, onExcluir, onAtualizar, onAnexarNF, onAbrirNF, onRemoverNF }: {
+function CardMedicao({ m, isAditivo, aditivoNome, uploading, onEditar, onExcluir, onAtualizar, onAnexarNF, onAbrirNF, onRemoverNF, onEmitirNF }: {
   m: ObraMedicao; isAditivo: boolean; aditivoNome?: string; uploading: string | null
   onEditar: () => void; onExcluir: () => void
   onAtualizar: (changes: Partial<ObraMedicao>) => void
   onAnexarNF: (file: File) => void; onAbrirNF: () => void; onRemoverNF: () => void
+  onEmitirNF: () => void
 }) {
   const status = STATUS[m.status]
   const borderColor = isAditivo ? 'border-l-4 border-l-amber-400' : ''
@@ -275,6 +276,7 @@ function CardMedicao({ m, isAditivo, aditivoNome, uploading, onEditar, onExcluir
           <p className="text-sm text-[#64748B] mt-0.5">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · previsão {dataBR(m.data_prevista)}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button onClick={onEmitirNF} title="Emitir Nota Fiscal" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-emerald-600"><ClipboardList size={14} /></button>
           <button onClick={onEditar} className={`w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] ${isAditivo ? 'text-amber-500' : 'text-[#4F7CFF]'}`}><Pencil size={14} /></button>
           <button onClick={onExcluir} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
         </div>
@@ -354,11 +356,14 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   const [totalOcMateriais, setTotalOcMateriais] = useState(0)
   const [notasMaterial, setNotasMaterial] = useState<NotaMaterial[]>([])
   const [showModalNota, setShowModalNota] = useState(false)
+  const [tomador, setTomador] = useState<Empresa | null>(null)
+  const [prestador, setPrestador] = useState<{ razao_social: string; cnpj: string; endereco: string; telefone: string } | null>(null)
+  const [emitindoNF, setEmitindoNF] = useState<ObraMedicao | null>(null)
 
   async function load() {
     const supabase = createClient()
     const [{ data: obraData }, { data: medicaoData }, { data: financeiro }, { data: aditivoData }, { data: matData }, { data: notasData }] = await Promise.all([
-      supabase.from('obras').select('*').eq('id', obraId).single(),
+      supabase.from('obras').select('*, tomador:tomador_empresa_id(*)').eq('id', obraId).single(),
       supabase.from('obra_medicoes').select('*').eq('obra_id', obraId).order('ordem'),
       supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
       supabase.from('obra_aditivos').select('*').eq('obra_id', obraId).order('created_at'),
@@ -366,6 +371,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
       supabase.from('obra_notas_material').select('*').eq('obra_id', obraId).order('data_emissao', { ascending: false }),
     ])
     setObra(obraData as Obra)
+    if ((obraData as any)?.tomador) setTomador((obraData as any).tomador as Empresa)
     setMedicoes((medicaoData ?? []) as ObraMedicao[])
     setAditivos((aditivoData ?? []) as ObraAditivo[])
     const vc = Number(financeiro?.valor_contrato || 0)
@@ -373,6 +379,13 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     setContratoInput(vc > 0 ? String(vc) : '')
     setTotalOcMateriais((matData ?? []).reduce((s: number, m: any) => s + Number(m.valor_venda_total || 0), 0))
     setNotasMaterial((notasData ?? []) as NotaMaterial[])
+
+    // Dados do prestador (MARV) via configuracoes_empresa
+    const { data: cfgs } = await supabase.from('configuracoes_empresa').select('chave, valor').in('chave', ['razao_social', 'cnpj', 'endereco', 'telefone'])
+    if (cfgs) {
+      const get = (k: string) => (cfgs.find(c => c.chave === k)?.valor as any)?.valor ?? cfgs.find(c => c.chave === k)?.valor ?? ''
+      setPrestador({ razao_social: get('razao_social'), cnpj: get('cnpj'), endereco: get('endereco'), telefone: get('telefone') })
+    }
     setLoading(false)
   }
   useEffect(() => { load() }, [obraId])
@@ -734,6 +747,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
               onAnexarNF={file => anexarNF(m, file)}
               onAbrirNF={() => abrirNF(m)}
               onRemoverNF={() => removerNF(m)}
+              onEmitirNF={() => setEmitindoNF(m)}
             />
           ))}
 
@@ -749,6 +763,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                 onAnexarNF={file => anexarNF(m, file)}
                 onAbrirNF={() => abrirNF(m)}
                 onRemoverNF={() => removerNF(m)}
+                onEmitirNF={() => setEmitindoNF(m)}
               />
             ))
           })}
@@ -756,6 +771,15 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
       )}
 
       {/* Modais */}
+      {emitindoNF && (
+        <ModalEmitirNF
+          medicao={emitindoNF}
+          obra={obra}
+          tomador={tomador}
+          prestador={prestador}
+          onClose={() => setEmitindoNF(null)}
+        />
+      )}
       {editandoMedicao && (
         <ModalEditarMedicao
           medicao={editandoMedicao}
@@ -796,6 +820,139 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
           onSaved={() => { setShowModalNota(false); load() }}
         />
       )}
+    </div>
+  )
+}
+
+// ── Modal Emitir NF ──────────────────────────────────────────────────────────
+function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
+  medicao: ObraMedicao
+  obra: Obra | null
+  tomador: Empresa | null
+  prestador: { razao_social: string; cnpj: string; endereco: string; telefone: string } | null
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  function copyAll() {
+    const lines = [
+      '=== DADOS PARA EMISSÃO DE NFS ===',
+      '',
+      '--- PRESTADOR ---',
+      `Razão Social: ${prestador?.razao_social || '—'}`,
+      `CNPJ: ${prestador?.cnpj || '—'}`,
+      `Endereço: ${prestador?.endereco || '—'}`,
+      `Telefone: ${prestador?.telefone || '—'}`,
+      '',
+      '--- TOMADOR ---',
+      `Razão Social: ${tomador?.razao_social || '—'}`,
+      `CNPJ: ${tomador?.cnpj || '—'}`,
+      `Endereço: ${[tomador?.endereco, tomador?.cidade, tomador?.estado].filter(Boolean).join(', ') || '—'}`,
+      `CEP: ${tomador?.cep || '—'}`,
+      `Telefone: ${tomador?.telefone || '—'}`,
+      `E-mail: ${tomador?.email || '—'}`,
+      '',
+      '--- SERVIÇO ---',
+      `Descrição: ${medicao.nome}`,
+      `Contrato: ${obra?.numero_contrato || '—'}`,
+      `Valor: ${moeda(Number(medicao.valor_faturado || medicao.valor_previsto))}`,
+      `Data de emissão: ${dataBR(medicao.data_emissao)}`,
+      `Número NF: ${medicao.numero_nf || '(a preencher)'}`,
+    ]
+    navigator.clipboard.writeText(lines.join('\n'))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function Row({ label, value }: { label: string; value?: string | null }) {
+    if (!value) return null
+    return (
+      <div className="flex gap-3 py-1.5">
+        <span className="text-xs text-[#94A3B8] w-32 shrink-0">{label}</span>
+        <span className="text-xs text-[#0F172A] font-medium">{value}</span>
+      </div>
+    )
+  }
+
+  function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+    return (
+      <div className="rounded-xl border border-[#E2E8F0] overflow-hidden mb-3">
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-[#F8FAFC] border-b border-[#E2E8F0]">
+          <span className="text-[#94A3B8]">{icon}</span>
+          <span className="text-xs font-semibold text-[#374151] uppercase tracking-wider">{title}</span>
+        </div>
+        <div className="px-4 py-1 divide-y divide-[#F1F5F9]">{children}</div>
+      </div>
+    )
+  }
+
+  const valorNF = Number(medicao.valor_faturado || medicao.valor_previsto)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center">
+              <ClipboardList size={17} className="text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="font-syne font-semibold text-[#0F172A]">Dados para emissão de NFS</h2>
+              <p className="text-xs text-[#94A3B8] mt-0.5">{medicao.nome}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-[#F1F5F9] text-[#64748B]"><X size={16} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 pb-2">
+          {!tomador && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-3">
+              <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-800">
+                Nenhum tomador definido para esta obra. <strong>Defina o tomador</strong> nas informações do projeto para preencher automaticamente os dados da empresa contratante.
+              </p>
+            </div>
+          )}
+
+          <Section title="Prestador de Serviço" icon={<Building2 size={13} />}>
+            <Row label="Razão Social" value={prestador?.razao_social} />
+            <Row label="CNPJ" value={prestador?.cnpj} />
+            <Row label="Endereço" value={prestador?.endereco} />
+            <Row label="Telefone" value={prestador?.telefone} />
+          </Section>
+
+          <Section title="Tomador" icon={<Building2 size={13} />}>
+            {tomador ? <>
+              <Row label="Razão Social" value={tomador.razao_social} />
+              <Row label="CNPJ" value={tomador.cnpj} />
+              <Row label="Endereço" value={[tomador.endereco, tomador.cidade, tomador.estado].filter(Boolean).join(', ')} />
+              <Row label="CEP" value={tomador.cep} />
+              <Row label="Telefone" value={tomador.telefone} />
+              <Row label="E-mail" value={tomador.email} />
+            </> : (
+              <div className="py-3"><span className="text-xs text-[#94A3B8]">Não definido</span></div>
+            )}
+          </Section>
+
+          <Section title="Serviço" icon={<ReceiptText size={13} />}>
+            <Row label="Descrição" value={medicao.nome} />
+            <Row label="Contrato" value={obra?.numero_contrato} />
+            <Row label="Endereço da obra" value={obra?.endereco} />
+            <Row label="Valor" value={moeda(valorNF)} />
+            <Row label="Data de emissão" value={dataBR(medicao.data_emissao)} />
+            <Row label="Vencimento" value={dataBR(medicao.data_vencimento)} />
+            <Row label="Número da NF" value={medicao.numero_nf} />
+          </Section>
+        </div>
+
+        <div className="px-6 pb-6 pt-3 border-t border-[#F1F5F9] shrink-0 flex gap-3">
+          <button onClick={onClose} className="btn-secondary flex-1">Fechar</button>
+          <button onClick={copyAll} className="btn-primary flex-1">
+            {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+            {copied ? 'Copiado!' : 'Copiar tudo'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

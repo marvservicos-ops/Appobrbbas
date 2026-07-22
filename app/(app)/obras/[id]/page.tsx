@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package } from 'lucide-react'
+import { ArrowLeft, Search, Bell, Building2, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO } from '@/lib/types'
+import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO, Empresa } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
 import { useAccess } from '@/lib/useAccess'
@@ -554,6 +554,9 @@ export default function ObraDetailPage() {
                     <GestorCompradorCards obraId={obra.id} gestorId={obra.gestor_id} compradorId={obra.comprador_id} />
                   </div>
                 )}
+
+                {/* Tomador da NF */}
+                <TomadorNFCard obraId={obra.id} tomadorId={(obra as any).tomador_empresa_id} />
               </div>
 
               {/* Map placeholder */}
@@ -1170,6 +1173,71 @@ function GestorCompradorCards({ obraId, gestorId, compradorId }: { obraId: strin
     <div className="flex gap-3 flex-wrap">
       {gestorId && <Card pessoa={gestor} titulo="Gestor Responsável" />}
       {compradorId && <Card pessoa={comprador} titulo="Comprador" />}
+    </div>
+  )
+}
+
+function TomadorNFCard({ obraId, tomadorId }: { obraId: string; tomadorId?: string | null }) {
+  const [empresas, setEmpresas] = useState<Empresa[]>([])
+  const [tomador, setTomador] = useState<Empresa | null>(null)
+  const [editando, setEditando] = useState(false)
+  const [salvando, setSalvando] = useState(false)
+  const [selecionado, setSelecionado] = useState(tomadorId ?? '')
+
+  useEffect(() => {
+    const sb = createClient()
+    sb.from('empresas').select('*').order('razao_social').then(({ data }) => {
+      if (data) setEmpresas(data as Empresa[])
+    })
+    if (tomadorId) {
+      sb.from('empresas').select('*').eq('id', tomadorId).single().then(({ data }) => {
+        if (data) setTomador(data as Empresa)
+      })
+    }
+  }, [tomadorId])
+
+  async function salvar() {
+    setSalvando(true)
+    await createClient().from('obras').update({ tomador_empresa_id: selecionado || null }).eq('id', obraId)
+    const { data } = await createClient().from('empresas').select('*').eq('id', selecionado).single()
+    setTomador(data as Empresa | null)
+    setSalvando(false)
+    setEditando(false)
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-[#E2E8F0]">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">Tomador da NF</p>
+        <button onClick={() => setEditando(e => !e)} className="text-xs text-[#4F7CFF] hover:underline">
+          {editando ? 'Cancelar' : tomador ? 'Alterar' : 'Definir'}
+        </button>
+      </div>
+      {editando ? (
+        <div className="flex gap-2 items-end">
+          <select value={selecionado} onChange={e => setSelecionado(e.target.value)}
+            className="flex-1 h-10 px-3 text-sm rounded-xl border border-[#E2E8F0] bg-white focus:outline-none focus:ring-2 focus:ring-[#4F7CFF]/30">
+            <option value="">— Selecionar empresa —</option>
+            {empresas.map(e => <option key={e.id} value={e.id}>{e.razao_social}{e.cnpj ? ` · ${e.cnpj}` : ''}</option>)}
+          </select>
+          <button onClick={salvar} disabled={salvando} className="btn-primary h-10 px-4 disabled:opacity-50 shrink-0">
+            {salvando ? <Loader2 size={14} className="animate-spin" /> : 'Salvar'}
+          </button>
+        </div>
+      ) : tomador ? (
+        <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-1">
+          <div className="flex items-center gap-2">
+            <Building2 size={13} className="text-[#94A3B8]" />
+            <p className="text-sm font-semibold text-[#0F172A]">{tomador.razao_social}</p>
+          </div>
+          {tomador.cnpj && <p className="text-xs text-[#64748B] ml-5">CNPJ: {tomador.cnpj}</p>}
+          {tomador.endereco && <p className="text-xs text-[#64748B] ml-5">{[tomador.endereco, tomador.cidade, tomador.estado].filter(Boolean).join(', ')}</p>}
+          {tomador.email && <p className="text-xs text-[#64748B] ml-5">{tomador.email}</p>}
+          {tomador.telefone && <p className="text-xs text-[#64748B] ml-5">{tomador.telefone}</p>}
+        </div>
+      ) : (
+        <p className="text-xs text-[#94A3B8]">Nenhum tomador definido — clique em <strong>Definir</strong> para vincular a empresa contratante.</p>
+      )}
     </div>
   )
 }
