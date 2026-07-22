@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, CircleDollarSign, FileText, Loader2, Pencil, Plus, ReceiptText, Save, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarDays, CheckCircle2, CircleDollarSign, FileText, Loader2, Pencil, Plus, ReceiptText, Save, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Obra, ObraMedicao } from '@/lib/types'
 
@@ -11,6 +11,10 @@ type EtapaDraft = { nome: string; percentual: number; data_prevista: string }
 interface ObraAditivo {
   id: string; obra_id: string; descricao: string; valor: number
   data?: string; observacoes?: string; created_at: string
+}
+
+interface NotaMaterial {
+  id: string; obra_id: string; valor: number; data_emissao: string; descricao?: string | null; created_at: string
 }
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
@@ -324,14 +328,19 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   // Nova medição: null = fechado, undefined = base, ObraAditivo = vinculada ao aditivo
   const [novaMedicaoAditivo, setNovaMedicaoAditivo] = useState<ObraAditivo | null | undefined>(undefined)
   const [showNovaMedicao, setShowNovaMedicao] = useState(false)
+  const [totalOcMateriais, setTotalOcMateriais] = useState(0)
+  const [notasMaterial, setNotasMaterial] = useState<NotaMaterial[]>([])
+  const [showModalNota, setShowModalNota] = useState(false)
 
   async function load() {
     const supabase = createClient()
-    const [{ data: obraData }, { data: medicaoData }, { data: financeiro }, { data: aditivoData }] = await Promise.all([
+    const [{ data: obraData }, { data: medicaoData }, { data: financeiro }, { data: aditivoData }, { data: matData }, { data: notasData }] = await Promise.all([
       supabase.from('obras').select('*').eq('id', obraId).single(),
       supabase.from('obra_medicoes').select('*').eq('obra_id', obraId).order('ordem'),
       supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
       supabase.from('obra_aditivos').select('*').eq('obra_id', obraId).order('created_at'),
+      supabase.from('obra_materiais').select('valor_venda_total').eq('obra_id', obraId).eq('tipo_compra', 'interna'),
+      supabase.from('obra_notas_material').select('*').eq('obra_id', obraId).order('data_emissao', { ascending: false }),
     ])
     setObra(obraData as Obra)
     setMedicoes((medicaoData ?? []) as ObraMedicao[])
@@ -339,6 +348,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     const vc = Number(financeiro?.valor_contrato || 0)
     setValorContrato(vc)
     setContratoInput(vc > 0 ? String(vc) : '')
+    setTotalOcMateriais((matData ?? []).reduce((s: number, m: any) => s + Number(m.valor_venda_total || 0), 0))
+    setNotasMaterial((notasData ?? []) as NotaMaterial[])
     setLoading(false)
   }
   useEffect(() => { load() }, [obraId])
@@ -560,6 +571,77 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         )}
       </section>
 
+      {/* ── NF de Material ── */}
+      {totalOcMateriais > 0 && (() => {
+        const totalEmitido = notasMaterial.reduce((s, n) => s + Number(n.valor), 0)
+        const pendente = totalOcMateriais - totalEmitido
+        return (
+          <section className={`card mb-6 border-l-4 ${pendente > 0.01 ? 'border-l-amber-400' : 'border-l-emerald-400'}`}>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${pendente > 0.01 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
+                  {pendente > 0.01
+                    ? <AlertTriangle size={17} className="text-amber-500" />
+                    : <PackageCheck size={17} className="text-emerald-500" />}
+                </div>
+                <div>
+                  <h2 className="font-syne font-semibold text-[#0F172A] text-sm">Nota Fiscal de Material</h2>
+                  <p className="text-xs text-[#64748B] mt-0.5">Materiais de compra interna devem ser faturados separadamente como NF de material</p>
+                </div>
+              </div>
+              <button onClick={() => setShowModalNota(true)} className="btn-secondary text-xs px-3 py-1.5 shrink-0">
+                <Receipt size={13} /> Registrar NF
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="bg-[#F8FAFC] rounded-xl p-3">
+                <p className="text-xs text-[#94A3B8]">Total a faturar (OC)</p>
+                <p className="font-syne font-bold text-sm text-[#0F172A] mt-0.5">{moeda(totalOcMateriais)}</p>
+              </div>
+              <div className="bg-[#F8FAFC] rounded-xl p-3">
+                <p className="text-xs text-[#94A3B8]">NF emitidas</p>
+                <p className="font-syne font-bold text-sm text-emerald-700 mt-0.5">{moeda(totalEmitido)}</p>
+              </div>
+              <div className={`rounded-xl p-3 ${pendente > 0.01 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
+                <p className="text-xs text-[#94A3B8]">Pendente</p>
+                <p className={`font-syne font-bold text-sm mt-0.5 ${pendente > 0.01 ? 'text-amber-700' : 'text-emerald-700'}`}>{moeda(Math.max(0, pendente))}</p>
+              </div>
+            </div>
+
+            {notasMaterial.length > 0 && (
+              <div className="space-y-1.5">
+                {notasMaterial.map(n => (
+                  <div key={n.id} className="flex items-center justify-between px-3 py-2 bg-[#F8FAFC] rounded-lg">
+                    <div>
+                      <p className="text-xs font-medium text-[#374151]">{n.descricao || 'NF de Material'}</p>
+                      <p className="text-xs text-[#94A3B8]">{dataBR(n.data_emissao)}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-emerald-700">{moeda(n.valor)}</span>
+                      <button onClick={async () => {
+                        if (!confirm('Remover esta NF?')) return
+                        await createClient().from('obra_notas_material').delete().eq('id', n.id)
+                        load()
+                      }} className="p-1 rounded hover:bg-red-50 text-[#CBD5E1] hover:text-red-500">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {pendente > 0.01 && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-3 flex items-center gap-2">
+                <AlertTriangle size={12} />
+                Atenção: {moeda(pendente)} em materiais ainda não foram faturados como NF de material.
+              </p>
+            )}
+          </section>
+        )
+      })()}
+
       {/* Cards de resumo */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {cards.map(({ label, value, icon: Icon, tone }) => (
@@ -681,6 +763,62 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
           onSaved={() => load()}
         />
       )}
+      {showModalNota && (
+        <ModalNotaMaterial
+          obraId={obraId}
+          onClose={() => setShowModalNota(false)}
+          onSaved={() => { setShowModalNota(false); load() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function ModalNotaMaterial({ obraId, onClose, onSaved }: { obraId: string; onClose: () => void; onSaved: () => void }) {
+  const [valor, setValor] = useState('')
+  const [dataEmissao, setDataEmissao] = useState(new Date().toISOString().slice(0, 10))
+  const [descricao, setDescricao] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const v = parseFloat(valor.replace(',', '.'))
+    if (!v || v <= 0) return
+    setSaving(true)
+    const sb = createClient()
+    await sb.from('obra_notas_material').insert({ obra_id: obraId, valor: v, data_emissao: dataEmissao, descricao: descricao || null })
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-syne font-semibold text-[#0F172A]">Registrar NF de Material</h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-[#F1F5F9] text-[#64748B]"><X size={16} /></button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-[#374151] mb-1.5">Valor da NF (R$)</label>
+            <input type="text" inputMode="decimal" value={valor} onChange={e => setValor(e.target.value)} placeholder="0,00" className="input-field w-full" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[#374151] mb-1.5">Data de emissão</label>
+            <input type="date" value={dataEmissao} onChange={e => setDataEmissao(e.target.value)} className="input-field w-full" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[#374151] mb-1.5">Descrição (opcional)</label>
+            <input type="text" value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Ex: NF de material elétrico" className="input-field w-full" />
+          </div>
+        </div>
+        <div className="flex gap-3 mt-6">
+          <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
+          <button onClick={save} disabled={saving || !valor} className="btn-primary flex-1 disabled:opacity-50">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            Salvar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
