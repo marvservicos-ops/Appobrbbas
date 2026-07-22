@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import { Plus, Pencil, X, Loader2, Users, DollarSign, CheckCircle2, XCircle, Clock, Calculator } from 'lucide-react'
+import { useAccess } from '@/lib/useAccess'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const fmt2 = (v: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
@@ -185,9 +187,15 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
 }
 
 export default function FuncionariosPage() {
+  const router = useRouter()
+  const { isAdmin, loading: accessLoading } = useAccess()
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [regras, setRegras] = useState<RegraExtra[]>([])
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!accessLoading && !isAdmin) router.replace('/obras')
+  }, [isAdmin, accessLoading, router])
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState<Funcionario | null>(null)
   const [filtro, setFiltro] = useState<'ativos' | 'inativos' | 'todos'>('ativos')

@@ -6,11 +6,11 @@ import { Wrench, BarChart2, Users, FileText, Settings, User, Package, Menu, X, S
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 
-const navItems = [
+const navItemsBase = [
   { href: '/obras', label: 'Obras', icon: Wrench },
   { href: '/estoque', label: 'Estoque', icon: Package },
-  { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
-  { href: '/funcionarios', label: 'Funcionários', icon: Users },
+  { href: '/financeiro', label: 'Financeiro', icon: DollarSign, adminOnly: true },
+  { href: '/funcionarios', label: 'Funcionários', icon: Users, adminOnly: true },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/documentos', label: 'Documentos', icon: FileText },
@@ -25,6 +25,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { isAdmin } = useAccess()
+  const navItems = navItemsBase.filter(item => !item.adminOnly || isAdmin)
   const accountItems = isAdmin
     ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }, ...bottomItems]
     : bottomItems

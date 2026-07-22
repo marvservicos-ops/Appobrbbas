@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { DollarSign, Package, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
+import { useAccess } from '@/lib/useAccess'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 
@@ -28,8 +30,14 @@ interface EstoqueCC {
 }
 
 export default function FinanceiroPage() {
+  const router = useRouter()
+  const { isAdmin, loading: accessLoading } = useAccess()
   const [estoques, setEstoques] = useState<EstoqueCC[]>([])
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!accessLoading && !isAdmin) router.replace('/obras')
+  }, [isAdmin, accessLoading, router])
 
   useEffect(() => {
     async function load() {

@@ -204,7 +204,7 @@ export default function ObraDetailPage() {
   const id = params.id as string
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
-  const { can } = useAccess()
+  const { can, isAdmin } = useAccess()
   const [obra, setObra] = useState<Obra | null>(null)
   const [etapas, setEtapas] = useState<CronogramaEtapa[]>([])
   const [docs, setDocs] = useState<Documento[]>([])
@@ -480,7 +480,7 @@ export default function ObraDetailPage() {
       {/* Tabs */}
       <div className="bg-white border-b border-[#E2E8F0] px-2 md:px-6 min-w-0">
         <div className="flex gap-0 overflow-x-auto overscroll-x-contain scrollbar-none">
-          {(['visao-geral', 'relatorios', 'materiais', 'equipe', 'documentos', 'cronograma'] as Tab[]).map(t => (
+          {(['visao-geral', 'relatorios', 'materiais', ...(isAdmin ? ['equipe'] : []), 'documentos', 'cronograma'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 md:px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${tab === t ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
               {t === 'visao-geral' ? 'Visão Geral'
