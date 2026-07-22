@@ -811,7 +811,7 @@ function buildGrupos(itens: OcInterna[]): GrupoOc[] {
 
   const grupos: GrupoOc[] = []
 
-  for (const [key, grpItens] of mapa.entries()) {
+  for (const [key, grpItens] of Array.from(mapa.entries())) {
     const ref = grpItens[0]
     const totalItens = grpItens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
     const custosExtras = (ref.custos_extras ?? []) as { descricao: string; valor: number }[]
