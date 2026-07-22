@@ -20,7 +20,24 @@ interface NotaMaterial {
 
 interface OcInterna {
   id: string; descricao: string; numero_oc?: string | null; fornecedor?: string | null
-  valor_venda_total?: number | null; status: string
+  comprador?: string | null; data_compra?: string | null
+  valor_total?: number | null; valor_venda_total?: number | null
+  custos_extras?: { descricao: string; valor: number }[] | null
+  observacoes?: string | null; nota_fiscal_url?: string | null; status: string
+}
+
+interface GrupoOc {
+  key: string           // nota_fiscal_url ou 'avulso-{id}'
+  orcNumero?: string    // número extraído de observacoes
+  fornecedor?: string
+  comprador?: string
+  data_compra?: string
+  numero_oc?: string
+  itens: OcInterna[]
+  totalItens: number    // soma de valor_total (custo)
+  totalExtras: number   // custos_extras do primeiro item
+  totalOrc: number      // totalItens + totalExtras
+  totalVenda: number    // soma de valor_venda_total
 }
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
@@ -781,13 +798,58 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   )
 }
 
+function buildGrupos(itens: OcInterna[]): GrupoOc[] {
+  const comUrl = itens.filter(m => m.nota_fiscal_url)
+  const semUrl = itens.filter(m => !m.nota_fiscal_url)
+
+  const mapa = new Map<string, OcInterna[]>()
+  for (const m of comUrl) {
+    const k = m.nota_fiscal_url!
+    if (!mapa.has(k)) mapa.set(k, [])
+    mapa.get(k)!.push(m)
+  }
+
+  const grupos: GrupoOc[] = []
+
+  for (const [key, grpItens] of mapa.entries()) {
+    const ref = grpItens[0]
+    const totalItens = grpItens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
+    const custosExtras = (ref.custos_extras ?? []) as { descricao: string; valor: number }[]
+    const totalExtras = custosExtras.reduce((s, c) => s + c.valor, 0)
+    const totalVenda = grpItens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
+    const orcNumero = ref.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
+    grupos.push({
+      key, orcNumero, itens: grpItens,
+      fornecedor: ref.fornecedor ?? undefined,
+      comprador: ref.comprador ?? undefined,
+      data_compra: ref.data_compra ?? undefined,
+      numero_oc: ref.numero_oc ?? undefined,
+      totalItens, totalExtras, totalOrc: totalItens + totalExtras, totalVenda,
+    })
+  }
+
+  // Avulsos (sem URL de orçamento) — cada um vira seu próprio "grupo"
+  for (const m of semUrl) {
+    const totalItens = m.valor_total ?? 0
+    const totalVenda = m.valor_venda_total ?? 0
+    grupos.push({
+      key: `avulso-${m.id}`, itens: [m],
+      fornecedor: m.fornecedor ?? undefined,
+      numero_oc: m.numero_oc ?? undefined,
+      totalItens, totalExtras: 0, totalOrc: totalItens, totalVenda,
+    })
+  }
+
+  return grupos
+}
+
 function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
   obraId: string; totalOcMateriais: number; onClose: () => void; onSaved: () => void
 }) {
-  const [ocs, setOcs] = useState<OcInterna[]>([])
+  const [grupos, setGrupos] = useState<GrupoOc[]>([])
   const [loadingOcs, setLoadingOcs] = useState(true)
-  const [ocSelecionada, setOcSelecionada] = useState<OcInterna | null>(null)
-  const [valor, setValor] = useState('')
+  // Set de IDs de itens selecionados
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [dataEmissao, setDataEmissao] = useState(new Date().toISOString().slice(0, 10))
   const [numeroNf, setNumeroNf] = useState('')
   const [saving, setSaving] = useState(false)
@@ -796,34 +858,72 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
   useEffect(() => {
     createClient()
       .from('obra_materiais')
-      .select('id, descricao, numero_oc, fornecedor, valor_venda_total, status')
+      .select('id, descricao, numero_oc, fornecedor, comprador, data_compra, valor_total, valor_venda_total, custos_extras, observacoes, nota_fiscal_url, status')
       .eq('obra_id', obraId)
       .eq('tipo_compra', 'interna')
-      .order('descricao')
-      .then(({ data }) => { setOcs((data ?? []) as OcInterna[]); setLoadingOcs(false) })
+      .order('created_at')
+      .then(({ data }) => {
+        setGrupos(buildGrupos((data ?? []) as OcInterna[]))
+        setLoadingOcs(false)
+      })
   }, [obraId])
 
-  function selecionarOc(oc: OcInterna) {
-    setOcSelecionada(oc)
-    setValor(String(oc.valor_venda_total ?? ''))
+  function toggleItem(id: string) {
+    setSelecionados(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
   }
 
-  const valorNum = parseFloat(String(valor).replace(',', '.')) || 0
-  const percentualAuto = totalOcMateriais > 0 ? (valorNum / totalOcMateriais) * 100 : 0
+  function toggleGrupo(g: GrupoOc) {
+    const todosIds = g.itens.map(i => i.id)
+    const todosSelecionados = todosIds.every(id => selecionados.has(id))
+    setSelecionados(prev => {
+      const next = new Set(prev)
+      if (todosSelecionados) todosIds.forEach(id => next.delete(id))
+      else todosIds.forEach(id => next.add(id))
+      return next
+    })
+  }
+
+  // Calcula o valor de venda dos itens selecionados + proporcional dos custos_extras do grupo
+  const valorSelecionado = useMemo(() => {
+    let total = 0
+    for (const g of grupos) {
+      const itensSel = g.itens.filter(i => selecionados.has(i.id))
+      if (itensSel.length === 0) continue
+      const vendaSel = itensSel.reduce((s, i) => s + (i.valor_venda_total ?? 0), 0)
+      // Proporcional dos extras (frete, ICMS…)
+      const proporcao = g.totalVenda > 0 ? vendaSel / g.totalVenda : 0
+      total += vendaSel + g.totalExtras * proporcao
+    }
+    return total
+  }, [selecionados, grupos])
+
+  const percentualAuto = totalOcMateriais > 0 ? (valorSelecionado / totalOcMateriais) * 100 : 0
 
   async function save() {
-    if (valorNum <= 0) { setErro('Informe um valor válido.'); return }
+    if (valorSelecionado <= 0) { setErro('Selecione ao menos um item.'); return }
     setSaving(true); setErro('')
-    const descricao = ocSelecionada
-      ? `${ocSelecionada.descricao}${ocSelecionada.numero_oc ? ` · OC ${ocSelecionada.numero_oc}` : ''}${ocSelecionada.fornecedor ? ` · ${ocSelecionada.fornecedor}` : ''}`
-      : null
+
+    // Monta descrição a partir dos grupos envolvidos
+    const gruposEnvolvidos = grupos.filter(g => g.itens.some(i => selecionados.has(i.id)))
+    const descParts = gruposEnvolvidos.map(g => {
+      const label = g.orcNumero ? `Orçamento ${g.orcNumero}` : g.fornecedor ?? 'Material'
+      const itensSel = g.itens.filter(i => selecionados.has(i.id))
+      const tudo = itensSel.length === g.itens.length
+      return tudo ? label : `${label} (${itensSel.length} ite${itensSel.length > 1 ? 'ns' : 'm'})`
+    })
+    const descricao = descParts.join(' + ')
+
     const { error } = await createClient().from('obra_notas_material').insert({
       obra_id: obraId,
-      valor: valorNum,
+      valor: Math.round(valorSelecionado * 100) / 100,
       data_emissao: dataEmissao,
       descricao,
       numero_nf: numeroNf || null,
-      material_id: ocSelecionada?.id ?? null,
+      material_id: selecionados.size === 1 ? [...selecionados][0] : null,
     })
     setSaving(false)
     if (error) { setErro(error.message); return }
@@ -832,80 +932,102 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-5">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
           <div>
             <h2 className="font-syne font-semibold text-[#0F172A]">Nova Medição de Material</h2>
-            <p className="text-xs text-[#94A3B8] mt-0.5">Selecione o item da OC ou informe o valor manualmente</p>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Selecione OC inteira ou itens individuais</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-[#F1F5F9] text-[#64748B]"><X size={16} /></button>
         </div>
 
-        {/* Seleção de OC */}
-        <div className="mb-4">
-          <p className="text-xs font-medium text-[#374151] mb-2">Itens de compra interna</p>
+        {/* Lista de OCs — scrollável */}
+        <div className="overflow-y-auto flex-1 px-6 space-y-3 pb-2">
           {loadingOcs ? (
-            <div className="flex items-center justify-center py-6"><Loader2 size={18} className="animate-spin text-[#94A3B8]" /></div>
-          ) : ocs.length === 0 ? (
-            <p className="text-xs text-[#94A3B8] py-3 text-center">Nenhum material de compra interna cadastrado</p>
-          ) : (
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {ocs.map(oc => (
-                <button key={oc.id} onClick={() => selecionarOc(oc === ocSelecionada ? (setOcSelecionada(null), null as any) : oc)}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
-                    ocSelecionada?.id === oc.id
-                      ? 'border-[#3B82F6] bg-blue-50'
-                      : 'border-[#E2E8F0] hover:border-[#CBD5E1] bg-[#F8FAFC]'
-                  }`}>
-                  <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-center py-8"><Loader2 size={18} className="animate-spin text-[#94A3B8]" /></div>
+          ) : grupos.length === 0 ? (
+            <p className="text-xs text-[#94A3B8] py-6 text-center">Nenhum material de compra interna cadastrado</p>
+          ) : grupos.map(g => {
+            const todosIds = g.itens.map(i => i.id)
+            const todosSel = todosIds.every(id => selecionados.has(id))
+            const alguemSel = todosIds.some(id => selecionados.has(id))
+            return (
+              <div key={g.key} className={`border rounded-xl overflow-hidden transition-all ${alguemSel ? 'border-[#3B82F6]' : 'border-[#E2E8F0]'}`}>
+                {/* Cabeçalho do orçamento — clica pra selecionar tudo */}
+                <button onClick={() => toggleGrupo(g)}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors ${todosSel ? 'bg-blue-50' : 'bg-[#F8FAFC] hover:bg-[#F1F5F9]'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${todosSel ? 'bg-[#3B82F6] border-[#3B82F6]' : alguemSel ? 'bg-blue-100 border-[#3B82F6]' : 'border-[#CBD5E1]'}`}>
+                      {todosSel && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      {!todosSel && alguemSel && <div className="w-2 h-0.5 bg-[#3B82F6]" />}
+                    </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-[#374151] truncate">{oc.descricao}</p>
-                      <p className="text-xs text-[#94A3B8] mt-0.5">
-                        {oc.numero_oc && <span>OC {oc.numero_oc} · </span>}
-                        {oc.fornecedor && <span>{oc.fornecedor} · </span>}
-                        <span className="capitalize">{oc.status}</span>
+                      <p className="text-xs font-semibold text-[#0F172A]">
+                        {g.orcNumero ? `Orçamento ${g.orcNumero}` : g.fornecedor ?? 'Orçamento'}
+                        <span className="font-normal text-[#94A3B8] ml-2">{g.itens.length} ite{g.itens.length > 1 ? 'ns' : 'm'}</span>
+                      </p>
+                      <p className="text-xs text-[#94A3B8] truncate">
+                        {[g.fornecedor, g.data_compra ? new Date(g.data_compra + 'T00:00:00').toLocaleDateString('pt-BR') : null, g.comprador, g.numero_oc ? `OC: ${g.numero_oc}` : null].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                    <span className="text-xs font-semibold text-[#374151] shrink-0">
-                      {moeda(oc.valor_venda_total ?? 0)}
-                    </span>
                   </div>
+                  <span className="font-syne font-bold text-sm text-[#0F172A] shrink-0">{moeda(g.totalVenda + g.totalExtras)}</span>
                 </button>
-              ))}
-            </div>
-          )}
+
+                {/* Itens do orçamento */}
+                <div className="divide-y divide-[#F1F5F9]">
+                  {g.itens.map(item => (
+                    <button key={item.id} onClick={() => toggleItem(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${selecionados.has(item.id) ? 'bg-blue-50/60' : 'hover:bg-[#F8FAFC]'}`}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${selecionados.has(item.id) ? 'bg-[#3B82F6] border-[#3B82F6]' : 'border-[#CBD5E1]'}`}>
+                        {selecionados.has(item.id) && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3L2.8 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </div>
+                      <p className="text-xs text-[#374151] flex-1 min-w-0 truncate">{item.descricao}</p>
+                      <span className="text-xs font-medium text-[#374151] shrink-0">{moeda(item.valor_venda_total ?? 0)}</span>
+                    </button>
+                  ))}
+                  {g.totalExtras > 0 && (
+                    <div className="flex items-center gap-3 px-4 py-2 bg-[#FAFAFA]">
+                      <div className="w-4 shrink-0" />
+                      <p className="text-xs text-[#94A3B8] flex-1 italic">Custos extras (proporcionais)</p>
+                      <span className="text-xs text-[#94A3B8] shrink-0">{moeda(g.totalExtras)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
 
-        <div className="border-t border-[#F1F5F9] pt-4 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Valor da medição (R$)</label>
-              <input type="text" inputMode="decimal" value={valor} onChange={e => setValor(e.target.value)}
-                placeholder="0,00" className="input-field w-full" />
-              {valorNum > 0 && totalOcMateriais > 0 && (
-                <p className="text-xs text-[#64748B] mt-1">{pct(percentualAuto)} do total de OC</p>
-              )}
+        {/* Footer fixo */}
+        <div className="px-6 pt-4 pb-6 border-t border-[#F1F5F9] shrink-0 space-y-3">
+          {valorSelecionado > 0 && (
+            <div className="flex items-center justify-between bg-blue-50 rounded-xl px-4 py-2.5">
+              <span className="text-xs text-[#374151]">
+                Valor selecionado {totalOcMateriais > 0 && <span className="text-[#94A3B8]">· {pct(percentualAuto)} do total</span>}
+              </span>
+              <span className="font-syne font-bold text-sm text-[#3B82F6]">{moeda(valorSelecionado)}</span>
             </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Data de emissão</label>
               <input type="date" value={dataEmissao} onChange={e => setDataEmissao(e.target.value)} className="input-field w-full" />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Número da NF (opcional)</label>
+              <input type="text" value={numeroNf} onChange={e => setNumeroNf(e.target.value)} placeholder="001234" className="input-field w-full" />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Número da NF (opcional)</label>
-            <input type="text" value={numeroNf} onChange={e => setNumeroNf(e.target.value)}
-              placeholder="Ex: 001234" className="input-field w-full" />
+          {erro && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{erro}</p>}
+          <div className="flex gap-3">
+            <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
+            <button onClick={save} disabled={saving || valorSelecionado <= 0} className="btn-primary flex-1 disabled:opacity-50">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Registrar {valorSelecionado > 0 && moeda(valorSelecionado)}
+            </button>
           </div>
-        </div>
-
-        {erro && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{erro}</p>}
-
-        <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
-          <button onClick={save} disabled={saving || valorNum <= 0} className="btn-primary flex-1 disabled:opacity-50">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Registrar
-          </button>
         </div>
       </div>
     </div>
