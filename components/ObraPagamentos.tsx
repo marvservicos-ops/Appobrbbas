@@ -859,10 +859,15 @@ function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
           .eq('obra_id', medicao.obra_id)
           .eq('valor', valorNFNum)
           .maybeSingle()
-        nota = notaFallback
+        const nf = notaFallback as { itens_ids?: string[] | null; material_id?: string | null } | null
+        const ids2: string[] = nf?.itens_ids ?? (nf?.material_id ? [nf.material_id] : [])
+        if (ids2.length === 0) return
+        const { data: itens } = await sb.from('obra_materiais').select('id, descricao, quantidade, unidade, valor_venda_total').in('id', ids2)
+        if (itens) setItensMaterial(itens as ItemMaterial[])
+        return
       }
 
-      const ids: string[] = nota?.itens_ids ?? (nota?.material_id ? [nota.material_id] : [])
+      const ids: string[] = nota?.itens_ids ?? []
       if (ids.length === 0) return
 
       const { data: itens } = await sb
