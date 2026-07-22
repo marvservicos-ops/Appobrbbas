@@ -28,10 +28,10 @@ interface RegraExtra {
 
 function calculos(f: Pick<Funcionario, 'salario_bruto' | 'horas_dia' | 'dias_mes'>) {
   const salario = f.salario_bruto ?? 0
-  const dias = f.dias_mes ?? 22
-  const horas = f.horas_dia ?? 8
+  const dias = f.dias_mes ?? 30
+  const horasMes = f.horas_dia ?? 220  // horas_dia stores total monthly hours
   const custoDia = dias > 0 ? salario / dias : 0
-  const custoHora = dias > 0 && horas > 0 ? salario / (dias * horas) : 0
+  const custoHora = horasMes > 0 ? salario / horasMes : 0
   return { custoDia, custoHora }
 }
 
