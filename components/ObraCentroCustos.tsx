@@ -471,7 +471,8 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                   </tr>
                 </tfoot>
               </table>
-          </div>
+            </div>
+          </>
         )}
       </Section>
 
