@@ -191,60 +191,82 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         {saidas.length === 0 ? (
           <EmptyState text="Nenhuma saída de estoque vinculada a esta obra." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[580px]">
-              <thead>
-                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+          <>
+            {/* Mobile cards */}
+            <div className="sm:hidden divide-y divide-[#F1F5F9]">
+              {saidas.map(r => (
+                <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[#0F172A] truncate">{r.produto_nome}</p>
+                    <p className="text-xs text-[#94A3B8] mt-0.5">{r.estoque_nome ?? '—'} · {r.quantidade} {r.unidade ?? ''}{r.preco_unitario_custo ? ` · ${moeda(r.preco_unitario_custo)}/un` : ''}</p>
+                    <p className="text-xs text-[#94A3B8]">{dataBR(r.data)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-sm font-bold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</span>
+                    <button onClick={() => setDevolvendoRegistro(r)} className="p-1.5 rounded hover:bg-emerald-50 text-[#CBD5E1] hover:text-emerald-600"><Undo2 size={14} /></button>
+                  </div>
+                </div>
+              ))}
+              <div className="px-4 py-2.5 bg-[#F8FAFC] flex justify-between text-xs font-semibold text-[#374151]">
+                <span>Saídas</span><span className="text-red-600">{moeda(totalSaidas)}</span>
+              </div>
+              {devolucoes.length > 0 && (
+                <div className="px-4 py-2.5 bg-[#F0FDF4] flex justify-between text-xs font-semibold text-[#374151]">
+                  <span>Devoluções</span><span className="text-green-600">−{moeda(totalDevolucoes)}</span>
+                </div>
+              )}
+              <div className="px-4 py-3 bg-red-50 flex justify-between text-sm font-bold">
+                <span className="text-[#374151]">Custo líquido</span><span className="text-red-700">{moeda(custoEstoque)}</span>
+              </div>
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full min-w-[580px]">
+                <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <Th>Material</Th><Th>Estoque</Th><Th>Qtd</Th><Th>Custo Unit.</Th><Th>Total</Th><Th>Data</Th><th className="w-10" />
-                </tr>
-              </thead>
-              <tbody>
-                {saidas.map(r => (
-                  <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
-                    <Td bold>{r.produto_nome}</Td>
-                    <Td>{r.estoque_nome ?? '—'}</Td>
-                    <Td>{r.quantidade} {r.unidade ?? ''}</Td>
-                    <Td>{r.preco_unitario_custo ? moeda(r.preco_unitario_custo) : '—'}</Td>
-                    <td className="px-4 py-3 text-sm font-semibold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</td>
-                    <Td>{dataBR(r.data)}</Td>
-                    <td className="px-3 py-3">
-                      <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600">
-                        <Undo2 size={13} />
-                      </button>
-                    </td>
+                </tr></thead>
+                <tbody>
+                  {saidas.map(r => (
+                    <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                      <Td bold>{r.produto_nome}</Td>
+                      <Td>{r.estoque_nome ?? '—'}</Td>
+                      <Td>{r.quantidade} {r.unidade ?? ''}</Td>
+                      <Td>{r.preco_unitario_custo ? moeda(r.preco_unitario_custo) : '—'}</Td>
+                      <td className="px-4 py-3 text-sm font-semibold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</td>
+                      <Td>{dataBR(r.data)}</Td>
+                      <td className="px-3 py-3">
+                        <button onClick={() => setDevolvendoRegistro(r)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"><Undo2 size={13} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-[#F8FAFC] border-t-2 border-[#E2E8F0]">
+                    <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-[#374151]">Saídas</td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-red-600">{moeda(totalSaidas)}</td><td colSpan={2} />
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-[#F8FAFC] border-t-2 border-[#E2E8F0]">
-                  <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-[#374151]">Saídas</td>
-                  <td className="px-4 py-2.5 text-sm font-bold text-red-600">{moeda(totalSaidas)}</td>
-                  <td colSpan={2} />
-                </tr>
-                {devolucoes.length > 0 && (
-                  <tr className="bg-[#F0FDF4] border-t border-[#BBF7D0]">
-                    <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-[#374151]">Devoluções</td>
-                    <td className="px-4 py-2.5 text-sm font-bold text-green-600">−{moeda(totalDevolucoes)}</td>
-                    <td colSpan={2} />
+                  {devolucoes.length > 0 && (
+                    <tr className="bg-[#F0FDF4] border-t border-[#BBF7D0]">
+                      <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-[#374151]">Devoluções</td>
+                      <td className="px-4 py-2.5 text-sm font-bold text-green-600">−{moeda(totalDevolucoes)}</td><td colSpan={2} />
+                    </tr>
+                  )}
+                  <tr className="bg-red-50 border-t-2 border-red-200">
+                    <td colSpan={4} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Custo líquido estoque</td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-red-700">{moeda(custoEstoque)}</td><td colSpan={2} />
                   </tr>
-                )}
-                <tr className="bg-red-50 border-t-2 border-red-200">
-                  <td colSpan={4} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Custo líquido estoque</td>
-                  <td className="px-4 py-2.5 text-sm font-bold text-red-700">{moeda(custoEstoque)}</td>
-                  <td colSpan={2} />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                </tfoot>
+              </table>
+            </div>
+          </>
         )}
       </Section>
 
       {/* ── Seção 2: Materiais da Obra (Compra Interna) ── */}
       <Section
         icon={<ShoppingCart size={15} className="text-blue-500" />}
-        title="Materiais da Obra — Compra Interna"
-        total={`Custo ${moeda(custoMateriaisReal)} · Venda ${moeda(vendaMateriais)}`}
+        title="Materiais da Obra"
+        total={`Custo ${moeda(custoMateriaisReal)}`}
         totalClass="text-blue-700"
         aberto={secaoMateriais}
         onToggle={() => setSecaoMateriais(a => !a)}
@@ -252,101 +274,147 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         {materiais.length === 0 ? (
           <EmptyState text="Nenhum material de compra interna cadastrado." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px]">
-              <thead>
-                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+          <>
+            {/* Mobile cards */}
+            <div className="sm:hidden divide-y divide-[#F1F5F9]">
+              {Array.from(grupos.entries()).map(([url, itens]) => {
+                const extras = (itens[0].custos_extras ?? []) as { descricao: string; valor: number }[]
+                const totalExtras = extras.reduce((s, c) => s + c.valor, 0)
+                const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
+                const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
+                const orcNum = itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 10)
+                return (
+                  <div key={`mgrp-${url}`}>
+                    <div className="px-4 py-2 bg-[#F0F4FF]">
+                      <p className="text-xs font-semibold text-[#4F7CFF]">{itens[0].fornecedor ?? 'Fornecedor'}{orcNum ? ` · ${orcNum}` : ''}</p>
+                    </div>
+                    {itens.map(m => (
+                      <div key={m.id} className="px-4 py-3 flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-[#374151] truncate">{m.descricao}</p>
+                          {m.quantidade != null && <p className="text-xs text-[#94A3B8]">{m.quantidade} {m.unidade ?? ''}{m.valor_unitario ? ` · ${moeda(m.valor_unitario)}/un` : ''}</p>}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-semibold text-blue-700">{m.valor_total ? moeda(m.valor_total) : '—'}</p>
+                          {m.valor_venda_total && <p className="text-xs text-emerald-600">OC {moeda(m.valor_venda_total)}</p>}
+                        </div>
+                      </div>
+                    ))}
+                    {extras.map((c, i) => (
+                      <div key={i} className="px-4 py-1.5 bg-[#FAFAFA] flex justify-between">
+                        <span className="text-xs italic text-[#94A3B8]">{c.descricao}</span>
+                        <span className="text-xs text-[#64748B]">{moeda(c.valor)}</span>
+                      </div>
+                    ))}
+                    <div className="px-4 py-2.5 bg-[#F8FAFF] flex justify-between">
+                      <span className="text-xs font-bold text-[#374151]">Subtotal</span>
+                      <div className="text-right">
+                        <span className="text-xs font-bold text-blue-700">{moeda(custoGrupo)}</span>
+                        {vendaGrupo > 0 && <span className="text-xs text-emerald-600 ml-2">OC {moeda(vendaGrupo)}</span>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              {avulsos.map(m => (
+                <div key={m.id} className="px-4 py-3 flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[#0F172A] truncate">{m.descricao}</p>
+                    {m.quantidade != null && <p className="text-xs text-[#94A3B8]">{m.quantidade} {m.unidade ?? ''}{m.valor_unitario ? ` · ${moeda(m.valor_unitario)}/un` : ''}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold text-blue-700">{m.valor_total ? moeda(m.valor_total) : '—'}</p>
+                    {m.valor_venda_total && <p className="text-xs text-emerald-600">OC {moeda(m.valor_venda_total)}</p>}
+                  </div>
+                </div>
+              ))}
+              <div className="px-4 py-3 bg-blue-50 flex justify-between text-sm font-bold border-t-2 border-blue-200">
+                <span className="text-[#374151]">Total materiais</span>
+                <div className="text-right">
+                  <span className="text-blue-700">{moeda(custoMateriaisReal)}</span>
+                  {vendaMateriais > 0 && <span className="text-xs text-emerald-600 block">OC {moeda(vendaMateriais)}</span>}
+                </div>
+              </div>
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full min-w-[680px]">
+                <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <Th>Descrição</Th><Th>Qtd</Th><Th>Custo Unit.</Th><Th>Custo Total</Th><Th>Venda Total</Th><Th>Margem</Th><th className="w-10" />
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from(grupos.entries()).map(([url, itens]) => {
-                  const extras = (itens[0].custos_extras ?? []) as { descricao: string; valor: number }[]
-                  const totalExtras = extras.reduce((s, c) => s + c.valor, 0)
-                  const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
-                  const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
-                  const margemGrupo = vendaGrupo - custoGrupo
-                  const orcNum = itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 12)
-                  return (
-                    <>
-                      <tr key={`grupo-${url}`} className="bg-[#F0F4FF] border-b border-[#E2E8F0]">
-                        <td colSpan={7} className="px-4 py-2 text-xs font-semibold text-[#4F7CFF]">
-                          Orçamento {orcNum ? `· ${orcNum}` : ''} · {itens[0].fornecedor ?? '—'} · {itens.length} iten{itens.length === 1 ? 's' : 's'}
-                        </td>
-                      </tr>
-                      {itens.map(m => {
-                        const margem = (m.valor_venda_total ?? 0) - (m.valor_total ?? 0)
-                        return (
-                          <tr key={m.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
-                            <td className="px-4 py-2.5 pl-8 text-sm text-[#374151]">{m.descricao}</td>
-                            <Td>{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</Td>
-                            <Td>{m.valor_unitario ? moeda(m.valor_unitario) : '—'}</Td>
-                            <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
-                            <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
-                            <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                              {m.valor_venda_total ? moeda(margem) : '—'}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <button onClick={() => setEnviandoEstoque(m)} title="Enviar sobra ao estoque"
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600">
-                                <ArrowUpCircle size={13} />
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                      {extras.map((c, i) => (
-                        <tr key={`extra-${url}-${i}`} className="border-b border-[#F1F5F9] bg-[#FAFAFA]">
-                          <td className="px-4 py-1.5 pl-8 text-xs italic text-[#94A3B8]">{c.descricao}</td>
-                          <td colSpan={2} />
-                          <td className="px-4 py-1.5 text-xs text-[#64748B]">{moeda(c.valor)}</td>
-                          <td colSpan={3} />
+                </tr></thead>
+                <tbody>
+                  {Array.from(grupos.entries()).map(([url, itens]) => {
+                    const extras = (itens[0].custos_extras ?? []) as { descricao: string; valor: number }[]
+                    const totalExtras = extras.reduce((s, c) => s + c.valor, 0)
+                    const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
+                    const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
+                    const mg = vendaGrupo - custoGrupo
+                    const orcNum = itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 12)
+                    return (
+                      <>
+                        <tr key={`grupo-${url}`} className="bg-[#F0F4FF] border-b border-[#E2E8F0]">
+                          <td colSpan={7} className="px-4 py-2 text-xs font-semibold text-[#4F7CFF]">
+                            Orçamento {orcNum ? `· ${orcNum}` : ''} · {itens[0].fornecedor ?? '—'} · {itens.length} iten{itens.length === 1 ? '' : 's'}
+                          </td>
                         </tr>
-                      ))}
-                      <tr key={`sub-${url}`} className="border-b-2 border-[#E2E8F0] bg-[#F8FAFF]">
-                        <td className="px-4 py-2 pl-8 text-xs font-bold text-[#374151]">Subtotal orçamento</td>
-                        <td colSpan={2} />
-                        <td className="px-4 py-2 text-xs font-bold text-blue-700">{moeda(custoGrupo)}</td>
-                        <td className="px-4 py-2 text-xs font-bold text-emerald-700">{moeda(vendaGrupo)}</td>
-                        <td className={`px-4 py-2 text-xs font-bold ${margemGrupo >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(margemGrupo)}</td>
-                        <td />
+                        {itens.map(m => {
+                          const margem = (m.valor_venda_total ?? 0) - (m.valor_total ?? 0)
+                          return (
+                            <tr key={m.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                              <td className="px-4 py-2.5 pl-8 text-sm text-[#374151]">{m.descricao}</td>
+                              <Td>{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</Td>
+                              <Td>{m.valor_unitario ? moeda(m.valor_unitario) : '—'}</Td>
+                              <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
+                              <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
+                              <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{m.valor_venda_total ? moeda(margem) : '—'}</td>
+                              <td className="px-3 py-2.5"><button onClick={() => setEnviandoEstoque(m)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600"><ArrowUpCircle size={13} /></button></td>
+                            </tr>
+                          )
+                        })}
+                        {extras.map((c, i) => (
+                          <tr key={`extra-${url}-${i}`} className="border-b border-[#F1F5F9] bg-[#FAFAFA]">
+                            <td className="px-4 py-1.5 pl-8 text-xs italic text-[#94A3B8]">{c.descricao}</td>
+                            <td colSpan={2} /><td className="px-4 py-1.5 text-xs text-[#64748B]">{moeda(c.valor)}</td><td colSpan={3} />
+                          </tr>
+                        ))}
+                        <tr key={`sub-${url}`} className="border-b-2 border-[#E2E8F0] bg-[#F8FAFF]">
+                          <td className="px-4 py-2 pl-8 text-xs font-bold text-[#374151]">Subtotal orçamento</td>
+                          <td colSpan={2} />
+                          <td className="px-4 py-2 text-xs font-bold text-blue-700">{moeda(custoGrupo)}</td>
+                          <td className="px-4 py-2 text-xs font-bold text-emerald-700">{moeda(vendaGrupo)}</td>
+                          <td className={`px-4 py-2 text-xs font-bold ${mg >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(mg)}</td>
+                          <td />
+                        </tr>
+                      </>
+                    )
+                  })}
+                  {avulsos.map(m => {
+                    const margem = (m.valor_venda_total ?? 0) - (m.valor_total ?? 0)
+                    return (
+                      <tr key={m.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                        <Td bold>{m.descricao}</Td>
+                        <Td>{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</Td>
+                        <Td>{m.valor_unitario ? moeda(m.valor_unitario) : '—'}</Td>
+                        <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
+                        <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
+                        <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{m.valor_venda_total ? moeda(margem) : '—'}</td>
+                        <td className="px-3 py-2.5"><button onClick={() => setEnviandoEstoque(m)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600"><ArrowUpCircle size={13} /></button></td>
                       </tr>
-                    </>
-                  )
-                })}
-                {avulsos.map(m => {
-                  const margem = (m.valor_venda_total ?? 0) - (m.valor_total ?? 0)
-                  return (
-                    <tr key={m.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
-                      <Td bold>{m.descricao}</Td>
-                      <Td>{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</Td>
-                      <Td>{m.valor_unitario ? moeda(m.valor_unitario) : '—'}</Td>
-                      <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
-                      <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
-                      <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {m.valor_venda_total ? moeda(margem) : '—'}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <button onClick={() => setEnviandoEstoque(m)} title="Enviar sobra ao estoque"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600">
-                          <ArrowUpCircle size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="bg-blue-50 border-t-2 border-blue-200">
-                  <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Total materiais</td>
-                  <td className="px-4 py-2.5 text-sm font-bold text-blue-700">{moeda(custoMateriaisReal)}</td>
-                  <td className="px-4 py-2.5 text-sm font-bold text-emerald-700">{moeda(vendaMateriais)}</td>
-                  <td className={`px-4 py-2.5 text-sm font-bold ${margemMat >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(margemMat)}</td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-blue-50 border-t-2 border-blue-200">
+                    <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Total materiais</td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-blue-700">{moeda(custoMateriaisReal)}</td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-emerald-700">{moeda(vendaMateriais)}</td>
+                    <td className={`px-4 py-2.5 text-sm font-bold ${margemMat >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(margemMat)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </>
         )}
       </Section>
 
@@ -362,31 +430,47 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         {equipe.length === 0 ? (
           <EmptyState text="Nenhum funcionário alocado. Acesse a aba Equipe para adicionar." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px]">
-              <thead>
-                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+          <>
+            {/* Mobile cards */}
+            <div className="sm:hidden divide-y divide-[#F1F5F9]">
+              {equipe.map(e => (
+                <div key={e.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</p>
+                    <p className="text-xs text-[#94A3B8] mt-0.5">{e.funcionario?.cargo ?? '—'} · {e.dias_trabalhados}d · {moeda(e.custo_diario_epoca)}/dia</p>
+                  </div>
+                  <span className="text-sm font-bold text-violet-700 shrink-0">{moeda(e.custo_total)}</span>
+                </div>
+              ))}
+              <div className="px-4 py-3 bg-violet-50 flex justify-between text-sm font-bold border-t-2 border-violet-200">
+                <span className="text-[#374151]">Total mão de obra</span>
+                <span className="text-violet-700">{moeda(custoMaoDeObra)}</span>
+              </div>
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full min-w-[480px]">
+                <thead><tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <Th>Funcionário</Th><Th>Cargo</Th><Th>Dias</Th><Th>Custo/Dia</Th><Th>Total</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {equipe.map(e => (
-                  <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
-                    <Td bold>{e.funcionario?.nome ?? '—'}</Td>
-                    <Td>{e.funcionario?.cargo ?? '—'}</Td>
-                    <Td>{e.dias_trabalhados}d</Td>
-                    <Td>{moeda(e.custo_diario_epoca)}</Td>
-                    <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
+                </tr></thead>
+                <tbody>
+                  {equipe.map(e => (
+                    <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
+                      <Td bold>{e.funcionario?.nome ?? '—'}</Td>
+                      <Td>{e.funcionario?.cargo ?? '—'}</Td>
+                      <Td>{e.dias_trabalhados}d</Td>
+                      <Td>{moeda(e.custo_diario_epoca)}</Td>
+                      <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-violet-50 border-t-2 border-violet-200">
+                    <td colSpan={4} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Total mão de obra</td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-violet-700">{moeda(custoMaoDeObra)}</td>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-violet-50 border-t-2 border-violet-200">
-                  <td colSpan={4} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Total mão de obra</td>
-                  <td className="px-4 py-2.5 text-sm font-bold text-violet-700">{moeda(custoMaoDeObra)}</td>
-                </tr>
-              </tfoot>
-            </table>
+                </tfoot>
+              </table>
           </div>
         )}
       </Section>

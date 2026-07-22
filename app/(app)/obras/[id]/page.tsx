@@ -3348,12 +3348,43 @@ function AbaEquipe({ obraId, equipe, onRefresh }: {
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
-          <table className="w-full">
+          {/* Mobile cards */}
+          <div className="sm:hidden divide-y divide-[#F1F5F9]">
+            {equipe.map(e => (
+              <div key={e.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</p>
+                  <p className="text-xs text-[#94A3B8] mt-0.5">{e.funcionario?.cargo ?? '—'}</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <span className="text-xs text-[#64748B]">{e.dias_uteis ?? e.dias_trabalhados}d úteis</span>
+                    {(e.dias_sabado ?? 0) > 0 && <span className="text-xs text-amber-600">+{e.dias_sabado}sáb</span>}
+                    {(e.dias_domingo_feriado ?? 0) > 0 && <span className="text-xs text-red-500">+{e.dias_domingo_feriado}dom</span>}
+                    {(e.horas_noturnas ?? 0) > 0 && <span className="text-xs text-blue-500">+{e.horas_noturnas}h not.</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-sm font-bold text-violet-700">{moeda(e.custo_total)}</span>
+                  <div className="flex gap-1">
+                    <button onClick={() => { setEditando(e); setShowModal(true) }}
+                      className="p-1.5 rounded hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF]"><Pencil size={13} /></button>
+                    <button onClick={() => remover(e.id)}
+                      className="p-1.5 rounded hover:bg-red-50 text-[#CBD5E1] hover:text-red-500"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div className="px-4 py-3 bg-[#F8FAFC] border-t-2 border-[#E2E8F0] flex justify-between text-sm font-bold">
+              <span className="text-[#374151]">Total mão de obra</span>
+              <span className="text-violet-700">{moeda(totalMaoDeObra)}</span>
+            </div>
+          </div>
+          {/* Desktop table */}
+          <table className="w-full hidden sm:table">
             <thead>
               <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Funcionário</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Cargo</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Dias</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Cargo</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Dias</th>
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Custo/Dia</th>
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Total</th>
                 <th className="px-4 py-3 w-16" />
@@ -3363,8 +3394,8 @@ function AbaEquipe({ obraId, equipe, onRefresh }: {
               {equipe.map(e => (
                 <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
                   <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-[#64748B] hidden sm:table-cell">{e.funcionario?.cargo ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-[#374151] hidden sm:table-cell">
+                  <td className="px-4 py-3 text-sm text-[#64748B]">{e.funcionario?.cargo ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-[#374151]">
                     <span>{e.dias_uteis ?? e.dias_trabalhados}d úteis</span>
                     {(e.dias_sabado ?? 0) > 0 && <span className="text-amber-600 ml-1">+{e.dias_sabado}sáb</span>}
                     {(e.dias_domingo_feriado ?? 0) > 0 && <span className="text-red-500 ml-1">+{e.dias_domingo_feriado}dom</span>}
