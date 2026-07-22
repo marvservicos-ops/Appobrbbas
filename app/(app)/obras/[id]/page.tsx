@@ -16,6 +16,9 @@ interface Funcionario {
   nome: string
   cargo: string | null
   custo_diario: number | null
+  salario_bruto?: number | null
+  horas_dia?: number | null
+  dias_mes?: number | null
 }
 
 interface ObraFuncionario {
@@ -24,11 +27,24 @@ interface ObraFuncionario {
   funcionario_id: string
   funcionario?: Funcionario
   dias_trabalhados: number
+  dias_uteis?: number
+  dias_sabado?: number
+  dias_domingo_feriado?: number
+  horas_noturnas?: number
+  custo_extra?: number
+  custo_extra_descricao?: string | null
   custo_diario_epoca: number
+  custo_hora_epoca?: number | null
   custo_total: number
   data_inicio?: string | null
   data_fim?: string | null
   observacoes?: string | null
+}
+
+interface RegraAdicional {
+  chave: string
+  descricao: string
+  percentual: number
 }
 
 interface ObraMaterial {
@@ -299,7 +315,7 @@ export default function ObraDetailPage() {
       supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('rdos').select('*').eq('obra_id', id).order('numero', { ascending: false }),
       supabase.from('obra_materiais').select('*').eq('obra_id', id).order('created_at', { ascending: false }),
-      supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(id, nome, cargo, custo_diario)').eq('obra_id', id).order('created_at', { ascending: false }),
+      supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes)').eq('obra_id', id).order('created_at', { ascending: false }),
     ])
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (etapasRes.data) setEtapas(etapasRes.data as CronogramaEtapa[])
@@ -3337,8 +3353,8 @@ function AbaEquipe({ obraId, equipe, onRefresh }: {
               <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Funcionário</th>
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Cargo</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Dias</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Custo/Dia</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Dias</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Custo/Dia</th>
                 <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Total</th>
                 <th className="px-4 py-3 w-16" />
               </tr>
@@ -3348,8 +3364,13 @@ function AbaEquipe({ obraId, equipe, onRefresh }: {
                 <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
                   <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</td>
                   <td className="px-4 py-3 text-sm text-[#64748B] hidden sm:table-cell">{e.funcionario?.cargo ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-[#374151]">{e.dias_trabalhados}d</td>
-                  <td className="px-4 py-3 text-sm text-[#374151] hidden sm:table-cell">{moeda(e.custo_diario_epoca)}</td>
+                  <td className="px-4 py-3 text-sm text-[#374151] hidden sm:table-cell">
+                    <span>{e.dias_uteis ?? e.dias_trabalhados}d úteis</span>
+                    {(e.dias_sabado ?? 0) > 0 && <span className="text-amber-600 ml-1">+{e.dias_sabado}sáb</span>}
+                    {(e.dias_domingo_feriado ?? 0) > 0 && <span className="text-red-500 ml-1">+{e.dias_domingo_feriado}dom</span>}
+                    {(e.horas_noturnas ?? 0) > 0 && <span className="text-blue-500 ml-1">+{e.horas_noturnas}h not.</span>}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">{moeda(e.custo_diario_epoca)}</td>
                   <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -3393,37 +3414,76 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
   onSaved: () => void
 }) {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
+  const [regras, setRegras] = useState<RegraAdicional[]>([])
   const [funcionarioId, setFuncionarioId] = useState(alocacao?.funcionario_id ?? '')
-  const [dias, setDias] = useState(alocacao ? String(alocacao.dias_trabalhados) : '')
-  const [custoDia, setCustoDia] = useState(alocacao ? String(alocacao.custo_diario_epoca) : '')
+  const [custoDia, setCustoDia] = useState(alocacao?.custo_diario_epoca ?? 0)
+  const [custoHora, setCustoHora] = useState(alocacao?.custo_hora_epoca ?? 0)
+
+  // Breakdown
+  const [diasUteis, setDiasUteis] = useState(String(alocacao?.dias_uteis ?? 0))
+  const [diasSabado, setDiasSabado] = useState(String(alocacao?.dias_sabado ?? 0))
+  const [diasDomingo, setDiasDomingo] = useState(String(alocacao?.dias_domingo_feriado ?? 0))
+  const [horasNoturnas, setHorasNoturnas] = useState(String(alocacao?.horas_noturnas ?? 0))
+  const [custoExtra, setCustoExtra] = useState(String(alocacao?.custo_extra ?? 0))
+  const [custoExtraDesc, setCustoExtraDesc] = useState(alocacao?.custo_extra_descricao ?? '')
   const [dataInicio, setDataInicio] = useState(alocacao?.data_inicio ?? '')
   const [dataFim, setDataFim] = useState(alocacao?.data_fim ?? '')
   const [observacoes, setObservacoes] = useState(alocacao?.observacoes ?? '')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    createClient().from('funcionarios').select('id, nome, cargo, custo_diario').eq('ativo', true).order('nome')
-      .then(({ data }) => { if (data) setFuncionarios(data as Funcionario[]) })
+    const sb = createClient()
+    Promise.all([
+      sb.from('funcionarios').select('id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes').eq('ativo', true).order('nome'),
+      sb.from('configuracoes_empresa').select('chave, descricao, valor').like('chave', 'adicional_%'),
+    ]).then(([fRes, rRes]) => {
+      if (fRes.data) setFuncionarios(fRes.data as Funcionario[])
+      if (rRes.data) setRegras(rRes.data.map((r: any) => ({ chave: r.chave, descricao: r.descricao, percentual: r.valor?.percentual ?? 0 })))
+    })
   }, [])
 
   function onSelectFuncionario(id: string) {
     setFuncionarioId(id)
     const f = funcionarios.find(f => f.id === id)
-    if (f?.custo_diario && !custoDia) setCustoDia(String(f.custo_diario))
+    if (!f) return
+    setCustoDia(f.custo_diario ?? 0)
+    setCustoHora(f.salario_bruto && f.horas_dia ? f.salario_bruto / f.horas_dia : 0)
   }
 
-  const preview = (parseFloat(dias) || 0) * (parseFloat(custoDia) || 0)
+  const n = (s: string) => parseFloat(s) || 0
+  const pct = (chave: string) => (regras.find(r => r.chave === chave)?.percentual ?? 0) / 100
+
+  const custoBase    = n(diasUteis) * custoDia
+  const custoSab     = n(diasSabado) * custoDia * (1 + pct('adicional_sabado'))
+  const custoDom     = n(diasDomingo) * custoDia * (1 + pct('adicional_domingo_feriado'))
+  const custoNot     = n(horasNoturnas) * custoHora * pct('adicional_noturno')
+  const custoExtraV  = n(custoExtra)
+  const total        = custoBase + custoSab + custoDom + custoNot + custoExtraV
+
   const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
+  const pctLabel = (chave: string) => {
+    const r = regras.find(r => r.chave === chave)
+    return r ? `${r.percentual}%` : ''
+  }
+
   async function salvar() {
-    if (!funcionarioId || !dias || !custoDia) return
+    if (!funcionarioId) return
     setSaving(true)
     const supabase = createClient()
     const payload = {
       obra_id: obraId,
       funcionario_id: funcionarioId,
-      dias_trabalhados: parseFloat(dias),
-      custo_diario_epoca: parseFloat(custoDia),
+      dias_trabalhados: n(diasUteis) + n(diasSabado) + n(diasDomingo),
+      dias_uteis: n(diasUteis),
+      dias_sabado: n(diasSabado),
+      dias_domingo_feriado: n(diasDomingo),
+      horas_noturnas: n(horasNoturnas),
+      custo_extra: custoExtraV,
+      custo_extra_descricao: custoExtraDesc.trim() || null,
+      custo_diario_epoca: custoDia,
+      custo_hora_epoca: custoHora,
+      custo_total: total,
       data_inicio: dataInicio || null,
       data_fim: dataFim || null,
       observacoes: observacoes.trim() || null,
@@ -3439,12 +3499,14 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">{alocacao ? 'Editar Alocação' : 'Alocar Funcionário'}</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-5">
+
+          {/* Funcionário */}
           <div>
             <label className="block text-xs font-medium text-[#374151] mb-1.5">Funcionário *</label>
             <select className="field" value={funcionarioId} onChange={e => onSelectFuncionario(e.target.value)} disabled={!!alocacao}>
@@ -3453,28 +3515,74 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
                 <option key={f.id} value={f.id}>{f.nome}{f.cargo ? ` — ${f.cargo}` : ''}</option>
               ))}
             </select>
+            {custoDia > 0 && (
+              <p className="text-xs text-[#94A3B8] mt-1">
+                Custo/dia: <span className="font-medium text-[#374151]">{moeda(custoDia)}</span>
+                {custoHora > 0 && <> · Custo/hora: <span className="font-medium text-[#374151]">{moeda(custoHora)}</span></>}
+              </p>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias trabalhados *</label>
-              <input className="field" type="number" min="0.5" step="0.5" value={dias}
-                onChange={e => setDias(e.target.value)} placeholder="0" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Custo/dia (R$) *</label>
-              <input className="field" type="number" min="0" step="0.01" value={custoDia}
-                onChange={e => setCustoDia(e.target.value)} placeholder="0,00" />
+          {/* Dias */}
+          <div>
+            <p className="text-xs font-semibold text-[#374151] mb-2 uppercase tracking-wide">Dias trabalhados</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">Dias úteis</label>
+                <input className="field" type="number" min="0" step="1" value={diasUteis}
+                  onChange={e => setDiasUteis(e.target.value)} placeholder="0" />
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">Sábados {pctLabel('adicional_sabado') && <span className="text-amber-500">+{pctLabel('adicional_sabado')}</span>}</label>
+                <input className="field" type="number" min="0" step="1" value={diasSabado}
+                  onChange={e => setDiasSabado(e.target.value)} placeholder="0" />
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">Domingos / Feriados {pctLabel('adicional_domingo_feriado') && <span className="text-red-500">+{pctLabel('adicional_domingo_feriado')}</span>}</label>
+                <input className="field" type="number" min="0" step="1" value={diasDomingo}
+                  onChange={e => setDiasDomingo(e.target.value)} placeholder="0" />
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">Horas noturnas {pctLabel('adicional_noturno') && <span className="text-blue-500">+{pctLabel('adicional_noturno')}</span>}</label>
+                <input className="field" type="number" min="0" step="0.5" value={horasNoturnas}
+                  onChange={e => setHorasNoturnas(e.target.value)} placeholder="0" />
+              </div>
             </div>
           </div>
 
-          {preview > 0 && (
-            <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2.5 text-sm">
-              <span className="text-violet-600 font-medium">Custo total: </span>
-              <span className="font-syne font-bold text-violet-700">{moeda(preview)}</span>
+          {/* Custo extra */}
+          <div>
+            <p className="text-xs font-semibold text-[#374151] mb-2 uppercase tracking-wide">Custo extra</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">Descrição</label>
+                <input className="field" value={custoExtraDesc}
+                  onChange={e => setCustoExtraDesc(e.target.value)} placeholder="Ex: Passagem, alimentação..." />
+              </div>
+              <div>
+                <label className="block text-xs text-[#64748B] mb-1">Valor (R$)</label>
+                <input className="field" type="number" min="0" step="0.01" value={custoExtra}
+                  onChange={e => setCustoExtra(e.target.value)} placeholder="0,00" />
+              </div>
+            </div>
+          </div>
+
+          {/* Preview */}
+          {total > 0 && (
+            <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-1.5">
+              <p className="text-xs font-semibold text-violet-700 mb-2">Resumo do custo</p>
+              {custoBase > 0 && <div className="flex justify-between text-xs text-[#374151]"><span>Dias úteis ({diasUteis}d)</span><span>{moeda(custoBase)}</span></div>}
+              {n(diasSabado) > 0 && <div className="flex justify-between text-xs text-[#374151]"><span>Sábados ({diasSabado}d × +{pctLabel('adicional_sabado')})</span><span>{moeda(custoSab)}</span></div>}
+              {n(diasDomingo) > 0 && <div className="flex justify-between text-xs text-[#374151]"><span>Dom/Feriados ({diasDomingo}d × +{pctLabel('adicional_domingo_feriado')})</span><span>{moeda(custoDom)}</span></div>}
+              {n(horasNoturnas) > 0 && <div className="flex justify-between text-xs text-[#374151]"><span>Ad. noturno ({horasNoturnas}h × {pctLabel('adicional_noturno')})</span><span>{moeda(custoNot)}</span></div>}
+              {custoExtraV > 0 && <div className="flex justify-between text-xs text-[#374151]"><span>{custoExtraDesc || 'Custo extra'}</span><span>{moeda(custoExtraV)}</span></div>}
+              <div className="flex justify-between text-sm font-bold text-violet-700 pt-1.5 border-t border-violet-200">
+                <span>Total</span><span>{moeda(total)}</span>
+              </div>
             </div>
           )}
 
+          {/* Datas */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Data início</label>
@@ -3492,12 +3600,12 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
               onChange={e => setObservacoes(e.target.value)} placeholder="Ex: Instalação de dutos, 3º andar..." />
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose}
               className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
               Cancelar
             </button>
-            <button onClick={salvar} disabled={saving || !funcionarioId || !dias || !custoDia}
+            <button onClick={salvar} disabled={saving || !funcionarioId}
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
               {saving ? 'Salvando...' : 'Salvar'}
