@@ -14,7 +14,13 @@ interface ObraAditivo {
 }
 
 interface NotaMaterial {
-  id: string; obra_id: string; valor: number; data_emissao: string; descricao?: string | null; created_at: string
+  id: string; obra_id: string; valor: number; data_emissao: string; descricao?: string | null
+  numero_nf?: string | null; material_id?: string | null; created_at: string
+}
+
+interface OcInterna {
+  id: string; descricao: string; numero_oc?: string | null; fornecedor?: string | null
+  valor_venda_total?: number | null; status: string
 }
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
@@ -590,7 +596,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                 </div>
               </div>
               <button onClick={() => setShowModalNota(true)} className="btn-secondary text-xs px-3 py-1.5 shrink-0">
-                <Receipt size={13} /> Registrar NF
+                <Plus size={13} /> Nova Medição
               </button>
             </div>
 
@@ -766,6 +772,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
       {showModalNota && (
         <ModalNotaMaterial
           obraId={obraId}
+          totalOcMateriais={totalOcMateriais}
           onClose={() => setShowModalNota(false)}
           onSaved={() => { setShowModalNota(false); load() }}
         />
@@ -774,48 +781,130 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   )
 }
 
-function ModalNotaMaterial({ obraId, onClose, onSaved }: { obraId: string; onClose: () => void; onSaved: () => void }) {
+function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
+  obraId: string; totalOcMateriais: number; onClose: () => void; onSaved: () => void
+}) {
+  const [ocs, setOcs] = useState<OcInterna[]>([])
+  const [loadingOcs, setLoadingOcs] = useState(true)
+  const [ocSelecionada, setOcSelecionada] = useState<OcInterna | null>(null)
   const [valor, setValor] = useState('')
   const [dataEmissao, setDataEmissao] = useState(new Date().toISOString().slice(0, 10))
-  const [descricao, setDescricao] = useState('')
+  const [numeroNf, setNumeroNf] = useState('')
   const [saving, setSaving] = useState(false)
+  const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    createClient()
+      .from('obra_materiais')
+      .select('id, descricao, numero_oc, fornecedor, valor_venda_total, status')
+      .eq('obra_id', obraId)
+      .eq('tipo_compra', 'interna')
+      .order('descricao')
+      .then(({ data }) => { setOcs((data ?? []) as OcInterna[]); setLoadingOcs(false) })
+  }, [obraId])
+
+  function selecionarOc(oc: OcInterna) {
+    setOcSelecionada(oc)
+    setValor(String(oc.valor_venda_total ?? ''))
+  }
+
+  const valorNum = parseFloat(String(valor).replace(',', '.')) || 0
+  const percentualAuto = totalOcMateriais > 0 ? (valorNum / totalOcMateriais) * 100 : 0
 
   async function save() {
-    const v = parseFloat(valor.replace(',', '.'))
-    if (!v || v <= 0) return
-    setSaving(true)
-    const sb = createClient()
-    await sb.from('obra_notas_material').insert({ obra_id: obraId, valor: v, data_emissao: dataEmissao, descricao: descricao || null })
+    if (valorNum <= 0) { setErro('Informe um valor válido.'); return }
+    setSaving(true); setErro('')
+    const descricao = ocSelecionada
+      ? `${ocSelecionada.descricao}${ocSelecionada.numero_oc ? ` · OC ${ocSelecionada.numero_oc}` : ''}${ocSelecionada.fornecedor ? ` · ${ocSelecionada.fornecedor}` : ''}`
+      : null
+    const { error } = await createClient().from('obra_notas_material').insert({
+      obra_id: obraId,
+      valor: valorNum,
+      data_emissao: dataEmissao,
+      descricao,
+      numero_nf: numeroNf || null,
+      material_id: ocSelecionada?.id ?? null,
+    })
     setSaving(false)
+    if (error) { setErro(error.message); return }
     onSaved()
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="font-syne font-semibold text-[#0F172A]">Registrar NF de Material</h2>
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A]">Nova Medição de Material</h2>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Selecione o item da OC ou informe o valor manualmente</p>
+          </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-[#F1F5F9] text-[#64748B]"><X size={16} /></button>
         </div>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Valor da NF (R$)</label>
-            <input type="text" inputMode="decimal" value={valor} onChange={e => setValor(e.target.value)} placeholder="0,00" className="input-field w-full" />
+
+        {/* Seleção de OC */}
+        <div className="mb-4">
+          <p className="text-xs font-medium text-[#374151] mb-2">Itens de compra interna</p>
+          {loadingOcs ? (
+            <div className="flex items-center justify-center py-6"><Loader2 size={18} className="animate-spin text-[#94A3B8]" /></div>
+          ) : ocs.length === 0 ? (
+            <p className="text-xs text-[#94A3B8] py-3 text-center">Nenhum material de compra interna cadastrado</p>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {ocs.map(oc => (
+                <button key={oc.id} onClick={() => selecionarOc(oc === ocSelecionada ? (setOcSelecionada(null), null as any) : oc)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
+                    ocSelecionada?.id === oc.id
+                      ? 'border-[#3B82F6] bg-blue-50'
+                      : 'border-[#E2E8F0] hover:border-[#CBD5E1] bg-[#F8FAFC]'
+                  }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-[#374151] truncate">{oc.descricao}</p>
+                      <p className="text-xs text-[#94A3B8] mt-0.5">
+                        {oc.numero_oc && <span>OC {oc.numero_oc} · </span>}
+                        {oc.fornecedor && <span>{oc.fornecedor} · </span>}
+                        <span className="capitalize">{oc.status}</span>
+                      </p>
+                    </div>
+                    <span className="text-xs font-semibold text-[#374151] shrink-0">
+                      {moeda(oc.valor_venda_total ?? 0)}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-[#F1F5F9] pt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Valor da medição (R$)</label>
+              <input type="text" inputMode="decimal" value={valor} onChange={e => setValor(e.target.value)}
+                placeholder="0,00" className="input-field w-full" />
+              {valorNum > 0 && totalOcMateriais > 0 && (
+                <p className="text-xs text-[#64748B] mt-1">{pct(percentualAuto)} do total de OC</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Data de emissão</label>
+              <input type="date" value={dataEmissao} onChange={e => setDataEmissao(e.target.value)} className="input-field w-full" />
+            </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Data de emissão</label>
-            <input type="date" value={dataEmissao} onChange={e => setDataEmissao(e.target.value)} className="input-field w-full" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Descrição (opcional)</label>
-            <input type="text" value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Ex: NF de material elétrico" className="input-field w-full" />
+            <label className="block text-xs font-medium text-[#374151] mb-1.5">Número da NF (opcional)</label>
+            <input type="text" value={numeroNf} onChange={e => setNumeroNf(e.target.value)}
+              placeholder="Ex: 001234" className="input-field w-full" />
           </div>
         </div>
-        <div className="flex gap-3 mt-6">
+
+        {erro && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{erro}</p>}
+
+        <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
-          <button onClick={save} disabled={saving || !valor} className="btn-primary flex-1 disabled:opacity-50">
+          <button onClick={save} disabled={saving || valorNum <= 0} className="btn-primary flex-1 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Salvar
+            Registrar
           </button>
         </div>
       </div>
