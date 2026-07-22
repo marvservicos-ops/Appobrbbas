@@ -923,7 +923,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, onClose, onSaved }: {
       data_emissao: dataEmissao,
       descricao,
       numero_nf: numeroNf || null,
-      material_id: selecionados.size === 1 ? [...selecionados][0] : null,
+      material_id: selecionados.size === 1 ? Array.from(selecionados)[0] : null,
     })
     setSaving(false)
     if (error) { setErro(error.message); return }
