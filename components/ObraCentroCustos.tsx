@@ -72,6 +72,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   const [materiais, setMateriais] = useState<MaterialObra[]>([])
   const [equipe, setEquipe] = useState<AlocacaoFuncionario[]>([])
   const [valorContrato, setValorContrato] = useState<number>(0)
+  const [aliquotaSimples, setAliquotaSimples] = useState<number>(0)
   const [loading, setLoading] = useState(true)
 
   const [devolvendoRegistro, setDevolvendoRegistro] = useState<RegistroEstoque | null>(null)
@@ -84,11 +85,12 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [regRes, matRes, eqRes, finRes] = await Promise.all([
+      const [regRes, matRes, eqRes, finRes, tribRes] = await Promise.all([
         supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false }),
         supabase.from('obra_materiais').select('*').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
         supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(nome, cargo)').eq('obra_id', obraId),
         supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
+        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'aliquota_simples').maybeSingle(),
       ])
 
       if (regRes.data) {
@@ -99,6 +101,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
       if (matRes.data) setMateriais(matRes.data as MaterialObra[])
       if (eqRes.data) setEquipe(eqRes.data as AlocacaoFuncionario[])
       if (finRes.data) setValorContrato(Number(finRes.data.valor_contrato) || 0)
+      if (tribRes.data) setAliquotaSimples(Number((tribRes.data.valor as any)?.percentual) || 0)
       setLoading(false)
     }
     load()
@@ -135,10 +138,12 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
   const custoMaoDeObra = equipe.reduce((s, e) => s + (e.custo_total ?? 0), 0)
 
-  const custoTotal = custoEstoque + custoMateriaisReal + custoMaoDeObra
-  // DRE: receita = valor do contrato; materiais OC é informação de markup, não receita adicional
+  const impostoSimples = valorContrato * (aliquotaSimples / 100)
+  const receitaLiquida = valorContrato - impostoSimples
+  const custoOperacional = custoEstoque + custoMateriaisReal + custoMaoDeObra
+  const custoTotal = impostoSimples + custoOperacional
   const margemMat = vendaMateriais - custoMateriaisReal
-  const resultado = valorContrato - custoTotal
+  const resultado = receitaLiquida - custoOperacional
   const margem = valorContrato > 0 ? (resultado / valorContrato) * 100 : 0
 
   if (loading) return (
@@ -157,10 +162,10 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
           <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(valorContrato)}</p>
           {valorContrato === 0 && <p className="text-xs text-amber-500 mt-0.5">Defina em Medições</p>}
         </div>
-        <div className="card p-4 border-l-4 border-l-red-400">
-          <p className="text-xs text-[#64748B] font-medium mb-1">Custo Total</p>
-          <p className="font-syne font-bold text-lg text-red-600">{moeda(custoTotal)}</p>
-          <p className="text-xs text-[#94A3B8] mt-0.5">Est + Mat + MO</p>
+        <div className="card p-4 border-l-4 border-l-amber-400">
+          <p className="text-xs text-[#64748B] font-medium mb-1">Impostos (Simples)</p>
+          <p className="font-syne font-bold text-lg text-amber-700">{moeda(impostoSimples)}</p>
+          <p className="text-xs text-[#94A3B8] mt-0.5">{aliquotaSimples > 0 ? `${aliquotaSimples}% s/ receita` : 'Configure em Configurações'}</p>
         </div>
         <div className="card p-4 border-l-4 border-l-violet-400">
           <p className="text-xs text-[#64748B] font-medium mb-1">Resultado Bruto</p>
@@ -403,9 +408,26 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
             <span className="text-xs text-[#64748B]">{moeda(valorContrato)}</span>
           </div>
 
+          {/* Impostos */}
           <div className="flex justify-between items-center px-4 py-3 border-b border-[#F1F5F9]">
-            <span className="text-sm font-semibold text-[#0F172A]">Custos</span>
-            <span className="text-sm font-bold text-red-600">({moeda(custoTotal)})</span>
+            <span className="text-sm font-semibold text-[#0F172A]">Impostos</span>
+            <span className="text-sm font-bold text-amber-700">({moeda(impostoSimples)})</span>
+          </div>
+          <div className="flex justify-between items-center px-4 py-2 border-b border-[#F1F5F9] bg-[#F8FAFC]">
+            <span className="text-xs text-[#64748B] pl-3">Simples Nacional ({aliquotaSimples}% s/ receita)</span>
+            <span className="text-xs text-amber-600">({moeda(impostoSimples)})</span>
+          </div>
+
+          {/* Receita Líquida */}
+          <div className="flex justify-between items-center px-4 py-2.5 border-b border-[#E2E8F0] bg-[#F0F4FF]">
+            <span className="text-xs font-semibold text-[#4F7CFF]">Receita Líquida (após impostos)</span>
+            <span className="text-xs font-bold text-[#4F7CFF]">{moeda(receitaLiquida)}</span>
+          </div>
+
+          {/* Custos Operacionais */}
+          <div className="flex justify-between items-center px-4 py-3 border-b border-[#F1F5F9]">
+            <span className="text-sm font-semibold text-[#0F172A]">Custos Operacionais</span>
+            <span className="text-sm font-bold text-red-600">({moeda(custoOperacional)})</span>
           </div>
           <div className="flex justify-between items-center px-4 py-2 border-b border-[#F1F5F9] bg-[#F8FAFC]">
             <span className="text-xs text-[#64748B] pl-3">Consumo de Estoque</span>
@@ -448,6 +470,11 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         {valorContrato === 0 && (
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             Defina o valor do contrato na aba <strong>Medições</strong> para calcular o resultado.
+          </p>
+        )}
+        {aliquotaSimples === 0 && valorContrato > 0 && (
+          <p className="text-xs text-[#94A3B8] bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2">
+            Alíquota do Simples não configurada — acesse <strong>Configurações → Tributação</strong> para ativar o cálculo de imposto.
           </p>
         )}
       </div>

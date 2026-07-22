@@ -1,13 +1,88 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock } from 'lucide-react'
+import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface RegraExtra {
   chave: string
   descricao: string
   valor: { percentual: number }
+}
+
+function SecaoTributacao() {
+  const [aliquota, setAliquota] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    createClient().from('configuracoes_empresa').select('valor').eq('chave', 'aliquota_simples').maybeSingle()
+      .then(({ data }) => { if (data) setAliquota(String((data.valor as any).percentual ?? '') ) })
+  }, [])
+
+  async function salvar() {
+    const pct = parseFloat(aliquota)
+    if (isNaN(pct) || pct < 0 || pct > 100) return
+    setSalvando(true)
+    await createClient().from('configuracoes_empresa').upsert({
+      chave: 'aliquota_simples',
+      descricao: 'Simples Nacional — alíquota efetiva',
+      valor: { percentual: pct },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'chave' })
+    setSalvando(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const receitaEx = 100000
+  const impostoEx = aliquota ? receitaEx * (parseFloat(aliquota) / 100) : 0
+
+  return (
+    <section className="card">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+          <Percent size={18} className="text-amber-600" />
+        </div>
+        <div>
+          <h2 className="font-syne font-semibold text-[#0F172A]">Tributação — Simples Nacional</h2>
+          <p className="text-xs text-[#94A3B8]">Alíquota efetiva aplicada sobre a receita bruta de cada obra</p>
+        </div>
+      </div>
+
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Alíquota efetiva (%)</label>
+          <div className="flex items-center gap-1 bg-white border border-[#E2E8F0] rounded-xl px-3 py-2.5 focus-within:border-[#4F7CFF]">
+            <input
+              type="number" min="0" max="100" step="0.01"
+              className="flex-1 text-sm font-semibold text-[#0F172A] bg-transparent outline-none"
+              value={aliquota}
+              onChange={e => setAliquota(e.target.value)}
+              placeholder="0,00"
+            />
+            <span className="text-sm text-[#64748B]">%</span>
+          </div>
+          <p className="text-xs text-[#94A3B8] mt-1">
+            Encontre sua alíquota efetiva no PGDAS-D ou no carnê do Simples.
+          </p>
+        </div>
+        <button onClick={salvar} disabled={salvando}
+          className="btn-primary flex items-center gap-2 px-4 py-2.5 shrink-0">
+          {salvando ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
+          {salvando ? 'Salvando...' : saved ? 'Salvo!' : 'Salvar'}
+        </button>
+      </div>
+
+      {aliquota && !isNaN(parseFloat(aliquota)) && parseFloat(aliquota) > 0 && (
+        <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-[#374151]">
+          <p className="font-medium text-amber-700 mb-1">Exemplo de cálculo:</p>
+          <p>Obra de <strong>R$ 100.000,00</strong> → Imposto = <strong>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(impostoEx)}</strong> ({aliquota}%)</p>
+          <p className="text-[#94A3B8] mt-1">O imposto aparece deduzido automaticamente no Centro de Custos de cada obra.</p>
+        </div>
+      )}
+    </section>
+  )
 }
 
 function SecaoExtras() {
@@ -239,6 +314,9 @@ export default function ConfiguracoesPage() {
             <p className="text-xs text-[#94A3B8]">Esses dados aparecem nos relatórios exportados.</p>
           </div>
         </section>
+
+        {/* Tributação */}
+        <SecaoTributacao />
 
         {/* Adicionais Mão de Obra */}
         <SecaoExtras />
