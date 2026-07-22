@@ -71,6 +71,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   const [devolucoes, setDevolucoes] = useState<RegistroEstoque[]>([])
   const [materiais, setMateriais] = useState<MaterialObra[]>([])
   const [equipe, setEquipe] = useState<AlocacaoFuncionario[]>([])
+  const [valorContrato, setValorContrato] = useState<number>(0)
   const [loading, setLoading] = useState(true)
 
   const [devolvendoRegistro, setDevolvendoRegistro] = useState<RegistroEstoque | null>(null)
@@ -83,10 +84,11 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [regRes, matRes, eqRes] = await Promise.all([
+      const [regRes, matRes, eqRes, finRes] = await Promise.all([
         supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false }),
         supabase.from('obra_materiais').select('*').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
         supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(nome, cargo)').eq('obra_id', obraId),
+        supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
       ])
 
       if (regRes.data) {
@@ -96,6 +98,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
       }
       if (matRes.data) setMateriais(matRes.data as MaterialObra[])
       if (eqRes.data) setEquipe(eqRes.data as AlocacaoFuncionario[])
+      if (finRes.data) setValorContrato(Number(finRes.data.valor_contrato) || 0)
       setLoading(false)
     }
     load()
@@ -129,13 +132,14 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   }, 0)
   const custoMateriaisReal = materiais.reduce((s, m) => s + (m.valor_total ?? 0), 0) + extrasGrupos
   const vendaMateriais = materiais.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
-  const margemMateriais = vendaMateriais - custoMateriaisReal
 
   const custoMaoDeObra = equipe.reduce((s, e) => s + (e.custo_total ?? 0), 0)
 
   const custoTotal = custoEstoque + custoMateriaisReal + custoMaoDeObra
-  const receitaMateriais = vendaMateriais
-  const resultado = receitaMateriais - custoTotal
+  // DRE: receita = valor do contrato; materiais OC é informação de markup, não receita adicional
+  const margemMat = vendaMateriais - custoMateriaisReal
+  const resultado = valorContrato - custoTotal
+  const margem = valorContrato > 0 ? (resultado / valorContrato) * 100 : 0
 
   if (loading) return (
     <div className="flex items-center justify-center h-48">
@@ -148,21 +152,25 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
       {/* ── Cards resumo ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="card p-4 border-l-4 border-l-red-400">
-          <p className="text-xs text-[#64748B] font-medium mb-1">Custo Estoque</p>
-          <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(custoEstoque)}</p>
+        <div className="card p-4 border-l-4 border-l-blue-500">
+          <p className="text-xs text-[#64748B] font-medium mb-1">Contrato</p>
+          <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(valorContrato)}</p>
+          {valorContrato === 0 && <p className="text-xs text-amber-500 mt-0.5">Defina em Medições</p>}
         </div>
-        <div className="card p-4 border-l-4 border-l-blue-400">
-          <p className="text-xs text-[#64748B] font-medium mb-1">Custo Materiais</p>
-          <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(custoMateriaisReal)}</p>
+        <div className="card p-4 border-l-4 border-l-red-400">
+          <p className="text-xs text-[#64748B] font-medium mb-1">Custo Total</p>
+          <p className="font-syne font-bold text-lg text-red-600">{moeda(custoTotal)}</p>
+          <p className="text-xs text-[#94A3B8] mt-0.5">Est + Mat + MO</p>
         </div>
         <div className="card p-4 border-l-4 border-l-violet-400">
-          <p className="text-xs text-[#64748B] font-medium mb-1">Mão de Obra</p>
-          <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(custoMaoDeObra)}</p>
+          <p className="text-xs text-[#64748B] font-medium mb-1">Resultado Bruto</p>
+          <p className={`font-syne font-bold text-lg ${resultado >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{moeda(resultado)}</p>
+          {valorContrato > 0 && <p className="text-xs text-[#94A3B8] mt-0.5">Margem: {margem.toFixed(1)}%</p>}
         </div>
         <div className="card p-4 border-l-4 border-l-emerald-400">
-          <p className="text-xs text-[#64748B] font-medium mb-1">Venda Materiais</p>
-          <p className="font-syne font-bold text-lg text-emerald-700">{moeda(vendaMateriais)}</p>
+          <p className="text-xs text-[#64748B] font-medium mb-1">Markup Materiais</p>
+          <p className={`font-syne font-bold text-lg ${margemMat >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{moeda(margemMat)}</p>
+          <p className="text-xs text-[#94A3B8] mt-0.5">Venda {moeda(vendaMateriais)}</p>
         </div>
       </div>
 
@@ -328,7 +336,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                   <td colSpan={3} className="px-4 py-2.5 text-sm font-bold text-[#374151]">Total materiais</td>
                   <td className="px-4 py-2.5 text-sm font-bold text-blue-700">{moeda(custoMateriaisReal)}</td>
                   <td className="px-4 py-2.5 text-sm font-bold text-emerald-700">{moeda(vendaMateriais)}</td>
-                  <td className={`px-4 py-2.5 text-sm font-bold ${margemMateriais >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(margemMateriais)}</td>
+                  <td className={`px-4 py-2.5 text-sm font-bold ${margemMat >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(margemMat)}</td>
                   <td />
                 </tr>
               </tfoot>
@@ -378,32 +386,70 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         )}
       </Section>
 
-      {/* ── Resultado Final ── */}
-      <div className="card p-5 bg-[#F8FAFF] border-[#C7D2FE] space-y-3">
+      {/* ── Resultado Final (DRE) ── */}
+      <div className="card p-5 bg-[#F8FAFF] border-[#C7D2FE] space-y-4">
         <h3 className="font-syne font-bold text-[#0F172A] flex items-center gap-2">
-          <Scale size={16} className="text-[#4F7CFF]" /> Resultado da Obra
+          <Scale size={16} className="text-[#4F7CFF]" /> Resultado da Obra — DRE
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="bg-white rounded-xl p-3 border border-[#E2E8F0]">
-            <p className="text-xs text-[#64748B] mb-1">Custo Total</p>
-            <p className="font-syne font-bold text-lg text-red-600">{moeda(custoTotal)}</p>
-            <div className="text-xs text-[#94A3B8] mt-1 space-y-0.5">
-              <p>Estoque: {moeda(custoEstoque)}</p>
-              <p>Materiais: {moeda(custoMateriaisReal)}</p>
-              <p>Mão de obra: {moeda(custoMaoDeObra)}</p>
+
+        {/* Linha do DRE */}
+        <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
+          <div className="flex justify-between items-center px-4 py-3 border-b border-[#F1F5F9]">
+            <span className="text-sm font-semibold text-[#0F172A]">Receita</span>
+            <span className="text-sm font-bold text-[#0F172A]">{moeda(valorContrato)}</span>
+          </div>
+          <div className="flex justify-between items-center px-4 py-2.5 border-b border-[#F1F5F9] bg-[#F8FAFC]">
+            <span className="text-xs text-[#64748B] pl-3">Contrato + Aditivos</span>
+            <span className="text-xs text-[#64748B]">{moeda(valorContrato)}</span>
+          </div>
+
+          <div className="flex justify-between items-center px-4 py-3 border-b border-[#F1F5F9]">
+            <span className="text-sm font-semibold text-[#0F172A]">Custos</span>
+            <span className="text-sm font-bold text-red-600">({moeda(custoTotal)})</span>
+          </div>
+          <div className="flex justify-between items-center px-4 py-2 border-b border-[#F1F5F9] bg-[#F8FAFC]">
+            <span className="text-xs text-[#64748B] pl-3">Consumo de Estoque</span>
+            <span className="text-xs text-red-500">({moeda(custoEstoque)})</span>
+          </div>
+          <div className="flex justify-between items-center px-4 py-2 border-b border-[#F1F5F9] bg-[#F8FAFC]">
+            <span className="text-xs text-[#64748B] pl-3">Materiais da Obra</span>
+            <span className="text-xs text-red-500">({moeda(custoMateriaisReal)})</span>
+          </div>
+          <div className="flex justify-between items-center px-4 py-2 border-b border-[#F1F5F9] bg-[#F8FAFC]">
+            <span className="text-xs text-[#64748B] pl-3">Mão de Obra</span>
+            <span className="text-xs text-red-500">({moeda(custoMaoDeObra)})</span>
+          </div>
+
+          <div className={`flex justify-between items-center px-4 py-3.5 ${resultado >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+            <div>
+              <span className="text-sm font-bold text-[#0F172A]">Resultado Bruto</span>
+              {valorContrato > 0 && (
+                <span className={`text-xs ml-2 font-semibold ${resultado >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  ({margem.toFixed(1)}%)
+                </span>
+              )}
             </div>
-          </div>
-          <div className="bg-white rounded-xl p-3 border border-[#E2E8F0]">
-            <p className="text-xs text-[#64748B] mb-1">Receita Materiais</p>
-            <p className="font-syne font-bold text-lg text-emerald-600">{moeda(receitaMateriais)}</p>
-            <p className="text-xs text-[#94A3B8] mt-1">Valor de venda (OC)</p>
-          </div>
-          <div className={`rounded-xl p-3 border ${resultado >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-            <p className="text-xs text-[#64748B] mb-1">Resultado Bruto</p>
-            <p className={`font-syne font-bold text-lg ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{moeda(resultado)}</p>
-            <p className="text-xs text-[#94A3B8] mt-1">Receita − Custo total</p>
+            <span className={`font-syne font-bold text-lg ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{moeda(resultado)}</span>
           </div>
         </div>
+
+        {/* Info: markup materiais */}
+        {vendaMateriais > 0 && (
+          <div className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl px-4 py-3">
+            <p className="text-xs font-semibold text-emerald-700 mb-1.5">Markup de Materiais (embutido no contrato)</p>
+            <div className="grid grid-cols-3 gap-3 text-xs text-[#374151]">
+              <div><p className="text-[#94A3B8]">Custo fornecedor</p><p className="font-semibold">{moeda(custoMateriaisReal)}</p></div>
+              <div><p className="text-[#94A3B8]">Valor na OC</p><p className="font-semibold text-emerald-700">{moeda(vendaMateriais)}</p></div>
+              <div><p className="text-[#94A3B8]">Markup</p><p className={`font-semibold ${margemMat >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{moeda(margemMat)}</p></div>
+            </div>
+          </div>
+        )}
+
+        {valorContrato === 0 && (
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Defina o valor do contrato na aba <strong>Medições</strong> para calcular o resultado.
+          </p>
+        )}
       </div>
 
       {/* Modals */}
