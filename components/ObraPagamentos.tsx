@@ -825,6 +825,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
 }
 
 // ── Modal Emitir NF ──────────────────────────────────────────────────────────
+interface ItemMaterial { id: string; descricao: string; quantidade?: number | null; unidade?: string | null; valor_venda_total?: number | null }
+
 function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
   medicao: ObraMedicao
   obra: Obra | null
@@ -833,9 +835,29 @@ function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
   onClose: () => void
 }) {
   const [copied, setCopied] = useState(false)
+  const [itensMaterial, setItensMaterial] = useState<ItemMaterial[]>([])
+  const isMaterial = medicao.observacoes === 'medicao_material'
+
+  useEffect(() => {
+    if (!isMaterial) return
+    createClient()
+      .from('obra_notas_material')
+      .select('itens_ids, medicao_id')
+      .eq('medicao_id', medicao.id)
+      .maybeSingle()
+      .then(async ({ data: nota }) => {
+        const ids: string[] = nota?.itens_ids ?? (nota?.medicao_id ? [] : [])
+        if (ids.length === 0) return
+        const { data: itens } = await createClient()
+          .from('obra_materiais')
+          .select('id, descricao, quantidade, unidade, valor_venda_total')
+          .in('id', ids)
+        if (itens) setItensMaterial(itens as ItemMaterial[])
+      })
+  }, [medicao.id, isMaterial])
 
   function copyAll() {
-    const lines = [
+    const linhas: string[] = [
       '=== DADOS PARA EMISSÃO DE NFS ===',
       '',
       '--- PRESTADOR ---',
@@ -859,7 +881,13 @@ function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
       `Data de emissão: ${dataBR(medicao.data_emissao)}`,
       `Número NF: ${medicao.numero_nf || '(a preencher)'}`,
     ]
-    navigator.clipboard.writeText(lines.join('\n'))
+    if (itensMaterial.length > 0) {
+      linhas.push('', '--- MATERIAIS ---')
+      itensMaterial.forEach(item => {
+        linhas.push(`${item.descricao} · ${item.quantidade ?? 1} ${item.unidade ?? 'UN'} · ${moeda(item.valor_venda_total ?? 0)}`)
+      })
+    }
+    navigator.clipboard.writeText(linhas.join('\n'))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -943,6 +971,29 @@ function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
             <Row label="Vencimento" value={dataBR(medicao.data_vencimento)} />
             <Row label="Número da NF" value={medicao.numero_nf} />
           </Section>
+
+          {isMaterial && itensMaterial.length > 0 && (
+            <div className="rounded-xl border border-[#E2E8F0] overflow-hidden mb-3">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                <PackageCheck size={13} className="text-[#94A3B8]" />
+                <span className="text-xs font-semibold text-[#374151] uppercase tracking-wider">Materiais</span>
+                <span className="ml-auto text-xs text-[#94A3B8]">{itensMaterial.length} ite{itensMaterial.length > 1 ? 'ns' : 'm'}</span>
+              </div>
+              <div className="divide-y divide-[#F1F5F9]">
+                {itensMaterial.map(item => (
+                  <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <p className="text-xs text-[#374151] flex-1 min-w-0">{item.descricao}</p>
+                    <span className="text-xs text-[#64748B] shrink-0">{item.quantidade ?? 1} {item.unidade ?? 'UN'}</span>
+                    <span className="text-xs font-medium text-[#0F172A] shrink-0 w-24 text-right">{moeda(item.valor_venda_total ?? 0)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-[#F8FAFC]">
+                  <span className="text-xs font-semibold text-[#374151]">Total</span>
+                  <span className="text-xs font-bold text-[#0F172A]">{moeda(itensMaterial.reduce((s, i) => s + (i.valor_venda_total ?? 0), 0))}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="px-6 pb-6 pt-3 border-t border-[#F1F5F9] shrink-0 flex gap-3">
@@ -1083,7 +1134,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
     const sb = createClient()
 
     // Cria medição faturada — ela entra no cálculo financeiro e aparece na lista de etapas
-    const { error: errMedicao } = await sb.from('obra_medicoes').insert({
+    const { data: medicaoData, error: errMedicao } = await sb.from('obra_medicoes').insert({
       obra_id: obraId,
       ordem: proximaOrdem,
       nome: nomeMedicao,
@@ -1094,10 +1145,10 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
       data_emissao: dataEmissao,
       numero_nf: numeroNf || null,
       observacoes: 'medicao_material',
-    })
+    }).select('id').single()
     if (errMedicao) { setErro(errMedicao.message); setSaving(false); return }
 
-    // Registra também na tabela de controle de NF de material
+    // Registra na tabela de controle com referência aos itens selecionados
     await sb.from('obra_notas_material').insert({
       obra_id: obraId,
       valor,
@@ -1105,6 +1156,8 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
       descricao,
       numero_nf: numeroNf || null,
       material_id: selecionados.size === 1 ? Array.from(selecionados)[0] : null,
+      itens_ids: Array.from(selecionados),
+      medicao_id: medicaoData?.id ?? null,
     })
 
     setSaving(false)
