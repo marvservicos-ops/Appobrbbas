@@ -44,36 +44,40 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   const [nome, setNome] = useState(funcionario?.nome ?? '')
   const [cargo, setCargo] = useState(funcionario?.cargo ?? '')
   const [salarioBruto, setSalarioBruto] = useState(funcionario?.salario_bruto ? String(funcionario.salario_bruto) : '')
-  const [horasDia, setHorasDia] = useState(funcionario?.horas_dia ? String(funcionario.horas_dia) : '8')
-  const [diasMes, setDiasMes] = useState(funcionario?.dias_mes ? String(funcionario.dias_mes) : '22')
+  // CLT: mês comercial 30 dias, 220 horas/mês para 44h semanais
+  const [diasMes, setDiasMes] = useState(funcionario?.dias_mes ? String(funcionario.dias_mes) : '30')
+  const [horasMes, setHorasMes] = useState(funcionario?.horas_dia ? String(funcionario.horas_dia) : '220')
   const [ativo, setAtivo] = useState(funcionario?.ativo ?? true)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   const salNum = parseFloat(salarioBruto) || 0
-  const diasNum = parseFloat(diasMes) || 22
-  const horasNum = parseFloat(horasDia) || 8
+  const diasNum = parseFloat(diasMes) || 30
+  const horasNum = parseFloat(horasMes) || 220
+  // Custo/dia = salário ÷ 30 (mês comercial CLT)
   const custoDia = diasNum > 0 ? salNum / diasNum : 0
-  const custoHora = diasNum > 0 && horasNum > 0 ? salNum / (diasNum * horasNum) : 0
+  // Custo/hora = salário ÷ 220 (horas mensais CLT 44h/sem)
+  const custoHora = horasNum > 0 ? salNum / horasNum : 0
 
   async function salvar() {
     if (!nome.trim()) return
     setSaving(true)
+    setError('')
     const supabase = createClient()
     const payload = {
       nome: nome.trim(),
       cargo: cargo.trim() || null,
       salario_bruto: parseFloat(salarioBruto) || null,
-      horas_dia: parseFloat(horasDia) || 8,
-      dias_mes: parseInt(diasMes) || 22,
+      horas_dia: horasNum,   // armazenamos total horas/mês neste campo
+      dias_mes: diasNum,
       custo_diario: custoDia || null,
       ativo,
     }
-    if (funcionario) {
-      await supabase.from('funcionarios').update(payload).eq('id', funcionario.id)
-    } else {
-      await supabase.from('funcionarios').insert(payload)
-    }
+    const { error: err } = funcionario
+      ? await supabase.from('funcionarios').update(payload).eq('id', funcionario.id)
+      : await supabase.from('funcionarios').insert(payload)
     setSaving(false)
+    if (err) { setError(err.message); return }
     onSaved()
   }
 
@@ -105,14 +109,14 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias úteis/mês</label>
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias/mês <span className="text-[#94A3B8] font-normal">(CLT = 30)</span></label>
                   <input className="field" type="number" min="1" max="31" step="1" value={diasMes}
                     onChange={e => setDiasMes(e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Horas/dia</label>
-                  <input className="field" type="number" min="1" max="24" step="0.5" value={horasDia}
-                    onChange={e => setHorasDia(e.target.value)} />
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Horas/mês <span className="text-[#94A3B8] font-normal">(CLT 44h = 220)</span></label>
+                  <input className="field" type="number" min="1" max="400" step="1" value={horasMes}
+                    onChange={e => setHorasMes(e.target.value)} />
                 </div>
               </div>
             </div>
@@ -126,12 +130,12 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
                 <div>
                   <p className="text-xs text-[#64748B]">Por dia</p>
                   <p className="font-syne font-bold text-[#0F172A]">{moeda(custoDia)}</p>
-                  <p className="text-xs text-[#94A3B8]">({moeda(salNum)} ÷ {diasNum}d)</p>
+                  <p className="text-xs text-[#94A3B8]">{moeda(salNum)} ÷ {diasNum} dias</p>
                 </div>
                 <div>
                   <p className="text-xs text-[#64748B]">Por hora</p>
                   <p className="font-syne font-bold text-[#0F172A]">{moeda(custoHora)}</p>
-                  <p className="text-xs text-[#94A3B8]">({diasNum}d × {horasNum}h)</p>
+                  <p className="text-xs text-[#94A3B8]">{moeda(salNum)} ÷ {horasNum}h</p>
                 </div>
               </div>
 
@@ -160,6 +164,8 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
               <span className="text-sm text-[#374151]">{ativo ? 'Ativo' : 'Inativo'}</span>
             </div>
           )}
+
+          {error && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
