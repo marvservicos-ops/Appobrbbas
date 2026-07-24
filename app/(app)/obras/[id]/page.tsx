@@ -2567,7 +2567,13 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
 
           <div className="grid grid-cols-3 gap-3">
             <F label="Quantidade">
-              <input type="number" step="any" min="0" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
+              <input type="number" step="any" min="0" className="field" value={quantidade}
+                onChange={e => {
+                  const q = e.target.value
+                  setQuantidade(q)
+                  if (q && valorUnitario) setValorTotal(String((parseFloat(q) * parseFloat(valorUnitario)).toFixed(2)))
+                  if (q && precoVendaUnitario) setValorVendaTotal(String((parseFloat(q) * parseFloat(precoVendaUnitario)).toFixed(2)))
+                }} placeholder="0" />
             </F>
             <F label="Unidade">
               <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
