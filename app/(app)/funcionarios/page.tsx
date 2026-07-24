@@ -300,7 +300,7 @@ export default function FuncionariosPage() {
                 {lista.map(f => {
                   const { custoDia, custoHora } = calculos(f)
                   return (
-                    <tr key={f.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                    <tr key={f.id} onClick={() => router.push(`/funcionarios/${f.id}`)} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group cursor-pointer">
                       <td className="px-4 py-3">
                         <p className="text-sm font-medium text-[#0F172A]">{f.nome}</p>
                         <p className="text-xs text-[#94A3B8] sm:hidden">{f.cargo ?? '—'}</p>
