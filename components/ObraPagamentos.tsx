@@ -1129,9 +1129,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
       const itensSel = g.itens.filter(i => selecionados.has(i.id))
       if (itensSel.length === 0) continue
       const vendaSel = itensSel.reduce((s, i) => s + (i.valor_venda_total ?? 0), 0)
-      // Proporcional dos extras (frete, ICMS…)
-      const proporcao = g.totalVenda > 0 ? vendaSel / g.totalVenda : 0
-      total += vendaSel + g.totalExtras * proporcao
+      total += vendaSel
     }
     return total
   }, [selecionados, grupos])
@@ -1230,7 +1228,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
                       </p>
                     </div>
                   </div>
-                  <span className="font-syne font-bold text-sm text-[#0F172A] shrink-0">{moeda(g.totalVenda + g.totalExtras)}</span>
+                  <span className="font-syne font-bold text-sm text-[#0F172A] shrink-0">{moeda(g.totalVenda)}</span>
                 </button>
 
                 {/* Itens do orçamento */}
@@ -1245,13 +1243,6 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
                       <span className="text-xs font-medium text-[#374151] shrink-0">{moeda(item.valor_venda_total ?? 0)}</span>
                     </button>
                   ))}
-                  {g.totalExtras > 0 && (
-                    <div className="flex items-center gap-3 px-4 py-2 bg-[#FAFAFA]">
-                      <div className="w-4 shrink-0" />
-                      <p className="text-xs text-[#94A3B8] flex-1 italic">Custos extras (proporcionais)</p>
-                      <span className="text-xs text-[#94A3B8] shrink-0">{moeda(g.totalExtras)}</span>
-                    </div>
-                  )}
                 </div>
               </div>
             )
