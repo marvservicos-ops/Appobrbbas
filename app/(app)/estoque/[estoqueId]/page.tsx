@@ -316,7 +316,7 @@ export default function EstoqueDetalhe() {
       {/* Tab: Produtos */}
       {tab === 'produtos' && (
         <div className="space-y-4">
-          <AddProdutoInline estoqueId={estoqueId} onAdded={load} />
+          <AddProdutoInline estoqueId={estoqueId} estoqueIcone={estoque?.icone ?? ''} onAdded={load} />
 
           {/* Alerta de estoque mínimo */}
           {produtosAbaixoMinimo.length > 0 && (
@@ -444,6 +444,7 @@ export default function EstoqueDetalhe() {
       {editandoProduto && (
         <ModalEditarProduto
           produto={editandoProduto}
+          estoqueIcone={estoque?.icone ?? ''}
           onClose={() => setEditandoProduto(null)}
           onSaved={() => { setEditandoProduto(null); load() }}
         />
@@ -462,7 +463,7 @@ export default function EstoqueDetalhe() {
 }
 
 // ── Modal editar produto ──────────────────────────────
-function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoqueProduto; onClose: () => void; onSaved: () => void }) {
+function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produto: EstoqueProduto; estoqueIcone: string; onClose: () => void; onSaved: () => void }) {
   const [nome, setNome] = useState(produto.nome)
   const [codigo, setCodigo] = useState(produto.codigo ?? '')
   const [codigoBarras, setCodigoBarras] = useState(produto.codigo_barras ?? '')
@@ -536,7 +537,7 @@ function ModalEditarProduto({ produto, onClose, onSaved }: { produto: EstoquePro
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">Código / Nº CA</label>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">{estoqueIcone === 'shield' ? 'Código / Nº CA' : 'Informações Adicionais'}</label>
               <input className="field" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Opcional" />
             </div>
             <div>
@@ -807,7 +808,7 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
 }
 
 // ── Adicionar produto inline ──────────────────────────
-function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: () => void }) {
+function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: string; estoqueIcone: string; onAdded: () => void }) {
   const [show, setShow] = useState(false)
   const [nome, setNome] = useState('')
   const [codigo, setCodigo] = useState('')
@@ -846,8 +847,8 @@ function AddProdutoInline({ estoqueId, onAdded }: { estoqueId: string; onAdded: 
           <input autoFocus className="field text-sm" value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome do produto" />
         </div>
         <div className="w-32">
-          <label className="block text-xs font-medium text-[#64748B] mb-1">Código / Nº CA</label>
-          <input className="field text-sm" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Ex: CA-12345" />
+          <label className="block text-xs font-medium text-[#64748B] mb-1">{estoqueIcone === 'shield' ? 'Código / Nº CA' : 'Inf. Adicionais'}</label>
+          <input className="field text-sm" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder={estoqueIcone === 'shield' ? 'Ex: CA-12345' : 'Opcional'} />
         </div>
         <div className="w-24">
           <label className="block text-xs font-medium text-[#64748B] mb-1">Unidade</label>

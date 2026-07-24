@@ -51,6 +51,9 @@ export default function RegistrarPage() {
   const [scanMsg, setScanMsg] = useState('')
   const [obraId, setObraId] = useState('')
   const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
+  const [funcionarioId, setFuncionarioId] = useState('')
+  const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string }[]>([])
+  const [destinoTipo, setDestinoTipo] = useState<'obra' | 'funcionario' | 'uso_interno'>('obra')
   const [precoEntrada, setPrecoEntrada] = useState('')
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -60,16 +63,18 @@ export default function RegistrarPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: est }, { data: cam }, { data: prod }, { data: obrasData }] = await Promise.all([
+      const [{ data: est }, { data: cam }, { data: prod }, { data: obrasData }, { data: funcsData }] = await Promise.all([
         supabase.from('estoques').select('*').eq('id', estoqueId).single(),
         supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
         supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
         supabase.from('obras').select('id, titulo, status').in('status', ['Em Andamento', 'Aprovada', 'Em Orçamento']).order('titulo'),
+        supabase.from('funcionarios').select('id, nome').order('nome'),
       ])
       setEstoque(est)
       setCampos(cam ?? [])
       setProdutos(prod ?? [])
       setObras(obrasData ?? [])
+      setFuncionarios(funcsData ?? [])
       setLoading(false)
     }
     load()
@@ -142,7 +147,15 @@ export default function RegistrarPage() {
         setError(`Saldo insuficiente! Estoque atual: ${prod.quantidade_atual} ${prod.unidade}.`); return
       }
     }
-    if (tipo === 'saida' && !obraId) { setError('Selecione a obra de destino.'); return }
+    if (tipo === 'saida') {
+      const icone = estoque?.icone
+      const needsFuncionario = icone === 'shield' || icone === 'shirt'
+      const isLimpeza = icone === 'sparkles'
+      if (needsFuncionario && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
+      if (isLimpeza && destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
+      if (isLimpeza && destinoTipo === 'funcionario' && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
+      if (!needsFuncionario && !isLimpeza && !obraId) { setError('Selecione a obra de destino.'); return }
+    }
     if (tipo === 'entrada' && !precoEntrada) { setError('Informe o preço unitário desta entrada.'); return }
 
     setSaving(true); setError('')
@@ -171,7 +184,8 @@ export default function RegistrarPage() {
     const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
       estoque_id: estoqueId, produto_id: produtoId || null, produto_nome: produtoNome.trim(),
       tipo, quantidade: qtd, unidade, responsavel: responsavel.trim(), assinatura_url, data,
-      observacoes: observacoes || null, obra_id: obraId || null,
+      observacoes: observacoes || null, obra_id: obraId || null, funcionario_id: funcionarioId || null,
+      destino_tipo: tipo === 'saida' ? destinoTipo : null,
       preco_unitario_custo: preco_unitario_custo || null, valor_total: valor_total || null,
     }).select().single()
 
@@ -254,7 +268,7 @@ export default function RegistrarPage() {
       {/* ── SAÍDA ── */}
       {tipo === 'saida' && (
         <FormSaida
-          produtos={produtos} campos={campos} obras={obras}
+          produtos={produtos} campos={campos} obras={obras} funcionarios={funcionarios}
           produtoId={produtoId} setProdutoId={setProdutoId}
           produtoNome={produtoNome} setProdutoNome={setProdutoNome}
           quantidade={quantidade} setQuantidade={setQuantidade}
@@ -266,11 +280,14 @@ export default function RegistrarPage() {
           temAssinatura={temAssinatura} canvasRef={canvasRef}
           startDraw={startDraw} draw={draw} stopDraw={stopDraw} limparCanvas={limparCanvas}
           obraId={obraId} setObraId={setObraId}
+          funcionarioId={funcionarioId} setFuncionarioId={setFuncionarioId}
+          destinoTipo={destinoTipo} setDestinoTipo={setDestinoTipo}
           showScanner={showScanner} setShowScanner={setShowScanner}
           scanMsg={scanMsg} handleScanned={handleScanned}
           saving={saving} error={error}
           onSubmit={handleSubmit}
           estoqueId={estoqueId}
+          estoqueIcone={estoque?.icone ?? ''}
         />
       )}
 
@@ -367,11 +384,18 @@ export default function RegistrarPage() {
 }
 
 // ── FormSaida ─────────────────────────────────────────
-function FormSaida({ produtos, campos, obras, produtoId, setProdutoId, produtoNome, setProdutoNome,
+function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdutoId, produtoNome, setProdutoNome,
   quantidade, setQuantidade, unidade, setUnidade, responsavel, setResponsavel, data, setData,
   observacoes, setObservacoes, valoresCampos, setValoresCampos, temAssinatura, canvasRef,
-  startDraw, draw, stopDraw, limparCanvas, obraId, setObraId, showScanner, setShowScanner,
-  scanMsg, handleScanned, saving, error, onSubmit, estoqueId }: any) {
+  startDraw, draw, stopDraw, limparCanvas, obraId, setObraId, funcionarioId, setFuncionarioId,
+  destinoTipo, setDestinoTipo, showScanner, setShowScanner,
+  scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone }: any) {
+  const isEpiOuUniforme = estoqueIcone === 'shield' || estoqueIcone === 'shirt'
+  const isLimpeza = estoqueIcone === 'sparkles'
+  const isCA = (campo: any) => {
+    const n = (campo.nome as string).toLowerCase().replace(/\s/g, '')
+    return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
+  }
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div>
@@ -448,27 +472,68 @@ function FormSaida({ produtos, campos, obras, produtoId, setProdutoId, produtoNo
         )
       })()}
 
-      {campos.map((c: EstoqueCampo) => (
-        <div key={c.id}>
-          <label className="block text-sm font-medium text-[#374151] mb-1.5">{c.nome} {c.obrigatorio && <span className="text-red-400">*</span>}</label>
-          <input type={c.tipo === 'number' ? 'number' : c.tipo === 'date' ? 'date' : 'text'} className="field" required={c.obrigatorio}
-            value={valoresCampos[c.id] ?? ''} onChange={e => setValoresCampos((v: any) => ({ ...v, [c.id]: e.target.value }))} />
-        </div>
-      ))}
+      {campos.map((c: EstoqueCampo) => {
+        const caField = isCA(c)
+        const obrigatorio = caField ? isEpiOuUniforme && c.obrigatorio : c.obrigatorio
+        const label = caField && !isEpiOuUniforme ? 'Informações Adicionais' : c.nome
+        return (
+          <div key={c.id}>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">{label} {obrigatorio && <span className="text-red-400">*</span>}</label>
+            <input type={c.tipo === 'number' ? 'number' : c.tipo === 'date' ? 'date' : 'text'} className="field" required={obrigatorio}
+              value={valoresCampos[c.id] ?? ''} onChange={e => setValoresCampos((v: any) => ({ ...v, [c.id]: e.target.value }))} />
+          </div>
+        )
+      })}
 
       <div>
         <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome do responsável *</label>
         <input required className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-[#374151] mb-1.5">Obra de Destino *</label>
-        <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
-          <option value="">Selecione a obra...</option>
-          {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
-        </select>
-        {!obraId && <p className="text-xs text-amber-500 mt-1">Saídas devem estar vinculadas a uma obra.</p>}
-      </div>
+      {/* Destino dinâmico por categoria */}
+      {isEpiOuUniforme ? (
+        <div>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Funcionário de Destino *</label>
+          <select className="field" value={funcionarioId} onChange={e => setFuncionarioId(e.target.value)} required>
+            <option value="">Selecione o funcionário...</option>
+            {funcionarios.map((f: any) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+          </select>
+        </div>
+      ) : isLimpeza ? (
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-[#374151]">Destino *</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(['obra', 'funcionario', 'uso_interno'] as const).map(d => (
+              <button key={d} type="button"
+                onClick={() => setDestinoTipo(d)}
+                className={`py-2 rounded-lg text-xs font-medium border-2 transition-all ${destinoTipo === d ? 'border-[#4F7CFF] bg-[#EEF2FF] text-[#4F7CFF]' : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                {d === 'obra' ? 'Obra' : d === 'funcionario' ? 'Funcionário' : 'Uso Interno'}
+              </button>
+            ))}
+          </div>
+          {destinoTipo === 'obra' && (
+            <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
+              <option value="">Selecione a obra...</option>
+              {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+            </select>
+          )}
+          {destinoTipo === 'funcionario' && (
+            <select className="field" value={funcionarioId} onChange={e => setFuncionarioId(e.target.value)} required>
+              <option value="">Selecione o funcionário...</option>
+              {funcionarios.map((f: any) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+            </select>
+          )}
+        </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Obra de Destino *</label>
+          <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
+            <option value="">Selecione a obra...</option>
+            {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+          </select>
+          {!obraId && <p className="text-xs text-amber-500 mt-1">Saídas devem estar vinculadas a uma obra.</p>}
+        </div>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-1.5">

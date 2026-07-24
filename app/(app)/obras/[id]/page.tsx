@@ -1887,10 +1887,8 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
   const fmtMoeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
   const ref = itens[0]
-  const totalItens = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
+  const totalOrc = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0)
   const custosExtras = (ref.custos_extras ?? []) as { descricao: string; valor: number }[]
-  const totalExtras = custosExtras.reduce((s, c) => s + c.valor, 0)
-  const totalOrc = totalItens + totalExtras
   const orcNumero = ref.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
   const nfPagamentoUrl = itens.find(m => m.nf_pagamento_url)?.nf_pagamento_url
 
@@ -2006,17 +2004,10 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
           </tbody>
           {(custosExtras.length > 0) && (
             <tfoot>
-              {custosExtras.map((c, i) => (
-                <tr key={i} className="border-t border-[#F1F5F9] bg-[#FAFAFA]">
-                  <td colSpan={4} className="px-4 py-2 text-xs text-[#64748B] italic">{c.descricao}</td>
-                  <td className="px-3 py-2 text-xs font-medium text-[#64748B]">{fmtMoeda(c.valor)}</td>
-                  <td colSpan={2} />
-                </tr>
-              ))}
-              <tr className="border-t-2 border-[#E2E8F0] bg-[#F8FAFC]">
-                <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-[#374151]">Total com extras</td>
-                <td className="px-3 py-2.5 text-sm font-bold text-[#0F172A]">{fmtMoeda(totalOrc)}</td>
-                <td colSpan={2} />
+              <tr className="border-t border-[#F1F5F9]">
+                <td colSpan={7} className="px-4 py-2 text-xs text-[#94A3B8] italic">
+                  Custos inclusos no valor total: {custosExtras.map(c => `${c.descricao} (${fmtMoeda(c.valor)})`).join(' · ')}
+                </td>
               </tr>
             </tfoot>
           )}
