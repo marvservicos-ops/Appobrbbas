@@ -479,26 +479,13 @@ function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdut
         )
       })()}
 
-      {campos.map((c: EstoqueCampo) => {
-        const caField = isCA(c)
-        const obrigatorio = caField ? isEpiOuUniforme && c.obrigatorio : c.obrigatorio
-        const label = caField && !isEpiOuUniforme ? 'Informações Adicionais' : c.nome
-        const autoCA = caField && produtoCodigo ? produtoCodigo : null
-        const displayValue = valoresCampos[c.id] || autoCA || ''
-        return (
-          <div key={c.id}>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">{label} {obrigatorio && <span className="text-red-400">*</span>}</label>
-            <input type={c.tipo === 'number' ? 'number' : c.tipo === 'date' ? 'date' : 'text'}
-              className={`field ${autoCA && !valoresCampos[c.id] ? 'bg-[#F8FAFC] text-[#64748B]' : ''}`}
-              required={obrigatorio}
-              value={displayValue}
-              onChange={e => setValoresCampos((v: any) => ({ ...v, [c.id]: e.target.value }))} />
-            {autoCA && !valoresCampos[c.id] && (
-              <p className="text-xs text-[#94A3B8] mt-1">Preenchido automaticamente pelo produto</p>
-            )}
-          </div>
-        )
-      })}
+      {campos.filter((c: EstoqueCampo) => !isCA(c)).map((c: EstoqueCampo) => (
+        <div key={c.id}>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">{c.nome} {c.obrigatorio && <span className="text-red-400">*</span>}</label>
+          <input type={c.tipo === 'number' ? 'number' : c.tipo === 'date' ? 'date' : 'text'} className="field" required={c.obrigatorio}
+            value={valoresCampos[c.id] ?? ''} onChange={e => setValoresCampos((v: any) => ({ ...v, [c.id]: e.target.value }))} />
+        </div>
+      ))}
 
       <div>
         <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome do responsável *</label>
