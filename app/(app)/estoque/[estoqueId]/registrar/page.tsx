@@ -294,6 +294,7 @@ export default function RegistrarPage() {
           onSubmit={handleSubmit}
           estoqueId={estoqueId}
           estoqueIcone={estoque?.icone ?? ''}
+          produtoCodigo={produtos.find(p => p.id === produtoId)?.codigo ?? ''}
         />
       )}
 
@@ -395,14 +396,13 @@ function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdut
   observacoes, setObservacoes, valoresCampos, setValoresCampos, temAssinatura, canvasRef,
   startDraw, draw, stopDraw, limparCanvas, obraId, setObraId, funcionarioId, setFuncionarioId,
   destinoTipo, setDestinoTipo, showScanner, setShowScanner,
-  scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone }: any) {
+  scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone, produtoCodigo }: any) {
   const isEpiOuUniforme = estoqueIcone === 'shield' || estoqueIcone === 'shirt'
   const isLimpeza = estoqueIcone === 'sparkles'
   const isCA = (campo: any) => {
     const n = (campo.nome as string).toLowerCase().replace(/\s/g, '')
     return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
   }
-  const produtoAtual = produtos.find((p: EstoqueProduto) => p.id === produtoId)
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div>
@@ -483,7 +483,7 @@ function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdut
         const caField = isCA(c)
         const obrigatorio = caField ? isEpiOuUniforme && c.obrigatorio : c.obrigatorio
         const label = caField && !isEpiOuUniforme ? 'Informações Adicionais' : c.nome
-        const autoCA = caField && produtoAtual?.codigo ? produtoAtual.codigo : null
+        const autoCA = caField && produtoCodigo ? produtoCodigo : null
         const displayValue = valoresCampos[c.id] || autoCA || ''
         return (
           <div key={c.id}>
