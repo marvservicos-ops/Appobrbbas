@@ -191,7 +191,13 @@ export default function RegistrarPage() {
 
     if (regErr) { setError(regErr.message); setSaving(false); return }
 
-    const valores = campos.filter(c => valoresCampos[c.id]?.trim()).map(c => ({ registro_id: reg.id, campo_id: c.id, valor: valoresCampos[c.id].trim() }))
+    const isCAField = (c: EstoqueCampo) => { const n = c.nome.toLowerCase().replace(/\s/g, ''); return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca') }
+    const valores = campos
+      .map(c => {
+        const v = valoresCampos[c.id]?.trim() || (isCAField(c) && prod?.codigo ? prod.codigo : '')
+        return v ? { registro_id: reg.id, campo_id: c.id, valor: v } : null
+      })
+      .filter(Boolean) as { registro_id: string; campo_id: string; valor: string }[]
     if (valores.length > 0) await supabase.from('estoque_registro_valores').insert(valores)
 
     if (produtoId && prod) {
@@ -396,6 +402,7 @@ function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdut
     const n = (campo.nome as string).toLowerCase().replace(/\s/g, '')
     return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
   }
+  const produtoAtual = produtos.find((p: EstoqueProduto) => p.id === produtoId)
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div>
@@ -476,11 +483,19 @@ function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdut
         const caField = isCA(c)
         const obrigatorio = caField ? isEpiOuUniforme && c.obrigatorio : c.obrigatorio
         const label = caField && !isEpiOuUniforme ? 'Informações Adicionais' : c.nome
+        const autoCA = caField && produtoAtual?.codigo ? produtoAtual.codigo : null
+        const displayValue = valoresCampos[c.id] || autoCA || ''
         return (
           <div key={c.id}>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">{label} {obrigatorio && <span className="text-red-400">*</span>}</label>
-            <input type={c.tipo === 'number' ? 'number' : c.tipo === 'date' ? 'date' : 'text'} className="field" required={obrigatorio}
-              value={valoresCampos[c.id] ?? ''} onChange={e => setValoresCampos((v: any) => ({ ...v, [c.id]: e.target.value }))} />
+            <input type={c.tipo === 'number' ? 'number' : c.tipo === 'date' ? 'date' : 'text'}
+              className={`field ${autoCA && !valoresCampos[c.id] ? 'bg-[#F8FAFC] text-[#64748B]' : ''}`}
+              required={obrigatorio}
+              value={displayValue}
+              onChange={e => setValoresCampos((v: any) => ({ ...v, [c.id]: e.target.value }))} />
+            {autoCA && !valoresCampos[c.id] && (
+              <p className="text-xs text-[#94A3B8] mt-1">Preenchido automaticamente pelo produto</p>
+            )}
           </div>
         )
       })}
