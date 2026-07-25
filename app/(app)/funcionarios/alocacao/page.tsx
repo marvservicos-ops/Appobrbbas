@@ -14,7 +14,7 @@ import { useAccess } from '@/lib/useAccess'
 type TipoAlocacao = 'obra' | 'escritorio' | 'folga' | 'atestado' | 'falta'
 
 interface Funcionario { id: string; nome: string; cargo: string | null }
-interface Obra { id: string; nome: string }
+interface Obra { id: string; titulo: string }
 interface Alocacao {
   id: string
   funcionario_id: string
@@ -71,9 +71,9 @@ export default function AlocacaoPage() {
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
     const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
-      sb.from('obras').select('id, nome').order('nome'),
+      sb.from('obras').select('id, titulo').order('titulo'),
       sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(nome)')
+        .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(titulo)')
         .gte('data', inicio).lte('data', fim),
     ])
     if (obrasErr) alert('Obras error: ' + JSON.stringify(obrasErr))
@@ -87,7 +87,7 @@ export default function AlocacaoPage() {
         data: a.data,
         tipo: a.tipo,
         obra_id: a.obra_id,
-        obra_nome: a.obras?.nome ?? null,
+        obra_nome: a.obras?.titulo ?? null,
       }))
     )
     setLoading(false)
@@ -357,7 +357,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
             <span className="text-xs text-[#64748B] shrink-0 font-medium">Mesma obra p/ todos:</span>
             <select className="field flex-1 text-sm py-1.5" value={quickObra} onChange={e => setQuickObra(e.target.value)}>
               <option value="">Selecione...</option>
-              {obras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
+              {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
             </select>
             <button onClick={aplicarObra} disabled={!quickObra}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#4F7CFF] text-white disabled:opacity-40 hover:bg-[#3d6ae0] transition-colors shrink-0">
@@ -396,7 +396,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
                   <select className="field text-sm py-1.5 min-w-0 flex-1 sm:w-48 sm:flex-none"
                     value={row.obra_id} onChange={e => setObra(f.id, e.target.value)}>
                     <option value="">Selecione a obra...</option>
-                    {obras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
+                    {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
                   </select>
                 )}
               </div>
@@ -491,7 +491,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, alocacao, onClose, onSave
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Obra</label>
               <select className="field" value={obraId} onChange={e => setObraId(e.target.value)}>
                 <option value="">Selecione a obra...</option>
-                {obras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
+                {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
               </select>
             </div>
           )}
