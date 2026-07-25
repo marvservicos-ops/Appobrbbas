@@ -71,7 +71,7 @@ export default function AlocacaoPage() {
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
     const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
-      sb.from('obras').select('id, nome').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('nome'),
+      sb.from('obras').select('id, nome').order('nome'),
       sb.from('funcionario_alocacoes')
         .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(nome)')
         .gte('data', inicio).lte('data', fim),
