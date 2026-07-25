@@ -156,6 +156,7 @@ export default function AlocacaoPage() {
           <span className="text-xs text-[#94A3B8]">Fim de semana</span>
         </div>
         <span className="text-xs text-[#94A3B8] ml-2 shrink-0">Clique no dia para preencher todos • Clique na célula para editar um</span>
+        <span className="text-xs font-bold text-red-500 ml-4 shrink-0">[DEBUG: {obras.length} obras]</span>
       </div>
 
       {/* Grade */}
