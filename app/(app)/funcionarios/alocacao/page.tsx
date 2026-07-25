@@ -7,7 +7,7 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X,
+  Loader2, CheckCircle2, X, Car, Bus, Home,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -15,6 +15,7 @@ type TipoAlocacao = 'obra' | 'escritorio' | 'folga' | 'atestado' | 'falta'
 
 interface Funcionario { id: string; nome: string; cargo: string | null }
 interface Obra { id: string; titulo: string }
+interface Veiculo { id: string; nome: string; placa: string | null; cor: string | null }
 interface Alocacao {
   id: string
   funcionario_id: string
@@ -22,7 +23,16 @@ interface Alocacao {
   tipo: TipoAlocacao
   obra_id: string | null
   obra_nome: string | null
+  veiculo_id: string | null
+  transporte_tipo: string | null
 }
+
+type TransporteTipo = 'veiculo' | 'transporte_publico' | 'casa'
+const TRANSPORTES: { tipo: TransporteTipo; label: string; Icon: any }[] = [
+  { tipo: 'veiculo',           label: 'Veículo empresa', Icon: Car  },
+  { tipo: 'transporte_publico', label: 'Transp. público', Icon: Bus  },
+  { tipo: 'casa',              label: 'Saiu de casa',    Icon: Home },
+]
 
 const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon: any }[] = [
   { tipo: 'obra',       label: 'Obra',       cor: '#4F7CFF', bg: '#EEF2FF', Icon: Wrench    },
@@ -55,6 +65,7 @@ export default function AlocacaoPage() {
   const [ano, setAno] = useState(now.getFullYear())
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [obras, setObras] = useState<Obra[]>([])
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([])
   const [loading, setLoading] = useState(true)
   const [modalDia, setModalDia] = useState<number | null>(null)
@@ -69,17 +80,19 @@ export default function AlocacaoPage() {
     const sb = createClient()
     const inicio = toDate(ano, mes, 1)
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
-    const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }] = await Promise.all([
+    const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(titulo)')
+        .select('id, funcionario_id, data, tipo, obra_id, veiculo_id, transporte_tipo, obras:obra_id(titulo)')
         .gte('data', inicio).lte('data', fim),
+      sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
     ])
     if (obrasErr) console.error('Obras error:', obrasErr)
     if (alocErr) console.error('Alocacoes error:', alocErr)
     setFuncionarios(funcs ?? [])
     setObras(obs ?? [])
+    setVeiculos(veics ?? [])
     setAlocacoes(
       (aloc ?? []).map((a: any) => ({
         id: a.id,
@@ -88,6 +101,8 @@ export default function AlocacaoPage() {
         tipo: a.tipo,
         obra_id: a.obra_id,
         obra_nome: a.obras?.titulo ?? null,
+        veiculo_id: a.veiculo_id,
+        transporte_tipo: a.transporte_tipo,
       }))
     )
     setLoading(false)
@@ -221,7 +236,7 @@ export default function AlocacaoPage() {
                             ${!aloc && weekend ? (zebra ? 'bg-[#F4F6F9]' : 'bg-[#F0F2F5]') : zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
                           style={{ height: 44, padding: 3 }}>
                           {aloc && cfg ? (
-                            <div className="rounded w-full h-full flex flex-col items-center justify-center gap-0.5"
+                            <div className="rounded w-full h-full flex flex-col items-center justify-center gap-0.5 relative"
                               style={{ backgroundColor: cfg.bg }}>
                               {aloc.tipo === 'obra' && aloc.obra_nome ? (
                                 <span className="text-[10px] font-semibold leading-tight px-0.5 text-center overflow-hidden"
@@ -231,6 +246,9 @@ export default function AlocacaoPage() {
                               ) : (
                                 <cfg.Icon size={13} style={{ color: cfg.cor }} />
                               )}
+                              {aloc.transporte_tipo === 'veiculo' && <Car size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
+                              {aloc.transporte_tipo === 'transporte_publico' && <Bus size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
+                              {aloc.transporte_tipo === 'casa' && <Home size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
                             </div>
                           ) : (
                             <div className="rounded w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity hover:bg-[#EEF2FF]">
@@ -252,7 +270,7 @@ export default function AlocacaoPage() {
       {modalDia !== null && (
         <ModalDia
           dia={modalDia} mes={mes} ano={ano}
-          funcionarios={funcionarios} obras={obras} alocMap={alocMap}
+          funcionarios={funcionarios} obras={obras} veiculos={veiculos} alocMap={alocMap}
           onClose={() => setModalDia(null)}
           onSaved={() => { setModalDia(null); load() }}
         />
@@ -264,7 +282,7 @@ export default function AlocacaoPage() {
           fid={modalCell.fid}
           fNome={funcionarios.find(f => f.id === modalCell.fid)?.nome ?? ''}
           dia={modalCell.dia} mes={mes} ano={ano}
-          obras={obras}
+          obras={obras} veiculos={veiculos}
           alocacao={alocMap.get(`${modalCell.fid}_${modalCell.dia}`) ?? null}
           onClose={() => setModalCell(null)}
           onSaved={() => { setModalCell(null); load() }}
@@ -276,19 +294,19 @@ export default function AlocacaoPage() {
 
 // ── Modal preencher dia inteiro ────────────────────────────────────────────────
 
-function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSaved }: {
+function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClose, onSaved }: {
   dia: number; mes: number; ano: number
-  funcionarios: Funcionario[]; obras: Obra[]
+  funcionarios: Funcionario[]; obras: Obra[]; veiculos: Veiculo[]
   alocMap: Map<string, Alocacao>
   onClose: () => void; onSaved: () => void
 }) {
   const data = toDate(ano, mes, dia)
 
-  const [rows, setRows] = useState<Record<string, { tipo: TipoAlocacao | ''; obra_id: string }>>(() => {
-    const init: Record<string, { tipo: TipoAlocacao | ''; obra_id: string }> = {}
+  const [rows, setRows] = useState<Record<string, { tipo: TipoAlocacao | ''; obra_id: string; transporte_tipo: string; veiculo_id: string }>>(() => {
+    const init: Record<string, any> = {}
     funcionarios.forEach(f => {
       const a = alocMap.get(`${f.id}_${dia}`)
-      init[f.id] = { tipo: a?.tipo ?? '', obra_id: a?.obra_id ?? '' }
+      init[f.id] = { tipo: a?.tipo ?? '', obra_id: a?.obra_id ?? '', transporte_tipo: a?.transporte_tipo ?? '', veiculo_id: a?.veiculo_id ?? '' }
     })
     return init
   })
@@ -296,16 +314,22 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
   const [quickObra, setQuickObra] = useState('')
 
   function setTipo(fid: string, tipo: TipoAlocacao | '') {
-    setRows(p => ({ ...p, [fid]: { tipo, obra_id: tipo !== 'obra' ? '' : p[fid].obra_id } }))
+    setRows(p => ({ ...p, [fid]: { ...p[fid], tipo, obra_id: tipo !== 'obra' ? '' : p[fid].obra_id } }))
   }
   function setObra(fid: string, obra_id: string) {
     setRows(p => ({ ...p, [fid]: { ...p[fid], obra_id } }))
+  }
+  function setTransporte(fid: string, transporte_tipo: string) {
+    setRows(p => ({ ...p, [fid]: { ...p[fid], transporte_tipo, veiculo_id: transporte_tipo !== 'veiculo' ? '' : p[fid].veiculo_id } }))
+  }
+  function setVeiculoId(fid: string, veiculo_id: string) {
+    setRows(p => ({ ...p, [fid]: { ...p[fid], veiculo_id } }))
   }
   function aplicarObra() {
     if (!quickObra) return
     setRows(p => {
       const n = { ...p }
-      funcionarios.forEach(f => { n[f.id] = { tipo: 'obra', obra_id: quickObra } })
+      funcionarios.forEach(f => { n[f.id] = { ...n[f.id], tipo: 'obra', obra_id: quickObra } })
       return n
     })
   }
@@ -322,6 +346,8 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
             funcionario_id: f.id, data,
             tipo: row.tipo as TipoAlocacao,
             obra_id: row.tipo === 'obra' && row.obra_id ? row.obra_id : null,
+            transporte_tipo: row.transporte_tipo || null,
+            veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
           }
           return sb.from('funcionario_alocacoes').upsert(payload, { onConflict: 'funcionario_id,data' })
         } else if (existing?.id) {
@@ -363,35 +389,55 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
         {/* Lista de funcionários */}
         <div className="flex-1 overflow-y-auto divide-y divide-[#F1F5F9]">
           {funcionarios.map(f => {
-            const row = rows[f.id] ?? { tipo: '', obra_id: '' }
+            const row = rows[f.id] ?? { tipo: '', obra_id: '', transporte_tipo: '', veiculo_id: '' }
             return (
-              <div key={f.id} className="px-6 py-3 flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                <div className="w-40 shrink-0">
-                  <p className="text-sm font-medium text-[#0F172A] truncate">{f.nome}</p>
-                  {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
-                </div>
-                <div className="flex gap-1.5 flex-wrap">
-                  {/* Botão limpar */}
-                  <button onClick={() => setTipo(f.id, '')}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                      ${row.tipo === '' ? 'bg-[#F1F5F9] border-[#94A3B8] text-[#374151]' : 'border-[#E2E8F0] text-[#CBD5E1] hover:border-[#94A3B8] hover:text-[#64748B]'}`}>
-                    —
-                  </button>
-                  {TIPOS.map(t => (
-                    <button key={t.tipo} onClick={() => setTipo(f.id, t.tipo)}
+              <div key={f.id} className="px-6 py-3 space-y-2">
+                <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                  <div className="w-40 shrink-0">
+                    <p className="text-sm font-medium text-[#0F172A] truncate">{f.nome}</p>
+                    {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <button onClick={() => setTipo(f.id, '')}
                       className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                        ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
-                      style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
-                      {t.label}
+                        ${row.tipo === '' ? 'bg-[#F1F5F9] border-[#94A3B8] text-[#374151]' : 'border-[#E2E8F0] text-[#CBD5E1] hover:border-[#94A3B8] hover:text-[#64748B]'}`}>
+                      —
                     </button>
-                  ))}
+                    {TIPOS.map(t => (
+                      <button key={t.tipo} onClick={() => setTipo(f.id, t.tipo)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                          ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
+                        style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  {row.tipo === 'obra' && (
+                    <select className="field text-sm py-1.5 min-w-0 flex-1 sm:w-48 sm:flex-none"
+                      value={row.obra_id} onChange={e => setObra(f.id, e.target.value)}>
+                      <option value="">Selecione a obra...</option>
+                      {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+                    </select>
+                  )}
                 </div>
-                {row.tipo === 'obra' && (
-                  <select className="field text-sm py-1.5 min-w-0 flex-1 sm:w-48 sm:flex-none"
-                    value={row.obra_id} onChange={e => setObra(f.id, e.target.value)}>
-                    <option value="">Selecione a obra...</option>
-                    {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
-                  </select>
+                {row.tipo && (
+                  <div className="flex items-center gap-2 pl-0 sm:pl-44 flex-wrap">
+                    <span className="text-[11px] text-[#94A3B8] shrink-0">Transporte:</span>
+                    {TRANSPORTES.map(t => (
+                      <button key={t.tipo} onClick={() => setTransporte(f.id, row.transporte_tipo === t.tipo ? '' : t.tipo)}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
+                          ${row.transporte_tipo === t.tipo ? 'bg-[#0F172A] text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}>
+                        <t.Icon size={10} /> {t.label}
+                      </button>
+                    ))}
+                    {row.transporte_tipo === 'veiculo' && (
+                      <select className="field text-xs py-1 w-44"
+                        value={row.veiculo_id} onChange={e => setVeiculoId(f.id, e.target.value)}>
+                        <option value="">Selecione o veículo...</option>
+                        {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
+                      </select>
+                    )}
+                  </div>
                 )}
               </div>
             )
@@ -416,14 +462,16 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
 
 // ── Modal célula individual ────────────────────────────────────────────────────
 
-function ModalCell({ fid, fNome, dia, mes, ano, obras, alocacao, onClose, onSaved }: {
+function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacao, onClose, onSaved }: {
   fid: string; fNome: string; dia: number; mes: number; ano: number
-  obras: Obra[]; alocacao: Alocacao | null
+  obras: Obra[]; veiculos: Veiculo[]; alocacao: Alocacao | null
   onClose: () => void; onSaved: () => void
 }) {
   const data = toDate(ano, mes, dia)
   const [tipo, setTipo] = useState<TipoAlocacao | ''>(alocacao?.tipo ?? '')
   const [obraId, setObraId] = useState(alocacao?.obra_id ?? '')
+  const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>(alocacao?.transporte_tipo as TransporteTipo ?? '')
+  const [veiculoId, setVeiculoId] = useState(alocacao?.veiculo_id ?? '')
   const [saving, setSaving] = useState(false)
 
   async function salvar() {
@@ -435,6 +483,8 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, alocacao, onClose, onSave
       const payload = {
         funcionario_id: fid, data, tipo,
         obra_id: tipo === 'obra' && obraId ? obraId : null,
+        transporte_tipo: transporteTipo || null,
+        veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       }
       const { error } = await sb.from('funcionario_alocacoes')
         .upsert(payload, { onConflict: 'funcionario_id,data' })
@@ -487,6 +537,28 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, alocacao, onClose, onSave
                 <option value="">Selecione a obra...</option>
                 {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
               </select>
+            </div>
+          )}
+
+          {tipo && (
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Transporte</label>
+              <div className="flex gap-2 flex-wrap">
+                {TRANSPORTES.map(t => (
+                  <button key={t.tipo}
+                    onClick={() => { setTransporteTipo(transporteTipo === t.tipo ? '' : t.tipo); setVeiculoId('') }}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors
+                      ${transporteTipo === t.tipo ? 'bg-[#0F172A] text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}>
+                    <t.Icon size={12} /> {t.label}
+                  </button>
+                ))}
+              </div>
+              {transporteTipo === 'veiculo' && (
+                <select className="field mt-2" value={veiculoId} onChange={e => setVeiculoId(e.target.value)}>
+                  <option value="">Selecione o veículo...</option>
+                  {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
+                </select>
+              )}
             </div>
           )}
         </div>
