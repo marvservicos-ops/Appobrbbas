@@ -69,13 +69,15 @@ export default function AlocacaoPage() {
     const sb = createClient()
     const inicio = toDate(ano, mes, 1)
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
-    const [{ data: funcs }, { data: obs }, { data: aloc }] = await Promise.all([
+    const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
       sb.from('obras').select('id, nome').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('nome'),
       sb.from('funcionario_alocacoes')
         .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(nome)')
         .gte('data', inicio).lte('data', fim),
     ])
+    if (obrasErr) console.error('Obras error:', obrasErr)
+    if (alocErr) console.error('Alocacoes error:', alocErr)
     setFuncionarios(funcs ?? [])
     setObras(obs ?? [])
     setAlocacoes(
@@ -167,7 +169,7 @@ export default function AlocacaoPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
-          <table className="border-collapse w-full" style={{ minWidth: 'max-content' }}>
+          <table className="border-collapse w-full">
             <thead className="sticky top-0 z-20">
               <tr>
                 {/* Cabeçalho fixo nome */}
@@ -440,8 +442,13 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, alocacao, onClose, onSave
         funcionario_id: fid, data, tipo,
         obra_id: tipo === 'obra' && obraId ? obraId : null,
       }
-      if (alocacao?.id) await sb.from('funcionario_alocacoes').update(payload).eq('id', alocacao.id)
-      else await sb.from('funcionario_alocacoes').insert(payload)
+      if (alocacao?.id) {
+        const { error } = await sb.from('funcionario_alocacoes').update(payload).eq('id', alocacao.id)
+        if (error) { console.error('Update error:', error); alert('Erro ao salvar: ' + error.message) }
+      } else {
+        const { error } = await sb.from('funcionario_alocacoes').insert(payload)
+        if (error) { console.error('Insert error:', error); alert('Erro ao salvar: ' + error.message) }
+      }
     }
     setSaving(false)
     onSaved()
