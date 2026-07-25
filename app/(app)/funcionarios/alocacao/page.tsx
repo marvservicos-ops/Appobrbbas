@@ -71,7 +71,7 @@ export default function AlocacaoPage() {
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
     const [{ data: funcs }, { data: obs }, { data: aloc }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
-      sb.from('obras').select('id, nome').neq('status', 'Concluída').order('nome'),
+      sb.from('obras').select('id, nome').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('nome'),
       sb.from('funcionario_alocacoes')
         .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(nome)')
         .gte('data', inicio).lte('data', fim),
@@ -167,7 +167,7 @@ export default function AlocacaoPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
-          <table className="border-collapse" style={{ minWidth: 'max-content' }}>
+          <table className="border-collapse w-full" style={{ minWidth: 'max-content' }}>
             <thead className="sticky top-0 z-20">
               <tr>
                 {/* Cabeçalho fixo nome */}
@@ -195,6 +195,8 @@ export default function AlocacaoPage() {
                     </th>
                   )
                 })}
+                {/* coluna filler para ocupar espaço restante */}
+                <th className="w-full border-b-2 border-[#E2E8F0] bg-[#F8FAFC]" />
               </tr>
             </thead>
             <tbody>
@@ -239,6 +241,8 @@ export default function AlocacaoPage() {
                         </td>
                       )
                     })}
+                    {/* filler para esticar até o final da página */}
+                    <td className={`border-b border-[#E2E8F0] w-full ${zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`} />
                   </tr>
                 )
               })}
@@ -312,23 +316,24 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
   async function salvar() {
     setSaving(true)
     const sb = createClient()
-    const comTipo = funcionarios.filter(f => rows[f.id]?.tipo)
-    const semTipo = funcionarios.filter(f => !rows[f.id]?.tipo && alocMap.has(`${f.id}_${dia}`))
-    await Promise.all([
-      comTipo.length > 0
-        ? sb.from('funcionario_alocacoes').upsert(
-            comTipo.map(f => ({
-              funcionario_id: f.id, data,
-              tipo: rows[f.id].tipo as TipoAlocacao,
-              obra_id: rows[f.id].tipo === 'obra' && rows[f.id].obra_id ? rows[f.id].obra_id : null,
-            })),
-            { onConflict: 'funcionario_id,data' }
-          )
-        : Promise.resolve(),
-      ...semTipo.map(f =>
-        sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
-      ),
-    ])
+    await Promise.all(
+      funcionarios.map(f => {
+        const row = rows[f.id]
+        const existing = alocMap.get(`${f.id}_${dia}`)
+        if (row?.tipo) {
+          const payload = {
+            funcionario_id: f.id, data,
+            tipo: row.tipo as TipoAlocacao,
+            obra_id: row.tipo === 'obra' && row.obra_id ? row.obra_id : null,
+          }
+          if (existing?.id) return sb.from('funcionario_alocacoes').update(payload).eq('id', existing.id)
+          return sb.from('funcionario_alocacoes').insert(payload)
+        } else if (existing?.id) {
+          return sb.from('funcionario_alocacoes').delete().eq('id', existing.id)
+        }
+        return Promise.resolve()
+      })
+    )
     setSaving(false)
     onSaved()
   }
@@ -429,13 +434,14 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, alocacao, onClose, onSave
     setSaving(true)
     const sb = createClient()
     if (!tipo) {
-      if (alocacao) await sb.from('funcionario_alocacoes').delete().eq('id', alocacao.id)
+      if (alocacao?.id) await sb.from('funcionario_alocacoes').delete().eq('id', alocacao.id)
     } else {
-      await sb.from('funcionario_alocacoes').upsert({
-        ...(alocacao ? { id: alocacao.id } : {}),
+      const payload = {
         funcionario_id: fid, data, tipo,
         obra_id: tipo === 'obra' && obraId ? obraId : null,
-      }, { onConflict: 'funcionario_id,data' })
+      }
+      if (alocacao?.id) await sb.from('funcionario_alocacoes').update(payload).eq('id', alocacao.id)
+      else await sb.from('funcionario_alocacoes').insert(payload)
     }
     setSaving(false)
     onSaved()
