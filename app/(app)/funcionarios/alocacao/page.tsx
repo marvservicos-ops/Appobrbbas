@@ -76,8 +76,8 @@ export default function AlocacaoPage() {
         .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(nome)')
         .gte('data', inicio).lte('data', fim),
     ])
-    if (obrasErr) console.error('Obras error:', obrasErr)
-    if (alocErr) console.error('Alocacoes error:', alocErr)
+    if (obrasErr) alert('Obras error: ' + JSON.stringify(obrasErr))
+    if (alocErr) alert('Alocacoes error: ' + JSON.stringify(alocErr))
     setFuncionarios(funcs ?? [])
     setObras(obs ?? [])
     setAlocacoes(
