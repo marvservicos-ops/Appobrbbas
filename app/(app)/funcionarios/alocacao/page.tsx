@@ -169,12 +169,14 @@ export default function AlocacaoPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
-          <table className="border-collapse w-full">
+          <table className="border-collapse w-full" style={{ tableLayout: 'fixed', minWidth: 168 + diasNoMes * 40 }}>
+            <colgroup>
+              <col style={{ width: 168 }} />
+              {dias.map(dia => <col key={dia} />)}
+            </colgroup>
             <thead className="sticky top-0 z-20">
               <tr>
-                {/* Cabeçalho fixo nome */}
-                <th className="sticky left-0 z-30 bg-[#F8FAFC] border-b-2 border-r border-[#E2E8F0] px-4 py-2 text-left"
-                  style={{ minWidth: 168 }}>
+                <th className="sticky left-0 z-30 bg-[#F8FAFC] border-b-2 border-r border-[#E2E8F0] px-4 py-2 text-left">
                   <span className="text-xs font-semibold text-[#64748B]">Funcionário</span>
                 </th>
                 {dias.map(dia => {
@@ -187,7 +189,7 @@ export default function AlocacaoPage() {
                       className={`border-b-2 border-r border-[#E2E8F0] text-center cursor-pointer select-none transition-colors
                         ${weekend ? 'bg-[#F1F5F9]' : 'bg-[#F8FAFC] hover:bg-[#EEF2FF]'}
                         ${hoje ? 'border-b-[#4F7CFF]' : ''}`}
-                      style={{ minWidth: 40, padding: '5px 2px' }}>
+                      style={{ padding: '5px 2px' }}>
                       <div className={`text-xs font-bold ${hoje ? 'text-[#4F7CFF]' : weekend ? 'text-[#94A3B8]' : 'text-[#374151]'}`}>
                         {dia}
                       </div>
@@ -197,8 +199,6 @@ export default function AlocacaoPage() {
                     </th>
                   )
                 })}
-                {/* coluna filler para ocupar espaço restante */}
-                <th className="w-full border-b-2 border-[#E2E8F0] bg-[#F8FAFC]" />
               </tr>
             </thead>
             <tbody>
@@ -206,13 +206,10 @@ export default function AlocacaoPage() {
                 const zebra = fi % 2 === 0
                 return (
                   <tr key={f.id}>
-                    {/* Nome sticky */}
-                    <td className={`sticky left-0 z-10 border-b border-r border-[#E2E8F0] px-4 py-2 ${zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
-                      style={{ minWidth: 168 }}>
-                      <p className="text-sm font-medium text-[#0F172A] truncate" style={{ maxWidth: 148 }}>{f.nome}</p>
-                      {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate" style={{ maxWidth: 148 }}>{f.cargo}</p>}
+                    <td className={`sticky left-0 z-10 border-b border-r border-[#E2E8F0] px-4 py-2 ${zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}>
+                      <p className="text-sm font-medium text-[#0F172A] truncate">{f.nome}</p>
+                      {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
                     </td>
-                    {/* Células dos dias */}
                     {dias.map(dia => {
                       const aloc = alocMap.get(`${f.id}_${dia}`)
                       const weekend = isWeekend(dia)
@@ -222,12 +219,12 @@ export default function AlocacaoPage() {
                           onClick={() => setModalCell({ fid: f.id, dia })}
                           className={`border-b border-r border-[#E2E8F0] cursor-pointer transition-colors
                             ${!aloc && weekend ? (zebra ? 'bg-[#F4F6F9]' : 'bg-[#F0F2F5]') : zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
-                          style={{ minWidth: 40, height: 44, padding: 3 }}>
+                          style={{ height: 44, padding: 3 }}>
                           {aloc && cfg ? (
-                            <div className="rounded w-full h-full flex flex-col items-center justify-center gap-0.5 group relative"
+                            <div className="rounded w-full h-full flex flex-col items-center justify-center gap-0.5"
                               style={{ backgroundColor: cfg.bg }}>
                               {aloc.tipo === 'obra' && aloc.obra_nome ? (
-                                <span className="text-[10px] font-semibold leading-tight px-0.5 text-center"
+                                <span className="text-[10px] font-semibold leading-tight px-0.5 text-center overflow-hidden"
                                   style={{ color: cfg.cor }}>
                                   {abrev(aloc.obra_nome)}
                                 </span>
@@ -243,8 +240,6 @@ export default function AlocacaoPage() {
                         </td>
                       )
                     })}
-                    {/* filler para esticar até o final da página */}
-                    <td className={`border-b border-[#E2E8F0] w-full ${zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`} />
                   </tr>
                 )
               })}
