@@ -148,7 +148,7 @@ export default function CentralFuncionarioPage() {
     </div>
   )
 
-  const { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct } = calculos(funcionario)
+  const { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct, vtBruto, vtDesconto, vtCustoEmpresa } = calculos(funcionario)
   const salario = funcionario.salario_bruto ?? 0
   const temEncargosOuBeneficios = encargos > 0 || (beneficioFixo + outrosTotal) > 0
 
