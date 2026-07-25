@@ -24,6 +24,7 @@ interface Alocacao {
   obra_id: string | null
   obra_nome: string | null
   veiculo_id: string | null
+  veiculo_nome: string | null
   transporte_tipo: string | null
 }
 
@@ -84,7 +85,7 @@ export default function AlocacaoPage() {
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, veiculo_id, transporte_tipo, obras:obra_id(titulo)')
+        .select('id, funcionario_id, data, tipo, obra_id, veiculo_id, transporte_tipo, obras:obra_id(titulo), veiculos:veiculo_id(nome)')
         .gte('data', inicio).lte('data', fim),
       sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
     ])
@@ -102,6 +103,7 @@ export default function AlocacaoPage() {
         obra_id: a.obra_id,
         obra_nome: a.obras?.titulo ?? null,
         veiculo_id: a.veiculo_id,
+        veiculo_nome: a.veiculos?.nome ?? null,
         transporte_tipo: a.transporte_tipo,
       }))
     )
@@ -246,7 +248,11 @@ export default function AlocacaoPage() {
                               ) : (
                                 <cfg.Icon size={13} style={{ color: cfg.cor }} />
                               )}
-                              {aloc.transporte_tipo === 'veiculo' && <Car size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
+                              {aloc.transporte_tipo === 'veiculo' && aloc.veiculo_nome && (
+                                <span className="text-[9px] font-medium leading-none opacity-80 truncate px-0.5" style={{ color: cfg.cor }}>
+                                  {aloc.veiculo_nome.split(' ')[1] ?? aloc.veiculo_nome.split(' ')[0]}
+                                </span>
+                              )}
                               {aloc.transporte_tipo === 'transporte_publico' && <Bus size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
                               {aloc.transporte_tipo === 'casa' && <Home size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
                             </div>
