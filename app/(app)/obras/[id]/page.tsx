@@ -211,7 +211,7 @@ export default function ObraDetailPage() {
   const [pastas, setPastas] = useState<DocPasta[]>([])
   const [rdos, setRdos] = useState<RDO[]>([])
   const [materiais, setMateriais] = useState<ObraMaterial[]>([])
-  const [equipe, setEquipe] = useState<ObraFuncionario[]>([])
+  const [equipe] = useState<ObraFuncionario[]>([])
   const [criandoRdo, setCriandoRdo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showNovoMaterial, setShowNovoMaterial] = useState(false)
@@ -308,14 +308,13 @@ export default function ObraDetailPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes, equipeRes] = await Promise.all([
+    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes] = await Promise.all([
       supabase.from('obras').select('*').eq('id', id).single(),
       supabase.from('cronograma_etapas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('documentos').select('*').eq('obra_id', id).order('pasta').order('created_at', { ascending: false }),
       supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('rdos').select('*').eq('obra_id', id).order('numero', { ascending: false }),
       supabase.from('obra_materiais').select('*').eq('obra_id', id).order('created_at', { ascending: false }),
-      supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes)').eq('obra_id', id).order('created_at', { ascending: false }),
     ])
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (etapasRes.data) setEtapas(etapasRes.data as CronogramaEtapa[])
@@ -323,7 +322,6 @@ export default function ObraDetailPage() {
     if (pastasRes.data) setPastas(pastasRes.data as DocPasta[])
     if (rdosRes.data) setRdos(rdosRes.data as RDO[])
     if (materiaisRes.data) setMateriais(materiaisRes.data as ObraMaterial[])
-    if (equipeRes.data) setEquipe(equipeRes.data as ObraFuncionario[])
     setLoading(false)
   }
 
@@ -487,7 +485,7 @@ export default function ObraDetailPage() {
                 : t === 'documentos' ? 'Documentos'
                 : t === 'cronograma' ? 'Cronograma'
                 : t === 'relatorios' ? `Relatórios (${rdos.length})`
-                : t === 'equipe' ? `Equipe (${equipe.length})`
+                : t === 'equipe' ? 'Equipe'
                 : `Materiais (${materiais.length})`}
             </button>
           ))}
@@ -1061,7 +1059,7 @@ export default function ObraDetailPage() {
 
         {/* ===== EQUIPE ===== */}
         {tab === 'equipe' && (
-          <AbaEquipe obraId={id} equipe={equipe} onRefresh={load} />
+          <AbaEquipe obraId={id} />
         )}
       </div>
 
@@ -3369,149 +3367,165 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
 }
 
 // ── AbaEquipe ────────────────────────────────────────
-function AbaEquipe({ obraId, equipe, onRefresh }: {
-  obraId: string
-  equipe: ObraFuncionario[]
-  onRefresh: () => void
-}) {
-  const [showModal, setShowModal] = useState(false)
-  const [editando, setEditando] = useState<ObraFuncionario | null>(null)
+interface EquipeEntry {
+  funcionario_id: string
+  nome: string
+  cargo: string | null
+  custo_diario: number
+  dias_uteis: number
+  dias_sabado: number
+  custo_total: number
+}
+
+function AbaEquipe({ obraId }: { obraId: string }) {
+  const router = useRouter()
+  const [entries, setEntries] = useState<EquipeEntry[]>([])
+  const [loadingEquipe, setLoadingEquipe] = useState(true)
+  const [filtroMes, setFiltroMes] = useState('')
 
   const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
-  const totalMaoDeObra = equipe.reduce((s, e) => s + (e.custo_total ?? 0), 0)
 
-  async function remover(id: string) {
-    if (!confirm('Remover alocação?')) return
-    const supabase = createClient()
-    await supabase.from('obra_funcionarios').delete().eq('id', id)
-    onRefresh()
-  }
+  useEffect(() => {
+    async function fetchEquipe() {
+      setLoadingEquipe(true)
+      const sb = createClient()
+      let q = sb.from('funcionario_alocacoes')
+        .select('data, funcionario_id, funcionarios(id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes)')
+        .eq('obra_id', obraId).eq('tipo', 'obra')
+      if (filtroMes) {
+        const [ano, mesNum] = filtroMes.split('-').map(Number)
+        const inicio = `${ano}-${String(mesNum).padStart(2,'0')}-01`
+        const ultimoDia = new Date(ano, mesNum, 0).getDate()
+        const fim = `${ano}-${String(mesNum).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`
+        q = q.gte('data', inicio).lte('data', fim)
+      }
+      const { data: rows } = await q
+      const map = new Map<string, EquipeEntry>()
+      for (const r of (rows ?? []) as any[]) {
+        const f = r.funcionarios
+        if (!f) continue
+        const custoDia: number = f.custo_diario ?? (f.salario_bruto && f.dias_mes ? f.salario_bruto / f.dias_mes : 0)
+        if (!map.has(r.funcionario_id)) {
+          map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, dias_uteis: 0, dias_sabado: 0, custo_total: 0 })
+        }
+        const entry = map.get(r.funcionario_id)!
+        const dow = new Date(r.data + 'T12:00:00').getDay()
+        if (dow === 6) entry.dias_sabado++
+        else if (dow !== 0) entry.dias_uteis++
+        entry.custo_total = (entry.dias_uteis + entry.dias_sabado) * entry.custo_diario
+      }
+      setEntries(Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome)))
+      setLoadingEquipe(false)
+    }
+    fetchEquipe()
+  }, [obraId, filtroMes])
+
+  const totalMaoDeObra = entries.reduce((s, e) => s + e.custo_total, 0)
 
   return (
     <div className="p-4 md:p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="font-syne text-lg font-bold text-[#0F172A]">Equipe da Obra</h2>
-          <p className="text-sm text-[#64748B] mt-0.5">Mão de obra alocada e custo por funcionário</p>
+          <p className="text-sm text-[#64748B] mt-0.5">Dias alocados via Quadro de Alocação</p>
         </div>
-        <button onClick={() => { setEditando(null); setShowModal(true) }}
-          className="btn-primary flex items-center gap-2 text-sm">
-          <Plus size={14} /> Alocar
-        </button>
+        <div className="flex items-center gap-2">
+          <input type="month" value={filtroMes} onChange={e => setFiltroMes(e.target.value)}
+            className="field text-sm py-1.5 w-40" placeholder="Todos os meses" />
+          {filtroMes && (
+            <button onClick={() => setFiltroMes('')} className="text-xs text-[#94A3B8] hover:text-[#374151] transition-colors">
+              Limpar
+            </button>
+          )}
+          <button onClick={() => router.push('/funcionarios/alocacao')}
+            className="btn-primary flex items-center gap-2 text-sm">
+            <Calendar size={14} /> Quadro
+          </button>
+        </div>
       </div>
 
-      {/* Card total */}
-      {equipe.length > 0 && (
-        <div className="card p-4 border-l-4 border-l-violet-400 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-[#64748B] font-medium">Custo Total Mão de Obra</p>
-            <p className="font-syne font-bold text-2xl text-[#0F172A]">{moeda(totalMaoDeObra)}</p>
-          </div>
-          <p className="text-xs text-[#94A3B8]">{equipe.length} alocaç{equipe.length === 1 ? 'ão' : 'ões'}</p>
-        </div>
-      )}
-
-      {equipe.length === 0 ? (
+      {loadingEquipe ? (
+        <div className="flex justify-center py-12"><Loader2 size={24} className="animate-spin text-[#4F7CFF]" /></div>
+      ) : entries.length === 0 ? (
         <div className="card flex flex-col items-center justify-center py-16 text-center">
           <Package size={28} className="text-[#CBD5E1] mb-3" />
-          <p className="text-sm font-medium text-[#374151]">Nenhum funcionário alocado</p>
-          <p className="text-xs text-[#94A3B8] mt-1 mb-4">Aloque funcionários e registre os dias trabalhados</p>
-          <button onClick={() => { setEditando(null); setShowModal(true) }} className="btn-primary text-sm">
-            <Plus size={14} /> Alocar Funcionário
+          <p className="text-sm font-medium text-[#374151]">Nenhuma alocação registrada</p>
+          <p className="text-xs text-[#94A3B8] mt-1 mb-4">
+            {filtroMes ? 'Tente outro período ou limpe o filtro' : 'Registre dias no Quadro de Alocação'}
+          </p>
+          <button onClick={() => router.push('/funcionarios/alocacao')} className="btn-primary text-sm flex items-center gap-1.5">
+            <Calendar size={14} /> Abrir Quadro
           </button>
         </div>
       ) : (
-        <div className="card p-0 overflow-hidden">
-          {/* Mobile cards */}
-          <div className="sm:hidden divide-y divide-[#F1F5F9]">
-            {equipe.map(e => (
-              <div key={e.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</p>
-                  <p className="text-xs text-[#94A3B8] mt-0.5">{e.funcionario?.cargo ?? '—'}</p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    <span className="text-xs text-[#64748B]">{e.dias_uteis ?? e.dias_trabalhados}d úteis</span>
-                    {(e.dias_sabado ?? 0) > 0 && <span className="text-xs text-amber-600">+{e.dias_sabado}sáb</span>}
-                    {(e.dias_domingo_feriado ?? 0) > 0 && <span className="text-xs text-red-500">+{e.dias_domingo_feriado}dom</span>}
-                    {(e.horas_noturnas ?? 0) > 0 && <span className="text-xs text-blue-500">+{e.horas_noturnas}h not.</span>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-sm font-bold text-violet-700">{moeda(e.custo_total)}</span>
-                  <div className="flex gap-1">
-                    <button onClick={() => { setEditando(e); setShowModal(true) }}
-                      className="p-1.5 rounded hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF]"><Pencil size={13} /></button>
-                    <button onClick={() => remover(e.id)}
-                      className="p-1.5 rounded hover:bg-red-50 text-[#CBD5E1] hover:text-red-500"><Trash2 size={13} /></button>
-                  </div>
-                </div>
-              </div>
-            ))}
-            <div className="px-4 py-3 bg-[#F8FAFC] border-t-2 border-[#E2E8F0] flex justify-between text-sm font-bold">
-              <span className="text-[#374151]">Total mão de obra</span>
-              <span className="text-violet-700">{moeda(totalMaoDeObra)}</span>
+        <>
+          <div className="card p-4 border-l-4 border-l-violet-400 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-[#64748B] font-medium">Custo Total Mão de Obra</p>
+              <p className="font-syne font-bold text-2xl text-[#0F172A]">{moeda(totalMaoDeObra)}</p>
             </div>
+            <p className="text-xs text-[#94A3B8]">{entries.length} funcionário{entries.length !== 1 ? 's' : ''}</p>
           </div>
-          {/* Desktop table */}
-          <table className="w-full hidden sm:table">
-            <thead>
-              <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Funcionário</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Cargo</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Dias</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Custo/Dia</th>
-                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Total</th>
-                <th className="px-4 py-3 w-16" />
-              </tr>
-            </thead>
-            <tbody>
-              {equipe.map(e => (
-                <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
-                  <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-[#64748B]">{e.funcionario?.cargo ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-[#374151]">
-                    <span>{e.dias_uteis ?? e.dias_trabalhados}d úteis</span>
-                    {(e.dias_sabado ?? 0) > 0 && <span className="text-amber-600 ml-1">+{e.dias_sabado}sáb</span>}
-                    {(e.dias_domingo_feriado ?? 0) > 0 && <span className="text-red-500 ml-1">+{e.dias_domingo_feriado}dom</span>}
-                    {(e.horas_noturnas ?? 0) > 0 && <span className="text-blue-500 ml-1">+{e.horas_noturnas}h not.</span>}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">{moeda(e.custo_diario_epoca)}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditando(e); setShowModal(true) }}
-                        className="p-1.5 rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={13} /></button>
-                      <button onClick={() => remover(e.id)}
-                        className="p-1.5 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500"><Trash2 size={13} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-[#F8FAFC] border-t-2 border-[#E2E8F0]">
-                <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-[#374151]">Total mão de obra</td>
-                <td className="px-4 py-3 text-sm font-bold text-violet-700">{moeda(totalMaoDeObra)}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
 
-      {showModal && (
-        <ModalAlocarFuncionario
-          obraId={obraId}
-          alocacao={editando}
-          onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); onRefresh() }}
-        />
+          <div className="card p-0 overflow-hidden">
+            <div className="sm:hidden divide-y divide-[#F1F5F9]">
+              {entries.map(e => (
+                <div key={e.funcionario_id} className="px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[#0F172A]">{e.nome}</p>
+                    <p className="text-xs text-[#94A3B8] mt-0.5">{e.cargo ?? '—'}</p>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-xs text-[#64748B]">{e.dias_uteis}d úteis</span>
+                      {e.dias_sabado > 0 && <span className="text-xs text-amber-600">+{e.dias_sabado}sáb</span>}
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-violet-700 shrink-0">{moeda(e.custo_total)}</span>
+                </div>
+              ))}
+              <div className="px-4 py-3 bg-[#F8FAFC] border-t-2 border-[#E2E8F0] flex justify-between text-sm font-bold">
+                <span className="text-[#374151]">Total mão de obra</span>
+                <span className="text-violet-700">{moeda(totalMaoDeObra)}</span>
+              </div>
+            </div>
+            <table className="w-full hidden sm:table">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Funcionário</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Cargo</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Dias</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Custo/Dia</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map(e => (
+                  <tr key={e.funcionario_id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
+                    <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{e.nome}</td>
+                    <td className="px-4 py-3 text-sm text-[#64748B]">{e.cargo ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-[#374151]">
+                      <span>{e.dias_uteis}d úteis</span>
+                      {e.dias_sabado > 0 && <span className="text-amber-600 ml-1">+{e.dias_sabado}sáb</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">{moeda(e.custo_diario)}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-[#F8FAFC] border-t-2 border-[#E2E8F0]">
+                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-[#374151]">Total mão de obra</td>
+                  <td className="px-4 py-3 text-sm font-bold text-violet-700">{moeda(totalMaoDeObra)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
 }
 
-// ── ModalAlocarFuncionario ────────────────────────────
+// ── ModalAlocarFuncionario (mantido para compatibilidade futura) ──────────────
 function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
   obraId: string
   alocacao: ObraFuncionario | null
