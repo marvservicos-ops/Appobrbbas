@@ -4,11 +4,17 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { Plus, Pencil, X, Loader2, Users, DollarSign, CheckCircle2, XCircle, Clock, Calculator } from 'lucide-react'
+import { Plus, Pencil, X, Loader2, Users, DollarSign, CheckCircle2, XCircle, Clock, Calculator, TrendingUp, Heart, Trash2 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const fmt2 = (v: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
+
+interface OutroBeneficio {
+  id: string
+  descricao: string
+  valor: number
+}
 
 interface Funcionario {
   id: string
@@ -20,6 +26,15 @@ interface Funcionario {
   custo_diario: number | null
   ativo: boolean
   created_at: string
+  fgts_pct: number | null
+  inss_patronal_pct: number | null
+  provisao_13_pct: number | null
+  provisao_ferias_pct: number | null
+  provisao_multa_pct: number | null
+  vale_refeicao: number | null
+  vale_transporte: number | null
+  plano_saude: number | null
+  outros_beneficios: OutroBeneficio[] | null
 }
 
 interface RegraExtra {
@@ -28,14 +43,21 @@ interface RegraExtra {
   valor: { percentual: number }
 }
 
-function calculos(f: Pick<Funcionario, 'salario_bruto' | 'horas_dia' | 'dias_mes'>) {
+function calculos(f: Pick<Funcionario, 'salario_bruto' | 'horas_dia' | 'dias_mes' | 'fgts_pct' | 'inss_patronal_pct' | 'provisao_13_pct' | 'provisao_ferias_pct' | 'provisao_multa_pct' | 'vale_refeicao' | 'vale_transporte' | 'plano_saude' | 'outros_beneficios'>) {
   const salario = f.salario_bruto ?? 0
   const dias = f.dias_mes ?? 30
-  const horasMes = f.horas_dia ?? 220  // horas_dia stores total monthly hours
-  const custoDia = dias > 0 ? salario / dias : 0
-  const custoHora = horasMes > 0 ? salario / horasMes : 0
-  return { custoDia, custoHora }
+  const horasMes = f.horas_dia ?? 220
+  const encargosPct = (f.fgts_pct ?? 8) + (f.inss_patronal_pct ?? 0) + (f.provisao_13_pct ?? 8.33) + (f.provisao_ferias_pct ?? 11.11) + (f.provisao_multa_pct ?? 3.2)
+  const encargos = salario * encargosPct / 100
+  const beneficioFixo = (f.vale_refeicao ?? 0) + (f.vale_transporte ?? 0) + (f.plano_saude ?? 0)
+  const outrosTotal = (f.outros_beneficios ?? []).reduce((s, o) => s + (o.valor ?? 0), 0)
+  const custoTotalMensal = salario + encargos + beneficioFixo + outrosTotal
+  const custoDia = dias > 0 ? custoTotalMensal / dias : 0
+  const custoHora = horasMes > 0 ? custoTotalMensal / horasMes : 0
+  return { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct }
 }
+
+function gerarId() { return Math.random().toString(36).slice(2, 10) }
 
 function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   funcionario: Funcionario | null
@@ -46,20 +68,43 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   const [nome, setNome] = useState(funcionario?.nome ?? '')
   const [cargo, setCargo] = useState(funcionario?.cargo ?? '')
   const [salarioBruto, setSalarioBruto] = useState(funcionario?.salario_bruto ? String(funcionario.salario_bruto) : '')
-  // CLT: mês comercial 30 dias, 220 horas/mês para 44h semanais
   const [diasMes, setDiasMes] = useState(funcionario?.dias_mes ? String(funcionario.dias_mes) : '30')
   const [horasMes, setHorasMes] = useState(funcionario?.horas_dia ? String(funcionario.horas_dia) : '220')
   const [ativo, setAtivo] = useState(funcionario?.ativo ?? true)
+  const [fgtsPct, setFgtsPct] = useState(String(funcionario?.fgts_pct ?? 8))
+  const [inssPatronalPct, setInssPatronalPct] = useState(String(funcionario?.inss_patronal_pct ?? 0))
+  const [provisao13Pct, setProvisao13Pct] = useState(String(funcionario?.provisao_13_pct ?? 8.33))
+  const [provisaoFeriasPct, setProvisaoFeriasPct] = useState(String(funcionario?.provisao_ferias_pct ?? 11.11))
+  const [provisaoMultaPct, setProvisaoMultaPct] = useState(String(funcionario?.provisao_multa_pct ?? 3.2))
+  const [valeRefeicao, setValeRefeicao] = useState(funcionario?.vale_refeicao ? String(funcionario.vale_refeicao) : '')
+  const [valeTransporte, setValeTransporte] = useState(funcionario?.vale_transporte ? String(funcionario.vale_transporte) : '')
+  const [planoSaude, setPlanoSaude] = useState(funcionario?.plano_saude ? String(funcionario.plano_saude) : '')
+  const [outrosBeneficios, setOutrosBeneficios] = useState<OutroBeneficio[]>(
+    Array.isArray(funcionario?.outros_beneficios) ? funcionario.outros_beneficios : []
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const salNum = parseFloat(salarioBruto) || 0
   const diasNum = parseFloat(diasMes) || 30
   const horasNum = parseFloat(horasMes) || 220
-  // Custo/dia = salário ÷ 30 (mês comercial CLT)
-  const custoDia = diasNum > 0 ? salNum / diasNum : 0
-  // Custo/hora = salário ÷ 220 (horas mensais CLT 44h/sem)
-  const custoHora = horasNum > 0 ? salNum / horasNum : 0
+  const encargosPctNum = (parseFloat(fgtsPct) || 0) + (parseFloat(inssPatronalPct) || 0) + (parseFloat(provisao13Pct) || 0) + (parseFloat(provisaoFeriasPct) || 0) + (parseFloat(provisaoMultaPct) || 0)
+  const encargosNum = salNum * encargosPctNum / 100
+  const beneficiosFixoNum = (parseFloat(valeRefeicao) || 0) + (parseFloat(valeTransporte) || 0) + (parseFloat(planoSaude) || 0)
+  const outrosNum = outrosBeneficios.reduce((s, o) => s + (o.valor || 0), 0)
+  const custoTotalMensal = salNum + encargosNum + beneficiosFixoNum + outrosNum
+  const custoDia = diasNum > 0 ? custoTotalMensal / diasNum : 0
+  const custoHora = horasNum > 0 ? custoTotalMensal / horasNum : 0
+
+  function addOutro() {
+    setOutrosBeneficios(prev => [...prev, { id: gerarId(), descricao: '', valor: 0 }])
+  }
+  function removeOutro(id: string) {
+    setOutrosBeneficios(prev => prev.filter(o => o.id !== id))
+  }
+  function updateOutro(id: string, key: 'descricao' | 'valor', val: string) {
+    setOutrosBeneficios(prev => prev.map(o => o.id === id ? { ...o, [key]: key === 'valor' ? parseFloat(val) || 0 : val } : o))
+  }
 
   async function salvar() {
     if (!nome.trim()) return
@@ -69,11 +114,22 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
     const payload = {
       nome: nome.trim(),
       cargo: cargo.trim() || null,
-      salario_bruto: parseFloat(salarioBruto) || null,
-      horas_dia: horasNum,   // armazenamos total horas/mês neste campo
+      salario_bruto: salNum || null,
+      horas_dia: horasNum,
       dias_mes: diasNum,
       custo_diario: custoDia || null,
       ativo,
+      fgts_pct: parseFloat(fgtsPct) || 8,
+      inss_patronal_pct: parseFloat(inssPatronalPct) || 0,
+      provisao_13_pct: parseFloat(provisao13Pct) || 8.33,
+      provisao_ferias_pct: parseFloat(provisaoFeriasPct) || 11.11,
+      provisao_multa_pct: parseFloat(provisaoMultaPct) || 3.2,
+      vale_refeicao: parseFloat(valeRefeicao) || null,
+      vale_transporte: parseFloat(valeTransporte) || null,
+      plano_saude: parseFloat(planoSaude) || null,
+      outros_beneficios: outrosBeneficios.filter(o => o.descricao.trim()).length > 0
+        ? outrosBeneficios.filter(o => o.descricao.trim())
+        : null,
     }
     const { error: err } = funcionario
       ? await supabase.from('funcionarios').update(payload).eq('id', funcionario.id)
@@ -83,24 +139,35 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
     onSaved()
   }
 
+  const encargosRows = [
+    { label: 'FGTS', hint: '8% padrão', val: fgtsPct, set: setFgtsPct },
+    { label: 'INSS Patronal', hint: '0% Simples / 20% Lucro Presumido', val: inssPatronalPct, set: setInssPatronalPct },
+    { label: '13º Salário', hint: '8,33% (= 1/12 do salário)', val: provisao13Pct, set: setProvisao13Pct },
+    { label: 'Férias + Abono 1/3', hint: '11,11% (= 4/3 ÷ 12)', val: provisaoFeriasPct, set: setProvisaoFeriasPct },
+    { label: 'Provisão Multa FGTS', hint: '3,2% (= 40% × 8%)', val: provisaoMultaPct, set: setProvisaoMultaPct },
+  ]
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">{funcionario ? 'Editar Funcionário' : 'Novo Funcionário'}</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-5">
 
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Nome *</label>
-            <input className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome completo" autoFocus />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
-            <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC, Auxiliar..." />
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Nome *</label>
+              <input className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome completo" autoFocus />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
+              <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC, Auxiliar..." />
+            </div>
           </div>
 
+          {/* Remuneração */}
           <div className="border-t border-[#E2E8F0] pt-4">
             <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><DollarSign size={13} /> Remuneração</p>
             <div className="space-y-3">
@@ -112,38 +179,124 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias/mês <span className="text-[#94A3B8] font-normal">(CLT = 30)</span></label>
-                  <input className="field" type="number" min="1" max="31" step="1" value={diasMes}
-                    onChange={e => setDiasMes(e.target.value)} />
+                  <input className="field" type="number" min="1" max="31" step="1" value={diasMes} onChange={e => setDiasMes(e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[#374151] mb-1.5">Horas/mês <span className="text-[#94A3B8] font-normal">(CLT 44h = 220)</span></label>
-                  <input className="field" type="number" min="1" max="400" step="1" value={horasMes}
-                    onChange={e => setHorasMes(e.target.value)} />
+                  <input className="field" type="number" min="1" max="400" step="1" value={horasMes} onChange={e => setHorasMes(e.target.value)} />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Preview de cálculos */}
-          {salNum > 0 && (
-            <div className="bg-[#F0F4FF] border border-[#C7D2FE] rounded-xl p-4 space-y-2">
-              <p className="text-xs font-semibold text-[#4F7CFF] flex items-center gap-1.5"><Calculator size={12} /> Custo calculado</p>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+          {/* Encargos Trabalhistas */}
+          <div className="border-t border-[#E2E8F0] pt-4">
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-[#374151] flex items-center gap-1.5"><TrendingUp size={13} /> Encargos Trabalhistas</p>
+              <p className="text-[11px] text-[#94A3B8] mt-0.5">% sobre o salário, provisionados mensalmente</p>
+            </div>
+            <div className="space-y-2.5">
+              {encargosRows.map(({ label, hint, val, set }) => (
+                <div key={label} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-[#374151]">{label}</p>
+                    <p className="text-[11px] text-[#94A3B8]">{hint}</p>
+                  </div>
+                  <div className="relative w-24 shrink-0">
+                    <input className="field text-right pr-6 py-1.5 text-sm" type="number" min="0" max="100" step="0.01"
+                      value={val} onChange={e => set(e.target.value)} />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#94A3B8]">%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {salNum > 0 && (
+              <div className="mt-3 flex justify-between text-xs text-[#64748B] bg-[#F8FAFC] rounded-lg px-3 py-2 border border-[#E2E8F0]">
+                <span>Total encargos ({fmt2(encargosPctNum)}%)</span>
+                <span className="font-semibold text-[#0F172A]">{moeda(encargosNum)}/mês</span>
+              </div>
+            )}
+          </div>
+
+          {/* Benefícios */}
+          <div className="border-t border-[#E2E8F0] pt-4">
+            <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><Heart size={13} /> Benefícios Mensais</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs text-[#64748B]">Por dia</p>
-                  <p className="font-syne font-bold text-[#0F172A]">{moeda(custoDia)}</p>
-                  <p className="text-xs text-[#94A3B8]">{moeda(salNum)} ÷ {diasNum} dias</p>
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Refeição / Alimentação</label>
+                  <input className="field" type="number" min="0" step="0.01" value={valeRefeicao}
+                    onChange={e => setValeRefeicao(e.target.value)} placeholder="0,00" />
                 </div>
                 <div>
-                  <p className="text-xs text-[#64748B]">Por hora</p>
-                  <p className="font-syne font-bold text-[#0F172A]">{moeda(custoHora)}</p>
-                  <p className="text-xs text-[#94A3B8]">{moeda(salNum)} ÷ {horasNum}h</p>
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Transporte <span className="text-[#94A3B8] font-normal">(custo líquido)</span></label>
+                  <input className="field" type="number" min="0" step="0.01" value={valeTransporte}
+                    onChange={e => setValeTransporte(e.target.value)} placeholder="0,00" />
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Plano de Saúde</label>
+                <input className="field" type="number" min="0" step="0.01" value={planoSaude}
+                  onChange={e => setPlanoSaude(e.target.value)} placeholder="0,00" />
+              </div>
+              {outrosBeneficios.map(o => (
+                <div key={o.id} className="flex items-center gap-2">
+                  <input className="field flex-1 text-sm" placeholder="Descrição do benefício"
+                    value={o.descricao} onChange={e => updateOutro(o.id, 'descricao', e.target.value)} />
+                  <input className="field w-28 text-sm" type="number" min="0" step="0.01" placeholder="Valor"
+                    value={o.valor || ''} onChange={e => updateOutro(o.id, 'valor', e.target.value)} />
+                  <button type="button" onClick={() => removeOutro(o.id)}
+                    className="p-1.5 text-[#94A3B8] hover:text-red-500 transition-colors shrink-0">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={addOutro}
+                className="text-xs text-[#4F7CFF] hover:text-[#3d6ae0] flex items-center gap-1 transition-colors">
+                <Plus size={12} /> Adicionar outro benefício
+              </button>
+            </div>
+          </div>
 
+          {/* Preview custo real */}
+          {salNum > 0 && (
+            <div className="bg-[#F0F4FF] border border-[#C7D2FE] rounded-xl p-4">
+              <p className="text-xs font-semibold text-[#4F7CFF] flex items-center gap-1.5 mb-3"><Calculator size={12} /> Custo Real Calculado</p>
+              <div className="space-y-1.5 text-xs mb-3">
+                <div className="flex justify-between text-[#64748B]">
+                  <span>Salário bruto</span>
+                  <span className="font-medium text-[#374151]">{moeda(salNum)}</span>
+                </div>
+                <div className="flex justify-between text-[#64748B]">
+                  <span>Encargos ({fmt2(encargosPctNum)}%)</span>
+                  <span className="font-medium text-[#374151]">{moeda(encargosNum)}</span>
+                </div>
+                {(beneficiosFixoNum + outrosNum) > 0 && (
+                  <div className="flex justify-between text-[#64748B]">
+                    <span>Benefícios</span>
+                    <span className="font-medium text-[#374151]">{moeda(beneficiosFixoNum + outrosNum)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-[#C7D2FE] pt-1.5 font-bold text-sm text-[#0F172A]">
+                  <span>Custo Total Mensal</span>
+                  <span>{moeda(custoTotalMensal)}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-[#64748B]">Custo/dia</p>
+                  <p className="font-syne font-bold text-[#0F172A]">{moeda(custoDia)}</p>
+                  <p className="text-[11px] text-[#94A3B8]">÷ {diasNum} dias</p>
+                </div>
+                <div>
+                  <p className="text-xs text-[#64748B]">Custo/hora</p>
+                  <p className="font-syne font-bold text-[#0F172A]">{moeda(custoHora)}</p>
+                  <p className="text-[11px] text-[#94A3B8]">÷ {horasNum}h</p>
+                </div>
+              </div>
               {regras.length > 0 && (
-                <div className="border-t border-[#C7D2FE] pt-3 mt-2">
-                  <p className="text-xs text-[#64748B] mb-2">Hora com adicional:</p>
+                <div className="border-t border-[#C7D2FE] pt-3 mt-3">
+                  <p className="text-xs text-[#64748B] mb-2">Hora com adicional (sobre custo/hora real):</p>
                   <div className="space-y-1">
                     {regras.map(r => (
                       <div key={r.chave} className="flex justify-between text-xs">
@@ -158,7 +311,7 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
           )}
 
           {funcionario && (
-            <div className="flex items-center gap-3 pt-1">
+            <div className="flex items-center gap-3">
               <button type="button" onClick={() => setAtivo(a => !a)}
                 className={`w-10 h-6 rounded-full transition-colors relative ${ativo ? 'bg-[#4F7CFF]' : 'bg-[#CBD5E1]'}`}>
                 <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${ativo ? 'left-4' : 'left-0.5'}`} />
@@ -217,7 +370,7 @@ export default function FuncionariosPage() {
     filtro === 'todos' ? true : filtro === 'ativos' ? f.ativo : !f.ativo
   )
   const ativos = funcionarios.filter(f => f.ativo)
-  const folhaMensal = ativos.reduce((s, f) => s + (f.salario_bruto ?? 0), 0)
+  const custoTotalMensal = ativos.reduce((s, f) => s + calculos(f).custoTotalMensal, 0)
 
   return (
     <div className="flex flex-col h-full">
@@ -246,9 +399,10 @@ export default function FuncionariosPage() {
           <div className="card p-4 border-l-4 border-l-emerald-400">
             <div className="flex items-center gap-2 mb-1">
               <DollarSign size={14} className="text-emerald-500" />
-              <p className="text-xs text-[#64748B] font-medium">Folha Mensal Bruta</p>
+              <p className="text-xs text-[#64748B] font-medium">Custo Mensal Real</p>
             </div>
-            <p className="font-syne font-bold text-xl text-[#0F172A]">{moeda(folhaMensal)}</p>
+            <p className="font-syne font-bold text-xl text-[#0F172A]">{moeda(custoTotalMensal)}</p>
+            <p className="text-[11px] text-[#94A3B8] mt-0.5">c/ encargos e benefícios</p>
           </div>
           <div className="card p-4 col-span-2 sm:col-span-1">
             <div className="flex items-center gap-2 mb-1">
@@ -289,7 +443,7 @@ export default function FuncionariosPage() {
                 <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nome</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Cargo</th>
-                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Salário Bruto</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Custo Total/Mês</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">Custo/Dia</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden lg:table-cell">Custo/Hora</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Status</th>
@@ -298,7 +452,7 @@ export default function FuncionariosPage() {
               </thead>
               <tbody>
                 {lista.map(f => {
-                  const { custoDia, custoHora } = calculos(f)
+                  const { custoTotalMensal: ctm, custoDia, custoHora } = calculos(f)
                   return (
                     <tr key={f.id} onClick={() => router.push(`/funcionarios/${f.id}`)} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group cursor-pointer">
                       <td className="px-4 py-3">
@@ -306,8 +460,11 @@ export default function FuncionariosPage() {
                         <p className="text-xs text-[#94A3B8] sm:hidden">{f.cargo ?? '—'}</p>
                       </td>
                       <td className="px-4 py-3 text-sm text-[#64748B] hidden sm:table-cell">{f.cargo ?? '—'}</td>
-                      <td className="px-4 py-3 text-sm font-medium text-[#374151]">
-                        {f.salario_bruto ? moeda(f.salario_bruto) : '—'}
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-medium text-[#374151]">{ctm > 0 ? moeda(ctm) : '—'}</p>
+                        {f.salario_bruto && ctm > f.salario_bruto && (
+                          <p className="text-[11px] text-[#94A3B8]">Sal. {moeda(f.salario_bruto)}</p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">
                         {custoDia > 0 ? moeda(custoDia) : '—'}
@@ -322,7 +479,7 @@ export default function FuncionariosPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <button onClick={() => { setEditando(f); setShowModal(true) }}
+                        <button onClick={e => { e.stopPropagation(); setEditando(f); setShowModal(true) }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
                           <Pencil size={13} />
                         </button>

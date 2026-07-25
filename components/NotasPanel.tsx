@@ -113,7 +113,9 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
 
   async function newNota() {
     const sb = createClient()
-    const { data } = await sb.from('notas').insert({ titulo: 'Nova nota', conteudo: '' }).select().single()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) return null
+    const { data } = await sb.from('notas').insert({ titulo: 'Nova nota', conteudo: '', user_id: user.id }).select().single()
     if (data) {
       setNotas(prev => [data as Nota, ...prev])
       openNota(data as Nota)

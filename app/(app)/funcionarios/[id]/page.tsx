@@ -4,11 +4,18 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, Shield, Shirt, Calendar, User, Hash } from 'lucide-react'
+import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
+const fmt2 = (v: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
 const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
+
+interface OutroBeneficio {
+  id: string
+  descricao: string
+  valor: number
+}
 
 interface Funcionario {
   id: string
@@ -19,6 +26,15 @@ interface Funcionario {
   dias_mes: number | null
   custo_diario: number | null
   ativo: boolean
+  fgts_pct: number | null
+  inss_patronal_pct: number | null
+  provisao_13_pct: number | null
+  provisao_ferias_pct: number | null
+  provisao_multa_pct: number | null
+  vale_refeicao: number | null
+  vale_transporte: number | null
+  plano_saude: number | null
+  outros_beneficios: OutroBeneficio[] | null
 }
 
 interface RegistroItem {
@@ -35,13 +51,21 @@ interface RegistroItem {
   ca_valor: string | null
 }
 
-const ICONE_LABEL: Record<string, string> = {
-  shield: 'EPI',
-  shirt: 'Uniforme',
-  sparkles: 'Limpeza',
-  thermometer: 'Refrigeração',
-  droplets: 'Hidráulica',
+function calculos(f: Funcionario) {
+  const salario = f.salario_bruto ?? 0
+  const dias = f.dias_mes ?? 30
+  const horasMes = f.horas_dia ?? 220
+  const encargosPct = (f.fgts_pct ?? 8) + (f.inss_patronal_pct ?? 0) + (f.provisao_13_pct ?? 8.33) + (f.provisao_ferias_pct ?? 11.11) + (f.provisao_multa_pct ?? 3.2)
+  const encargos = salario * encargosPct / 100
+  const beneficioFixo = (f.vale_refeicao ?? 0) + (f.vale_transporte ?? 0) + (f.plano_saude ?? 0)
+  const outrosTotal = (f.outros_beneficios ?? []).reduce((s, o) => s + (o.valor ?? 0), 0)
+  const custoTotalMensal = salario + encargos + beneficioFixo + outrosTotal
+  const custoDia = dias > 0 ? custoTotalMensal / dias : 0
+  const custoHora = horasMes > 0 ? custoTotalMensal / horasMes : 0
+  return { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct }
 }
+
+function gerarId() { return Math.random().toString(36).slice(2, 10) }
 
 export default function CentralFuncionarioPage() {
   const { id } = useParams<{ id: string }>()
@@ -99,11 +123,6 @@ export default function CentralFuncionarioPage() {
 
   useEffect(() => { load() }, [id])
 
-  const custoDia = funcionario?.salario_bruto && funcionario?.dias_mes
-    ? funcionario.salario_bruto / funcionario.dias_mes : 0
-  const custoHora = funcionario?.salario_bruto && funcionario?.horas_dia
-    ? funcionario.salario_bruto / funcionario.horas_dia : 0
-
   const estoques = Array.from(new Set(registros.map(r => r.estoque_nome)))
   const listaFiltrada = filtroEstoque ? registros.filter(r => r.estoque_nome === filtroEstoque) : registros
 
@@ -124,6 +143,10 @@ export default function CentralFuncionarioPage() {
       </div>
     </div>
   )
+
+  const { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct } = calculos(funcionario)
+  const salario = funcionario.salario_bruto ?? 0
+  const temEncargosOuBeneficios = encargos > 0 || (beneficioFixo + outrosTotal) > 0
 
   return (
     <div className="flex flex-col h-full">
@@ -153,13 +176,16 @@ export default function CentralFuncionarioPage() {
         </div>
 
         {/* Cards de custo */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="card p-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="card p-3 border-l-4 border-l-[#4F7CFF]">
             <div className="flex items-center gap-1.5 mb-1">
               <DollarSign size={12} className="text-[#4F7CFF]" />
-              <p className="text-xs text-[#64748B]">Salário Bruto</p>
+              <p className="text-xs text-[#64748B]">Custo Total/Mês</p>
             </div>
-            <p className="font-syne font-bold text-[#0F172A]">{funcionario.salario_bruto ? moeda(funcionario.salario_bruto) : '—'}</p>
+            <p className="font-syne font-bold text-[#0F172A]">{custoTotalMensal > 0 ? moeda(custoTotalMensal) : '—'}</p>
+            {temEncargosOuBeneficios && salario > 0 && (
+              <p className="text-[11px] text-[#94A3B8] mt-0.5">Sal. {moeda(salario)}</p>
+            )}
           </div>
           <div className="card p-3">
             <div className="flex items-center gap-1.5 mb-1">
@@ -183,6 +209,99 @@ export default function CentralFuncionarioPage() {
             <p className="font-syne font-bold text-[#0F172A]">{registros.length}</p>
           </div>
         </div>
+
+        {/* Breakdown de custos */}
+        {salario > 0 && (
+          <div className="card p-4 mb-6">
+            <p className="text-xs font-semibold text-[#374151] mb-3">Composição do Custo Mensal</p>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-[#64748B] text-xs">Salário Bruto</span>
+                <span className="font-medium text-[#374151]">{moeda(salario)}</span>
+              </div>
+              {encargos > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-[#64748B] text-xs flex items-center gap-1">
+                    <TrendingUp size={10} /> Encargos Trabalhistas ({fmt2(encargosPct)}%)
+                  </span>
+                  <span className="font-medium text-[#374151]">{moeda(encargos)}</span>
+                </div>
+              )}
+              {beneficioFixo > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-[#64748B] text-xs flex items-center gap-1">
+                    <Heart size={10} /> Benefícios fixos
+                  </span>
+                  <span className="font-medium text-[#374151]">{moeda(beneficioFixo)}</span>
+                </div>
+              )}
+              {outrosTotal > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-[#64748B] text-xs">Outros benefícios</span>
+                  <span className="font-medium text-[#374151]">{moeda(outrosTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center border-t border-[#E2E8F0] pt-2 font-bold">
+                <span className="text-xs text-[#0F172A]">Custo Total Mensal</span>
+                <span className="text-[#4F7CFF]">{moeda(custoTotalMensal)}</span>
+              </div>
+            </div>
+
+            {/* Detalhes encargos */}
+            {encargos > 0 && (
+              <div className="mt-3 pt-3 border-t border-[#F1F5F9]">
+                <p className="text-[11px] text-[#94A3B8] mb-2 uppercase tracking-wide font-medium">Detalhes dos encargos</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {[
+                    { label: 'FGTS', pct: funcionario.fgts_pct ?? 8 },
+                    { label: 'INSS Patronal', pct: funcionario.inss_patronal_pct ?? 0 },
+                    { label: '13º Salário', pct: funcionario.provisao_13_pct ?? 8.33 },
+                    { label: 'Férias + Abono', pct: funcionario.provisao_ferias_pct ?? 11.11 },
+                    { label: 'Multa FGTS', pct: funcionario.provisao_multa_pct ?? 3.2 },
+                  ].filter(e => e.pct > 0).map(e => (
+                    <div key={e.label} className="flex justify-between text-[11px]">
+                      <span className="text-[#94A3B8]">{e.label} ({fmt2(e.pct)}%)</span>
+                      <span className="text-[#64748B] font-medium">{moeda(salario * e.pct / 100)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Detalhes benefícios */}
+            {(beneficioFixo + outrosTotal) > 0 && (
+              <div className="mt-3 pt-3 border-t border-[#F1F5F9]">
+                <p className="text-[11px] text-[#94A3B8] mb-2 uppercase tracking-wide font-medium">Detalhes dos benefícios</p>
+                <div className="space-y-1">
+                  {funcionario.vale_refeicao ? (
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-[#94A3B8]">Vale Refeição/Alimentação</span>
+                      <span className="text-[#64748B] font-medium">{moeda(funcionario.vale_refeicao)}</span>
+                    </div>
+                  ) : null}
+                  {funcionario.vale_transporte ? (
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-[#94A3B8]">Vale Transporte</span>
+                      <span className="text-[#64748B] font-medium">{moeda(funcionario.vale_transporte)}</span>
+                    </div>
+                  ) : null}
+                  {funcionario.plano_saude ? (
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-[#94A3B8]">Plano de Saúde</span>
+                      <span className="text-[#64748B] font-medium">{moeda(funcionario.plano_saude)}</span>
+                    </div>
+                  ) : null}
+                  {(funcionario.outros_beneficios ?? []).map(o => (
+                    <div key={o.id} className="flex justify-between text-[11px]">
+                      <span className="text-[#94A3B8]">{o.descricao}</span>
+                      <span className="text-[#64748B] font-medium">{moeda(o.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Histórico de itens */}
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -273,56 +392,185 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
   const [diasMes, setDiasMes] = useState(funcionario.dias_mes ? String(funcionario.dias_mes) : '30')
   const [horasMes, setHorasMes] = useState(funcionario.horas_dia ? String(funcionario.horas_dia) : '220')
   const [ativo, setAtivo] = useState(funcionario.ativo)
+  const [fgtsPct, setFgtsPct] = useState(String(funcionario.fgts_pct ?? 8))
+  const [inssPatronalPct, setInssPatronalPct] = useState(String(funcionario.inss_patronal_pct ?? 0))
+  const [provisao13Pct, setProvisao13Pct] = useState(String(funcionario.provisao_13_pct ?? 8.33))
+  const [provisaoFeriasPct, setProvisaoFeriasPct] = useState(String(funcionario.provisao_ferias_pct ?? 11.11))
+  const [provisaoMultaPct, setProvisaoMultaPct] = useState(String(funcionario.provisao_multa_pct ?? 3.2))
+  const [valeRefeicao, setValeRefeicao] = useState(funcionario.vale_refeicao ? String(funcionario.vale_refeicao) : '')
+  const [valeTransporte, setValeTransporte] = useState(funcionario.vale_transporte ? String(funcionario.vale_transporte) : '')
+  const [planoSaude, setPlanoSaude] = useState(funcionario.plano_saude ? String(funcionario.plano_saude) : '')
+  const [outrosBeneficios, setOutrosBeneficios] = useState<OutroBeneficio[]>(
+    Array.isArray(funcionario.outros_beneficios) ? funcionario.outros_beneficios : []
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const salNum = parseFloat(salarioBruto) || 0
+  const diasNum = parseFloat(diasMes) || 30
+  const horasNum = parseFloat(horasMes) || 220
+  const encargosPctNum = (parseFloat(fgtsPct) || 0) + (parseFloat(inssPatronalPct) || 0) + (parseFloat(provisao13Pct) || 0) + (parseFloat(provisaoFeriasPct) || 0) + (parseFloat(provisaoMultaPct) || 0)
+  const encargosNum = salNum * encargosPctNum / 100
+  const beneficiosFixoNum = (parseFloat(valeRefeicao) || 0) + (parseFloat(valeTransporte) || 0) + (parseFloat(planoSaude) || 0)
+  const outrosNum = outrosBeneficios.reduce((s, o) => s + (o.valor || 0), 0)
+  const custoTotalMensal = salNum + encargosNum + beneficiosFixoNum + outrosNum
+  const custoDia = diasNum > 0 ? custoTotalMensal / diasNum : 0
+  const custoHora = horasNum > 0 ? custoTotalMensal / horasNum : 0
+
+  function addOutro() { setOutrosBeneficios(prev => [...prev, { id: gerarId(), descricao: '', valor: 0 }]) }
+  function removeOutro(id: string) { setOutrosBeneficios(prev => prev.filter(o => o.id !== id)) }
+  function updateOutro(id: string, key: 'descricao' | 'valor', val: string) {
+    setOutrosBeneficios(prev => prev.map(o => o.id === id ? { ...o, [key]: key === 'valor' ? parseFloat(val) || 0 : val } : o))
+  }
 
   async function salvar() {
     if (!nome.trim()) return
     setSaving(true)
     const supabase = createClient()
-    const diasNum = parseFloat(diasMes) || 30
-    const horasNum = parseFloat(horasMes) || 220
-    const salNum = parseFloat(salarioBruto) || 0
     const { error: err } = await supabase.from('funcionarios').update({
       nome: nome.trim(), cargo: cargo.trim() || null,
       salario_bruto: salNum || null, horas_dia: horasNum, dias_mes: diasNum,
-      custo_diario: diasNum > 0 ? salNum / diasNum : null, ativo,
+      custo_diario: custoDia || null, ativo,
+      fgts_pct: parseFloat(fgtsPct) || 8,
+      inss_patronal_pct: parseFloat(inssPatronalPct) || 0,
+      provisao_13_pct: parseFloat(provisao13Pct) || 8.33,
+      provisao_ferias_pct: parseFloat(provisaoFeriasPct) || 11.11,
+      provisao_multa_pct: parseFloat(provisaoMultaPct) || 3.2,
+      vale_refeicao: parseFloat(valeRefeicao) || null,
+      vale_transporte: parseFloat(valeTransporte) || null,
+      plano_saude: parseFloat(planoSaude) || null,
+      outros_beneficios: outrosBeneficios.filter(o => o.descricao.trim()).length > 0
+        ? outrosBeneficios.filter(o => o.descricao.trim()) : null,
     }).eq('id', funcionario.id)
     setSaving(false)
     if (err) { setError(err.message); return }
     onSaved()
   }
 
+  const encargosRows = [
+    { label: 'FGTS', hint: '8% padrão', val: fgtsPct, set: setFgtsPct },
+    { label: 'INSS Patronal', hint: '0% Simples / 20% Lucro Presumido', val: inssPatronalPct, set: setInssPatronalPct },
+    { label: '13º Salário', hint: '8,33% (= 1/12)', val: provisao13Pct, set: setProvisao13Pct },
+    { label: 'Férias + Abono 1/3', hint: '11,11%', val: provisaoFeriasPct, set: setProvisaoFeriasPct },
+    { label: 'Provisão Multa FGTS', hint: '3,2% (= 40% × 8%)', val: provisaoMultaPct, set: setProvisaoMultaPct },
+  ]
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">Editar Funcionário</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Nome *</label>
-            <input className="field" value={nome} onChange={e => setNome(e.target.value)} autoFocus />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
-            <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">Salário Bruto (R$)</label>
-            <input className="field" type="number" min="0" step="0.01" value={salarioBruto} onChange={e => setSalarioBruto(e.target.value)} placeholder="0,00" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+        <div className="p-6 space-y-5">
+
+          <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias/mês</label>
-              <input className="field" type="number" value={diasMes} onChange={e => setDiasMes(e.target.value)} />
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Nome *</label>
+              <input className="field" value={nome} onChange={e => setNome(e.target.value)} autoFocus />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Horas/mês</label>
-              <input className="field" type="number" value={horasMes} onChange={e => setHorasMes(e.target.value)} />
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
+              <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC" />
             </div>
           </div>
+
+          <div className="border-t border-[#E2E8F0] pt-4">
+            <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><DollarSign size={13} /> Remuneração</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Salário Mensal Bruto (R$)</label>
+                <input className="field" type="number" min="0" step="0.01" value={salarioBruto} onChange={e => setSalarioBruto(e.target.value)} placeholder="0,00" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias/mês</label>
+                  <input className="field" type="number" value={diasMes} onChange={e => setDiasMes(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Horas/mês</label>
+                  <input className="field" type="number" value={horasMes} onChange={e => setHorasMes(e.target.value)} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-[#E2E8F0] pt-4">
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-[#374151] flex items-center gap-1.5"><TrendingUp size={13} /> Encargos Trabalhistas</p>
+              <p className="text-[11px] text-[#94A3B8] mt-0.5">% sobre o salário, provisionados mensalmente</p>
+            </div>
+            <div className="space-y-2.5">
+              {encargosRows.map(({ label, hint, val, set }) => (
+                <div key={label} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-[#374151]">{label}</p>
+                    <p className="text-[11px] text-[#94A3B8]">{hint}</p>
+                  </div>
+                  <div className="relative w-24 shrink-0">
+                    <input className="field text-right pr-6 py-1.5 text-sm" type="number" min="0" max="100" step="0.01"
+                      value={val} onChange={e => set(e.target.value)} />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#94A3B8]">%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {salNum > 0 && (
+              <div className="mt-3 flex justify-between text-xs text-[#64748B] bg-[#F8FAFC] rounded-lg px-3 py-2 border border-[#E2E8F0]">
+                <span>Total encargos ({fmt2(encargosPctNum)}%)</span>
+                <span className="font-semibold text-[#0F172A]">{moeda(encargosNum)}/mês</span>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-[#E2E8F0] pt-4">
+            <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><Heart size={13} /> Benefícios Mensais</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Refeição / Alimentação</label>
+                  <input className="field" type="number" min="0" step="0.01" value={valeRefeicao} onChange={e => setValeRefeicao(e.target.value)} placeholder="0,00" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Transporte</label>
+                  <input className="field" type="number" min="0" step="0.01" value={valeTransporte} onChange={e => setValeTransporte(e.target.value)} placeholder="0,00" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Plano de Saúde</label>
+                <input className="field" type="number" min="0" step="0.01" value={planoSaude} onChange={e => setPlanoSaude(e.target.value)} placeholder="0,00" />
+              </div>
+              {outrosBeneficios.map(o => (
+                <div key={o.id} className="flex items-center gap-2">
+                  <input className="field flex-1 text-sm" placeholder="Descrição" value={o.descricao} onChange={e => updateOutro(o.id, 'descricao', e.target.value)} />
+                  <input className="field w-28 text-sm" type="number" min="0" step="0.01" placeholder="Valor" value={o.valor || ''} onChange={e => updateOutro(o.id, 'valor', e.target.value)} />
+                  <button type="button" onClick={() => removeOutro(o.id)} className="p-1.5 text-[#94A3B8] hover:text-red-500 transition-colors shrink-0">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={addOutro} className="text-xs text-[#4F7CFF] hover:text-[#3d6ae0] flex items-center gap-1 transition-colors">
+                <Plus size={12} /> Adicionar outro benefício
+              </button>
+            </div>
+          </div>
+
+          {salNum > 0 && (
+            <div className="bg-[#F0F4FF] border border-[#C7D2FE] rounded-xl p-4">
+              <p className="text-xs font-semibold text-[#4F7CFF] mb-2">Custo Total Mensal</p>
+              <div className="space-y-1 text-xs mb-3">
+                <div className="flex justify-between text-[#64748B]"><span>Salário bruto</span><span className="font-medium text-[#374151]">{moeda(salNum)}</span></div>
+                <div className="flex justify-between text-[#64748B]"><span>Encargos ({fmt2(encargosPctNum)}%)</span><span className="font-medium text-[#374151]">{moeda(encargosNum)}</span></div>
+                {(beneficiosFixoNum + outrosNum) > 0 && <div className="flex justify-between text-[#64748B]"><span>Benefícios</span><span className="font-medium text-[#374151]">{moeda(beneficiosFixoNum + outrosNum)}</span></div>}
+                <div className="flex justify-between border-t border-[#C7D2FE] pt-1.5 font-bold text-sm text-[#0F172A]"><span>Total</span><span>{moeda(custoTotalMensal)}</span></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-[#64748B]">Custo/dia</p><p className="font-syne font-bold text-[#0F172A]">{moeda(custoDia)}</p></div>
+                <div><p className="text-xs text-[#64748B]">Custo/hora</p><p className="font-syne font-bold text-[#0F172A]">{moeda(custoHora)}</p></div>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => setAtivo(a => !a)}
               className={`w-10 h-6 rounded-full transition-colors relative ${ativo ? 'bg-[#4F7CFF]' : 'bg-[#CBD5E1]'}`}>
