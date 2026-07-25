@@ -329,8 +329,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, alocMap, onClose, onSave
             tipo: row.tipo as TipoAlocacao,
             obra_id: row.tipo === 'obra' && row.obra_id ? row.obra_id : null,
           }
-          if (existing?.id) return sb.from('funcionario_alocacoes').update(payload).eq('id', existing.id)
-          return sb.from('funcionario_alocacoes').insert(payload)
+          return sb.from('funcionario_alocacoes').upsert(payload, { onConflict: 'funcionario_id,data' })
         } else if (existing?.id) {
           return sb.from('funcionario_alocacoes').delete().eq('id', existing.id)
         }
@@ -443,13 +442,9 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, alocacao, onClose, onSave
         funcionario_id: fid, data, tipo,
         obra_id: tipo === 'obra' && obraId ? obraId : null,
       }
-      if (alocacao?.id) {
-        const { error } = await sb.from('funcionario_alocacoes').update(payload).eq('id', alocacao.id)
-        if (error) { console.error('Update error:', error); alert('Erro ao salvar: ' + error.message) }
-      } else {
-        const { error } = await sb.from('funcionario_alocacoes').insert(payload)
-        if (error) { console.error('Insert error:', error); alert('Erro ao salvar: ' + error.message) }
-      }
+      const { error } = await sb.from('funcionario_alocacoes')
+        .upsert(payload, { onConflict: 'funcionario_id,data' })
+      if (error) { console.error('Upsert error:', error); alert('Erro ao salvar: ' + error.message) }
     }
     setSaving(false)
     onSaved()
