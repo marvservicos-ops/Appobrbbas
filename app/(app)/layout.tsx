@@ -1,4 +1,7 @@
+'use client'
+
 import Sidebar from '@/components/Sidebar'
+import NotasFlutuante from '@/components/NotasFlutuante'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,6 +11,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="min-w-0 flex-1 pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(4rem+env(safe-area-inset-bottom))] md:h-full md:overflow-y-auto md:pt-0 md:pb-0">
         {children}
       </main>
+      <NotasFlutuante />
     </div>
   )
 }
