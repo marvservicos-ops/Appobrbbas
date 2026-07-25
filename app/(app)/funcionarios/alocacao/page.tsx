@@ -71,13 +71,13 @@ export default function AlocacaoPage() {
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
     const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
-      sb.from('obras').select('id, titulo').order('titulo'),
+      sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
         .select('id, funcionario_id, data, tipo, obra_id, obras:obra_id(titulo)')
         .gte('data', inicio).lte('data', fim),
     ])
-    if (obrasErr) alert('Obras error: ' + JSON.stringify(obrasErr))
-    if (alocErr) alert('Alocacoes error: ' + JSON.stringify(alocErr))
+    if (obrasErr) console.error('Obras error:', obrasErr)
+    if (alocErr) console.error('Alocacoes error:', alocErr)
     setFuncionarios(funcs ?? [])
     setObras(obs ?? [])
     setAlocacoes(
@@ -156,7 +156,6 @@ export default function AlocacaoPage() {
           <span className="text-xs text-[#94A3B8]">Fim de semana</span>
         </div>
         <span className="text-xs text-[#94A3B8] ml-2 shrink-0">Clique no dia para preencher todos • Clique na célula para editar um</span>
-        <span className="text-xs font-bold text-red-500 ml-4 shrink-0">[DEBUG: {obras.length} obras]</span>
       </div>
 
       {/* Grade */}
