@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { Plus, Pencil, X, Loader2, Users, DollarSign, CheckCircle2, XCircle, Clock, Calculator, TrendingUp, Heart, Trash2 } from 'lucide-react'
+import { Plus, Pencil, X, Loader2, Users, DollarSign, CheckCircle2, XCircle, Clock, Calculator, TrendingUp, Heart, Trash2, LayoutGrid } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
@@ -401,10 +401,16 @@ export default function FuncionariosPage() {
             <h1 className="font-syne text-xl md:text-2xl font-bold text-[#0F172A]">Funcionários</h1>
             <p className="text-xs md:text-sm text-[#64748B] mt-0.5">Cadastro de equipe e custo de mão de obra</p>
           </div>
-          <button onClick={() => { setEditando(null); setShowModal(true) }}
-            className="btn-primary flex items-center gap-2 text-sm">
-            <Plus size={15} /> Novo
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => router.push('/funcionarios/alocacao')}
+              className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] transition-colors font-medium">
+              <LayoutGrid size={15} /> Quadro
+            </button>
+            <button onClick={() => { setEditando(null); setShowModal(true) }}
+              className="btn-primary flex items-center gap-2 text-sm">
+              <Plus size={15} /> Novo
+            </button>
+          </div>
         </div>
 
         {/* Cards resumo */}
