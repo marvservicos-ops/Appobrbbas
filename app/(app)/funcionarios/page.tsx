@@ -33,6 +33,7 @@ interface Funcionario {
   provisao_multa_pct: number | null
   vale_refeicao: number | null
   vale_transporte: number | null
+  vt_desconto_pct: number | null
   plano_saude: number | null
   outros_beneficios: OutroBeneficio[] | null
 }
@@ -43,18 +44,21 @@ interface RegraExtra {
   valor: { percentual: number }
 }
 
-function calculos(f: Pick<Funcionario, 'salario_bruto' | 'horas_dia' | 'dias_mes' | 'fgts_pct' | 'inss_patronal_pct' | 'provisao_13_pct' | 'provisao_ferias_pct' | 'provisao_multa_pct' | 'vale_refeicao' | 'vale_transporte' | 'plano_saude' | 'outros_beneficios'>) {
+function calculos(f: Pick<Funcionario, 'salario_bruto' | 'horas_dia' | 'dias_mes' | 'fgts_pct' | 'inss_patronal_pct' | 'provisao_13_pct' | 'provisao_ferias_pct' | 'provisao_multa_pct' | 'vale_refeicao' | 'vale_transporte' | 'vt_desconto_pct' | 'plano_saude' | 'outros_beneficios'>) {
   const salario = f.salario_bruto ?? 0
   const dias = f.dias_mes ?? 30
   const horasMes = f.horas_dia ?? 220
   const encargosPct = (f.fgts_pct ?? 8) + (f.inss_patronal_pct ?? 0) + (f.provisao_13_pct ?? 8.33) + (f.provisao_ferias_pct ?? 11.11) + (f.provisao_multa_pct ?? 3.2)
   const encargos = salario * encargosPct / 100
-  const beneficioFixo = (f.vale_refeicao ?? 0) + (f.vale_transporte ?? 0) + (f.plano_saude ?? 0)
+  const vtBruto = f.vale_transporte ?? 0
+  const vtDesconto = Math.min(vtBruto, salario * ((f.vt_desconto_pct ?? 6) / 100))
+  const vtCustoEmpresa = Math.max(0, vtBruto - vtDesconto)
+  const beneficioFixo = (f.vale_refeicao ?? 0) + vtCustoEmpresa + (f.plano_saude ?? 0)
   const outrosTotal = (f.outros_beneficios ?? []).reduce((s, o) => s + (o.valor ?? 0), 0)
   const custoTotalMensal = salario + encargos + beneficioFixo + outrosTotal
   const custoDia = dias > 0 ? custoTotalMensal / dias : 0
   const custoHora = horasMes > 0 ? custoTotalMensal / horasMes : 0
-  return { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct }
+  return { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct, vtBruto, vtDesconto, vtCustoEmpresa }
 }
 
 function gerarId() { return Math.random().toString(36).slice(2, 10) }
@@ -78,6 +82,7 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   const [provisaoMultaPct, setProvisaoMultaPct] = useState(String(funcionario?.provisao_multa_pct ?? 3.2))
   const [valeRefeicao, setValeRefeicao] = useState(funcionario?.vale_refeicao ? String(funcionario.vale_refeicao) : '')
   const [valeTransporte, setValeTransporte] = useState(funcionario?.vale_transporte ? String(funcionario.vale_transporte) : '')
+  const [vtDescontoPct, setVtDescontoPct] = useState(String(funcionario?.vt_desconto_pct ?? 6))
   const [planoSaude, setPlanoSaude] = useState(funcionario?.plano_saude ? String(funcionario.plano_saude) : '')
   const [outrosBeneficios, setOutrosBeneficios] = useState<OutroBeneficio[]>(
     Array.isArray(funcionario?.outros_beneficios) ? funcionario.outros_beneficios : []
@@ -90,7 +95,10 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   const horasNum = parseFloat(horasMes) || 220
   const encargosPctNum = (parseFloat(fgtsPct) || 0) + (parseFloat(inssPatronalPct) || 0) + (parseFloat(provisao13Pct) || 0) + (parseFloat(provisaoFeriasPct) || 0) + (parseFloat(provisaoMultaPct) || 0)
   const encargosNum = salNum * encargosPctNum / 100
-  const beneficiosFixoNum = (parseFloat(valeRefeicao) || 0) + (parseFloat(valeTransporte) || 0) + (parseFloat(planoSaude) || 0)
+  const vtBrutoNum = parseFloat(valeTransporte) || 0
+  const vtDescontoNum = Math.min(vtBrutoNum, salNum * ((parseFloat(vtDescontoPct) || 0) / 100))
+  const vtCustoEmpresaNum = Math.max(0, vtBrutoNum - vtDescontoNum)
+  const beneficiosFixoNum = (parseFloat(valeRefeicao) || 0) + vtCustoEmpresaNum + (parseFloat(planoSaude) || 0)
   const outrosNum = outrosBeneficios.reduce((s, o) => s + (o.valor || 0), 0)
   const custoTotalMensal = salNum + encargosNum + beneficiosFixoNum + outrosNum
   const custoDia = diasNum > 0 ? custoTotalMensal / diasNum : 0
@@ -126,6 +134,7 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
       provisao_multa_pct: parseFloat(provisaoMultaPct) || 3.2,
       vale_refeicao: parseFloat(valeRefeicao) || null,
       vale_transporte: parseFloat(valeTransporte) || null,
+      vt_desconto_pct: parseFloat(vtDescontoPct) ?? 6,
       plano_saude: parseFloat(planoSaude) || null,
       outros_beneficios: outrosBeneficios.filter(o => o.descricao.trim()).length > 0
         ? outrosBeneficios.filter(o => o.descricao.trim())
@@ -222,17 +231,28 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
           <div className="border-t border-[#E2E8F0] pt-4">
             <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><Heart size={13} /> Benefícios Mensais</p>
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Refeição / Alimentação</label>
-                  <input className="field" type="number" min="0" step="0.01" value={valeRefeicao}
-                    onChange={e => setValeRefeicao(e.target.value)} placeholder="0,00" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Transporte <span className="text-[#94A3B8] font-normal">(custo líquido)</span></label>
-                  <input className="field" type="number" min="0" step="0.01" value={valeTransporte}
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Refeição / Alimentação</label>
+                <input className="field" type="number" min="0" step="0.01" value={valeRefeicao}
+                  onChange={e => setValeRefeicao(e.target.value)} placeholder="0,00" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Transporte <span className="text-[#94A3B8] font-normal">(valor bruto mensal)</span></label>
+                <div className="flex gap-2">
+                  <input className="field flex-1" type="number" min="0" step="0.01" value={valeTransporte}
                     onChange={e => setValeTransporte(e.target.value)} placeholder="0,00" />
+                  <div className="relative w-28 shrink-0">
+                    <input className="field text-right pr-8" type="number" min="0" max="6" step="0.1"
+                      value={vtDescontoPct} onChange={e => setVtDescontoPct(e.target.value)} title="Desconto do funcionário (máx. 6% CLT)" />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#94A3B8]">% desc.</span>
+                  </div>
                 </div>
+                {vtBrutoNum > 0 && (
+                  <div className="mt-1.5 text-[11px] text-[#94A3B8] flex gap-3">
+                    <span>Desconto folha: <span className="text-red-400 font-medium">−{moeda(vtDescontoNum)}</span></span>
+                    <span>Custo empresa: <span className="text-emerald-600 font-medium">{moeda(vtCustoEmpresaNum)}</span></span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-[#374151] mb-1.5">Plano de Saúde</label>
