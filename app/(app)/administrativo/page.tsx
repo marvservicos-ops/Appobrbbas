@@ -7,7 +7,7 @@ import {
   Plus, X, Loader2, Pencil, Trash2, RefreshCw, Settings,
   Zap, Droplets, Building2, Monitor, FileText, ShieldCheck, MoreHorizontal,
   Wifi, Phone, Car, Wrench, Package, Users, Coffee, Printer, Server,
-  Lock, Globe, Mail, Truck, Tool, CreditCard, BarChart2, Home, Flame,
+  Lock, Globe, Mail, Truck, CreditCard, BarChart2, Home, Flame,
   Wind, Thermometer, Camera, Shield, BookOpen, Clipboard, Archive,
   HardDrive, Database, Cloud, Layout, Star, Tag, Hash, DollarSign,
 } from 'lucide-react'
