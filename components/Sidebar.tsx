@@ -11,6 +11,7 @@ const navItemsBase = [
   { href: '/obras', label: 'Obras', icon: Wrench },
   { href: '/estoque', label: 'Estoque', icon: Package },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign, adminOnly: true },
+  { href: '/administrativo', label: 'Administrativo', icon: BarChart2, adminOnly: true },
   { href: '/funcionarios', label: 'Funcionários', icon: Users, adminOnly: true },
   { href: '/notas', label: 'Notas', icon: StickyNote },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
