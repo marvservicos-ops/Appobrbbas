@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, BarChart2, Users, Settings, User, Package, Menu, X, ShieldCheck, DollarSign, StickyNote, LayoutDashboard } from 'lucide-react'
+import { Wrench, BarChart2, Users, Settings, User, Package, Menu, X, ShieldCheck, DollarSign, StickyNote, LayoutDashboard, FileText } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -12,6 +12,7 @@ const navItemsBase = [
   { href: '/estoque', label: 'Estoque', icon: Package },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign, adminOnly: true },
   { href: '/funcionarios', label: 'Funcionários', icon: Users, adminOnly: true },
+  { href: '/gestao-pj', label: 'Gestão PJ', icon: FileText, adminOnly: true },
   { href: '/notas', label: 'Notas', icon: StickyNote },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
   { href: '/clientes', label: 'Clientes', icon: Users },
