@@ -26,6 +26,8 @@ interface Funcionario {
   custo_diario: number | null
   ativo: boolean
   created_at: string
+  data_admissao: string | null
+  acordo_rescisorio: boolean
   fgts_pct: number | null
   inss_patronal_pct: number | null
   provisao_13_pct: number | null
@@ -36,6 +38,15 @@ interface Funcionario {
   vt_desconto_pct: number | null
   plano_saude: number | null
   outros_beneficios: OutroBeneficio[] | null
+}
+
+function calcMulta(f: Funcionario): number {
+  if (f.acordo_rescisorio || !f.data_admissao || !f.salario_bruto) return 0
+  const admissao = new Date(f.data_admissao + 'T12:00:00')
+  const meses = Math.max(0, (new Date().getFullYear() - admissao.getFullYear()) * 12 + new Date().getMonth() - admissao.getMonth())
+  const fgtsPct = (f.fgts_pct ?? 8) / 100
+  const fgtsAcumulado = f.salario_bruto * fgtsPct * meses
+  return fgtsAcumulado * 0.40
 }
 
 interface RegraExtra {
@@ -71,6 +82,8 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
 }) {
   const [nome, setNome] = useState(funcionario?.nome ?? '')
   const [cargo, setCargo] = useState(funcionario?.cargo ?? '')
+  const [dataAdmissao, setDataAdmissao] = useState(funcionario?.data_admissao ?? '')
+  const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario?.acordo_rescisorio ?? false)
   const [salarioBruto, setSalarioBruto] = useState(funcionario?.salario_bruto ? String(funcionario.salario_bruto) : '')
   const [diasMes, setDiasMes] = useState(funcionario?.dias_mes ? String(funcionario.dias_mes) : '30')
   const [horasMes, setHorasMes] = useState(funcionario?.horas_dia ? String(funcionario.horas_dia) : '220')
@@ -122,6 +135,8 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
     const payload = {
       nome: nome.trim(),
       cargo: cargo.trim() || null,
+      data_admissao: dataAdmissao || null,
+      acordo_rescisorio: acordoRescisorio,
       salario_bruto: salNum || null,
       horas_dia: horasNum,
       dias_mes: diasNum,
@@ -173,6 +188,21 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
             <div>
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
               <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC, Auxiliar..." />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Data de Admissão</label>
+                <input type="date" className="field" value={dataAdmissao} onChange={e => setDataAdmissao(e.target.value)} />
+              </div>
+              <div className="flex items-end pb-0.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <button type="button" onClick={() => setAcordoRescisorio(v => !v)}
+                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${acordoRescisorio ? 'bg-[#4F7CFF]' : 'bg-[#CBD5E1]'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${acordoRescisorio ? 'left-4' : 'left-0.5'}`} />
+                  </button>
+                  <span className="text-xs font-medium text-[#374151]">Acordo rescisório pago</span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -391,6 +421,8 @@ export default function FuncionariosPage() {
   )
   const ativos = funcionarios.filter(f => f.ativo)
   const custoTotalMensal = ativos.reduce((s, f) => s + calculos(f).custoTotalMensal, 0)
+  const totalMulta = ativos.reduce((s, f) => s + calcMulta(f), 0)
+  const semAdmissao = ativos.filter(f => !f.data_admissao && !f.acordo_rescisorio).length
 
   return (
     <div className="flex flex-col h-full">
@@ -414,7 +446,7 @@ export default function FuncionariosPage() {
         </div>
 
         {/* Cards resumo */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div className="card p-4 border-l-4 border-l-[#4F7CFF]">
             <div className="flex items-center gap-2 mb-1">
               <Users size={14} className="text-[#4F7CFF]" />
@@ -430,13 +462,23 @@ export default function FuncionariosPage() {
             <p className="font-syne font-bold text-xl text-[#0F172A]">{moeda(custoTotalMensal)}</p>
             <p className="text-[11px] text-[#94A3B8] mt-0.5">c/ encargos e benefícios</p>
           </div>
-          <div className="card p-4 col-span-2 sm:col-span-1">
+          <div className="card p-4">
             <div className="flex items-center gap-2 mb-1">
               <Clock size={14} className="text-[#64748B]" />
               <p className="text-xs text-[#64748B] font-medium">Custo/Dia Médio</p>
             </div>
             <p className="font-syne font-bold text-2xl text-[#0F172A]">
               {ativos.length > 0 ? moeda(ativos.reduce((s, f) => s + calculos(f).custoDia, 0) / ativos.length) : '—'}
+            </p>
+          </div>
+          <div className="card p-4 border-l-4 border-l-red-400">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp size={14} className="text-red-500" />
+              <p className="text-xs text-[#64748B] font-medium">Provisão Rescisória</p>
+            </div>
+            <p className="font-syne font-bold text-xl text-[#0F172A]">{totalMulta > 0 ? moeda(totalMulta) : '—'}</p>
+            <p className="text-[11px] text-[#94A3B8] mt-0.5">
+              {semAdmissao > 0 ? `${semAdmissao} sem data de admissão` : 'multa 40% FGTS acumulado'}
             </p>
           </div>
         </div>

@@ -27,6 +27,8 @@ interface Funcionario {
   dias_mes: number | null
   custo_diario: number | null
   ativo: boolean
+  data_admissao: string | null
+  acordo_rescisorio: boolean
   fgts_pct: number | null
   inss_patronal_pct: number | null
   provisao_13_pct: number | null
@@ -71,6 +73,16 @@ function calculos(f: Funcionario) {
 }
 
 function gerarId() { return Math.random().toString(36).slice(2, 10) }
+
+function calcMulta(f: Funcionario): { multa: number; meses: number; fgtsAcumulado: number } {
+  if (f.acordo_rescisorio || !f.data_admissao || !f.salario_bruto) return { multa: 0, meses: 0, fgtsAcumulado: 0 }
+  const admissao = new Date(f.data_admissao + 'T12:00:00')
+  const now = new Date()
+  const meses = Math.max(0, (now.getFullYear() - admissao.getFullYear()) * 12 + now.getMonth() - admissao.getMonth())
+  const fgtsPct = (f.fgts_pct ?? 8) / 100
+  const fgtsAcumulado = f.salario_bruto * fgtsPct * meses
+  return { multa: fgtsAcumulado * 0.40, meses, fgtsAcumulado }
+}
 
 export default function CentralFuncionarioPage() {
   const { id } = useParams<{ id: string }>()
@@ -154,6 +166,7 @@ export default function CentralFuncionarioPage() {
   const salario = funcionario.salario_bruto ?? 0
   const temEncargosOuBeneficios = encargos > 0 || (beneficioFixo + outrosTotal) > 0
   const isPJ = funcionario.nome.toLowerCase().includes('joão victor') || funcionario.nome.toLowerCase().includes('joao victor')
+  const { multa, meses, fgtsAcumulado } = calcMulta(funcionario)
 
   return (
     <div className="flex flex-col h-full">
@@ -328,6 +341,38 @@ export default function CentralFuncionarioPage() {
           </div>
         )}
 
+        {/* Provisão rescisória */}
+        {(!isPJ || abaAtiva === 'dados') && funcionario.salario_bruto && (
+          <div className={`card p-4 mb-6 border-l-4 ${funcionario.acordo_rescisorio ? 'border-l-emerald-400' : multa > 0 ? 'border-l-red-400' : 'border-l-[#CBD5E1]'}`}>
+            <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5">
+              <TrendingUp size={13} className={funcionario.acordo_rescisorio ? 'text-emerald-500' : 'text-red-500'} />
+              Provisão Rescisória (Multa 40% FGTS)
+            </p>
+            {funcionario.acordo_rescisorio ? (
+              <p className="text-sm font-semibold text-emerald-600 flex items-center gap-2">
+                <CheckCircle2 size={15} /> Acordo rescisório já realizado
+              </p>
+            ) : !funcionario.data_admissao ? (
+              <p className="text-xs text-[#94A3B8]">Cadastre a data de admissão para calcular a provisão.</p>
+            ) : (
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-[#64748B]">
+                  <span>Tempo de empresa</span>
+                  <span className="font-medium text-[#374151]">{meses} meses ({new Date(funcionario.data_admissao + 'T12:00:00').toLocaleDateString('pt-BR')})</span>
+                </div>
+                <div className="flex justify-between text-[#64748B]">
+                  <span>FGTS acumulado estimado ({funcionario.fgts_pct ?? 8}% × {meses} meses)</span>
+                  <span className="font-medium text-[#374151]">{moeda(fgtsAcumulado)}</span>
+                </div>
+                <div className="flex justify-between border-t border-[#E2E8F0] pt-1.5 font-bold text-sm text-[#0F172A]">
+                  <span>Multa rescisória (40%)</span>
+                  <span className="text-red-500">{moeda(multa)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Histórico de itens */}
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="font-syne font-semibold text-[#0F172A]">Histórico de Recebimentos</h2>
@@ -415,6 +460,8 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
 }) {
   const [nome, setNome] = useState(funcionario.nome)
   const [cargo, setCargo] = useState(funcionario.cargo ?? '')
+  const [dataAdmissao, setDataAdmissao] = useState(funcionario.data_admissao ?? '')
+  const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario.acordo_rescisorio ?? false)
   const [salarioBruto, setSalarioBruto] = useState(funcionario.salario_bruto ? String(funcionario.salario_bruto) : '')
   const [diasMes, setDiasMes] = useState(funcionario.dias_mes ? String(funcionario.dias_mes) : '30')
   const [horasMes, setHorasMes] = useState(funcionario.horas_dia ? String(funcionario.horas_dia) : '220')
@@ -460,6 +507,8 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
     const supabase = createClient()
     const { error: err } = await supabase.from('funcionarios').update({
       nome: nome.trim(), cargo: cargo.trim() || null,
+      data_admissao: dataAdmissao || null,
+      acordo_rescisorio: acordoRescisorio,
       salario_bruto: salNum || null, horas_dia: horasNum, dias_mes: diasNum,
       custo_diario: custoDia || null, ativo,
       fgts_pct: parseFloat(fgtsPct) || 8,
@@ -504,6 +553,21 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
             <div>
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
               <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Data de Admissão</label>
+                <input type="date" className="field" value={dataAdmissao} onChange={e => setDataAdmissao(e.target.value)} />
+              </div>
+              <div className="flex items-end pb-0.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <button type="button" onClick={() => setAcordoRescisorio(v => !v)}
+                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${acordoRescisorio ? 'bg-[#4F7CFF]' : 'bg-[#CBD5E1]'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${acordoRescisorio ? 'left-4' : 'left-0.5'}`} />
+                  </button>
+                  <span className="text-xs font-medium text-[#374151]">Acordo rescisório pago</span>
+                </label>
+              </div>
             </div>
           </div>
 
