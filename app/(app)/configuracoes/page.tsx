@@ -1,8 +1,120 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent } from 'lucide-react'
+import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent, Car, Plus, Trash2, Power } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+
+interface Veiculo { id: string; nome: string; placa: string; cor: string; ativo: boolean }
+
+function SecaoVeiculos() {
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [adicionando, setAdicionando] = useState(false)
+  const [novo, setNovo] = useState({ nome: '', placa: '', cor: '' })
+  const [salvando, setSalvando] = useState(false)
+
+  useEffect(() => {
+    createClient().from('veiculos').select('id, nome, placa, cor, ativo').order('nome')
+      .then(({ data }) => { setVeiculos(data ?? []); setLoading(false) })
+  }, [])
+
+  async function adicionar() {
+    if (!novo.nome.trim() || !novo.placa.trim()) return
+    setSalvando(true)
+    const { data } = await createClient().from('veiculos')
+      .insert({ nome: novo.nome.trim(), placa: novo.placa.trim().toUpperCase(), cor: novo.cor.trim(), ativo: true })
+      .select().single()
+    if (data) { setVeiculos(v => [...v, data as Veiculo].sort((a, b) => a.nome.localeCompare(b.nome))) }
+    setNovo({ nome: '', placa: '', cor: '' })
+    setAdicionando(false)
+    setSalvando(false)
+  }
+
+  async function toggleAtivo(id: string, ativo: boolean) {
+    await createClient().from('veiculos').update({ ativo: !ativo }).eq('id', id)
+    setVeiculos(v => v.map(x => x.id === id ? { ...x, ativo: !ativo } : x))
+  }
+
+  async function remover(id: string) {
+    if (!confirm('Remover este veículo?')) return
+    await createClient().from('veiculos').delete().eq('id', id)
+    setVeiculos(v => v.filter(x => x.id !== id))
+  }
+
+  return (
+    <section className="card">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-sky-50 flex items-center justify-center">
+            <Car size={18} className="text-sky-600" />
+          </div>
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A]">Frota de Veículos</h2>
+            <p className="text-xs text-[#94A3B8]">Veículos disponíveis no Quadro de Alocação</p>
+          </div>
+        </div>
+        <button onClick={() => setAdicionando(true)}
+          className="text-xs text-[#4F7CFF] hover:text-blue-700 font-medium px-3 py-1.5 border border-[#C7D2FE] rounded-lg hover:bg-[#EEF2FF] transition-colors flex items-center gap-1">
+          <Plus size={13} /> Adicionar
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-[#4F7CFF]" /></div>
+      ) : (
+        <div className="space-y-2">
+          {veiculos.map(v => (
+            <div key={v.id} className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${v.ativo ? 'bg-[#F8FAFC]' : 'bg-[#F1F5F9] opacity-60'}`}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-[#374151]">{v.nome}</p>
+                <p className="text-xs text-[#94A3B8]">{v.placa}{v.cor ? ` · ${v.cor}` : ''}</p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => toggleAtivo(v.id, v.ativo)} title={v.ativo ? 'Desativar' : 'Ativar'}
+                  className={`p-1.5 rounded-lg transition-colors ${v.ativo ? 'text-[#10B981] hover:bg-green-50' : 'text-[#94A3B8] hover:bg-[#F8FAFC]'}`}>
+                  <Power size={14} />
+                </button>
+                <button onClick={() => remover(v.id)}
+                  className="p-1.5 rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 transition-colors">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {veiculos.length === 0 && !adicionando && (
+            <p className="text-xs text-[#94A3B8] text-center py-4">Nenhum veículo cadastrado.</p>
+          )}
+
+          {adicionando && (
+            <div className="border border-[#4F7CFF] rounded-xl p-3 space-y-2 bg-[#F8FAFC]">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-[#374151] mb-1">Nome</label>
+                  <input className="field text-sm py-1.5" placeholder="Ex: Amarok" value={novo.nome} onChange={e => setNovo(n => ({ ...n, nome: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#374151] mb-1">Placa</label>
+                  <input className="field text-sm py-1.5" placeholder="KQR9C20" value={novo.placa} onChange={e => setNovo(n => ({ ...n, placa: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1">Cor (opcional)</label>
+                <input className="field text-sm py-1.5" placeholder="Ex: Prata" value={novo.cor} onChange={e => setNovo(n => ({ ...n, cor: e.target.value }))} />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setAdicionando(false)} className="flex-1 py-1.5 text-xs text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-white transition-colors">Cancelar</button>
+                <button onClick={adicionar} disabled={salvando || !novo.nome.trim() || !novo.placa.trim()}
+                  className="flex-1 py-1.5 text-xs font-semibold bg-[#4F7CFF] text-white rounded-lg disabled:opacity-40 hover:bg-blue-600 transition-colors flex items-center justify-center gap-1">
+                  {salvando ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Salvar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
 
 interface RegraExtra {
   chave: string
@@ -320,6 +432,9 @@ export default function ConfiguracoesPage() {
 
         {/* Adicionais Mão de Obra */}
         <SecaoExtras />
+
+        {/* Frota de Veículos */}
+        <SecaoVeiculos />
 
         {/* Segurança */}
         <section className="card">

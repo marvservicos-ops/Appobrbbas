@@ -7,7 +7,7 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -57,6 +57,89 @@ function abrev(nome: string) {
 }
 function labelData(ano: number, mes: number, dia: number) {
   return new Date(ano, mes, dia).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+function exportarRelatorio(
+  funcionarios: Funcionario[], obras: Obra[], alocacoes: Alocacao[], mes: number, ano: number
+) {
+  const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+  const diasNoMes = new Date(ano, mes + 1, 0).getDate()
+  const dias = Array.from({ length: diasNoMes }, (_, i) => i + 1)
+
+  const alocMap = new Map<string, Alocacao[]>()
+  alocacoes.forEach(a => {
+    const dia = parseInt(a.data.split('-')[2])
+    const key = `${a.funcionario_id}_${dia}`
+    if (!alocMap.has(key)) alocMap.set(key, [])
+    alocMap.get(key)!.push(a)
+  })
+
+  const rows = funcionarios.map(f => {
+    const obraMap: Record<string, number> = {}
+    let diasEscritorio = 0, diasFolga = 0, diasFalta = 0, diasAtestado = 0
+
+    dias.forEach(dia => {
+      const alocs = alocMap.get(`${f.id}_${dia}`) ?? []
+      alocs.forEach(a => {
+        const frac = (a.percentual || 100) / 100
+        if (a.tipo === 'obra' && a.obra_id) {
+          obraMap[a.obra_id] = (obraMap[a.obra_id] || 0) + frac
+        } else if (a.tipo === 'escritorio') diasEscritorio += frac
+        else if (a.tipo === 'folga') diasFolga += frac
+        else if (a.tipo === 'falta') diasFalta += frac
+        else if (a.tipo === 'atestado') diasAtestado += frac
+      })
+    })
+
+    const obrasDetalhes = Object.entries(obraMap).map(([oid, dias]) => {
+      const o = obras.find(x => x.id === oid)
+      return `${o?.titulo ?? oid}: ${Number.isInteger(dias) ? dias : dias.toFixed(1)}d`
+    }).join(' | ')
+
+    const totalObra = Object.values(obraMap).reduce((s, v) => s + v, 0)
+
+    return { nome: f.nome, cargo: f.cargo ?? '', obrasDetalhes, totalObra, diasEscritorio, diasFolga, diasFalta, diasAtestado }
+  })
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head>
+  <meta charset="UTF-8"><title>Alocação — ${MESES[mes]} ${ano}</title>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; padding: 24px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    p.sub { color: #666; font-size: 11px; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f1f5f9; text-align: left; padding: 6px 8px; font-size: 11px; border: 1px solid #e2e8f0; }
+    td { padding: 5px 8px; border: 1px solid #e2e8f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .num { text-align: center; }
+    @media print { body { padding: 0; } }
+  </style></head><body>
+  <h1>Relatório de Alocação — ${MESES[mes]} ${ano}</h1>
+  <p class="sub">Gerado em ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+  <table>
+    <thead><tr>
+      <th>Funcionário</th><th>Cargo</th><th>Obras e dias</th>
+      <th class="num">Dias obra</th><th class="num">Escrit.</th>
+      <th class="num">Folga</th><th class="num">Falta</th><th class="num">Atest.</th>
+    </tr></thead>
+    <tbody>
+    ${rows.map(r => `<tr>
+      <td><strong>${r.nome}</strong></td>
+      <td>${r.cargo}</td>
+      <td style="font-size:10px">${r.obrasDetalhes || '—'}</td>
+      <td class="num">${r.totalObra > 0 ? (Number.isInteger(r.totalObra) ? r.totalObra : r.totalObra.toFixed(1)) : '—'}</td>
+      <td class="num">${r.diasEscritorio > 0 ? r.diasEscritorio.toFixed(r.diasEscritorio % 1 === 0 ? 0 : 1) : '—'}</td>
+      <td class="num">${r.diasFolga > 0 ? r.diasFolga.toFixed(r.diasFolga % 1 === 0 ? 0 : 1) : '—'}</td>
+      <td class="num">${r.diasFalta > 0 ? r.diasFalta.toFixed(r.diasFalta % 1 === 0 ? 0 : 1) : '—'}</td>
+      <td class="num">${r.diasAtestado > 0 ? r.diasAtestado.toFixed(r.diasAtestado % 1 === 0 ? 0 : 1) : '—'}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>
+  <script>window.onload = () => window.print()</script>
+  </body></html>`
+
+  const w = window.open('', '_blank')
+  if (w) { w.document.write(html); w.document.close() }
 }
 
 export default function AlocacaoPage() {
@@ -149,6 +232,12 @@ export default function AlocacaoPage() {
           <ArrowLeft size={15} className="text-[#64748B]" />
         </button>
         <h1 className="font-syne font-bold text-lg text-[#0F172A] flex-1">Quadro de Alocação</h1>
+        {!loading && funcionarios.length > 0 && (
+          <button onClick={() => exportarRelatorio(funcionarios, obras, alocacoes, mes, ano)}
+            className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Exportar relatório mensal">
+            <Download size={15} className="text-[#64748B]" />
+          </button>
+        )}
         <div className="flex items-center gap-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-1 py-1">
           <button onClick={() => navMes(-1)}
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
