@@ -53,7 +53,7 @@ const tipoColor: Record<Pagamento['tipo'], string> = {
   outro: 'bg-gray-100 text-gray-600',
 }
 
-export default function GestaoPJPage() {
+export default function GestaoPJPanel() {
   const [contratos, setContratos] = useState<Contrato[]>([])
   const [ferias, setFerias] = useState<Ferias[]>([])
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([])
@@ -193,29 +193,21 @@ export default function GestaoPJPage() {
   ] as const
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-4 md:px-6 pt-6 pb-0 border-b border-[#E2E8F0] bg-white">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h1 className="text-xl font-bold text-[#0F172A]">Gestão PJ</h1>
-            <p className="text-sm text-[#64748B] mt-0.5">João Victor Leal Sameiro</p>
-          </div>
-          <button onClick={load} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
-            <RefreshCw size={14} className="text-[#94A3B8]" />
+    <div className="flex flex-col">
+      {/* Sub-abas */}
+      <div className="flex gap-1 border-b border-[#E2E8F0] mb-6">
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t.key ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
+            {t.label}
           </button>
-        </div>
-        <div className="flex gap-1">
-          {tabs.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t.key ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        ))}
+        <button onClick={load} className="ml-auto w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors self-center">
+          <RefreshCw size={13} className="text-[#94A3B8]" />
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6">
+      <div className="pb-6">
 
         {/* ── OVERVIEW ─────────────────────────────────── */}
         {tab === 'overview' && (

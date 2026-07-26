@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
+import GestaoPJPanel from '@/components/GestaoPJPanel'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const fmt2 = (v: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
@@ -80,6 +81,7 @@ export default function CentralFuncionarioPage() {
   const [loading, setLoading] = useState(true)
   const [filtroEstoque, setFiltroEstoque] = useState('')
   const [showEdit, setShowEdit] = useState(false)
+  const [abaAtiva, setAbaAtiva] = useState<'dados' | 'pj'>('dados')
 
   useEffect(() => {
     if (!accessLoading && !isAdmin) router.replace('/obras')
@@ -151,6 +153,7 @@ export default function CentralFuncionarioPage() {
   const { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct, vtBruto, vtDesconto, vtCustoEmpresa } = calculos(funcionario)
   const salario = funcionario.salario_bruto ?? 0
   const temEncargosOuBeneficios = encargos > 0 || (beneficioFixo + outrosTotal) > 0
+  const isPJ = funcionario.nome.toLowerCase().includes('joão victor') || funcionario.nome.toLowerCase().includes('joao victor')
 
   return (
     <div className="flex flex-col h-full">
@@ -178,6 +181,22 @@ export default function CentralFuncionarioPage() {
             <Pencil size={14} />
           </button>
         </div>
+
+        {/* Abas (só aparece para PJ) */}
+        {isPJ && (
+          <div className="flex gap-1 border-b border-[#E2E8F0] mb-6 -mt-2">
+            {([{ key: 'dados', label: 'Dados' }, { key: 'pj', label: 'Gestão PJ' }] as const).map(t => (
+              <button key={t.key} onClick={() => setAbaAtiva(t.key)}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${abaAtiva === t.key ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isPJ && abaAtiva === 'pj' && <GestaoPJPanel />}
+
+        {(!isPJ || abaAtiva === 'dados') && <>
 
         {/* Cards de custo */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -374,6 +393,8 @@ export default function CentralFuncionarioPage() {
             </table>
           </div>
         )}
+
+        </>}
       </div>
 
       {showEdit && (
