@@ -3390,7 +3390,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
       setLoadingEquipe(true)
       const sb = createClient()
       let q = sb.from('funcionario_alocacoes')
-        .select('data, funcionario_id, funcionarios(id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes)')
+        .select('data, funcionario_id, percentual, funcionarios(id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes)')
         .eq('obra_id', obraId).eq('tipo', 'obra')
       if (filtroMes) {
         const [ano, mesNum] = filtroMes.split('-').map(Number)
@@ -3409,10 +3409,11 @@ function AbaEquipe({ obraId }: { obraId: string }) {
           map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, dias_uteis: 0, dias_sabado: 0, custo_total: 0 })
         }
         const entry = map.get(r.funcionario_id)!
+        const pct = (r.percentual ?? 100) / 100
         const dow = new Date(r.data + 'T12:00:00').getDay()
-        if (dow === 6) entry.dias_sabado++
-        else if (dow !== 0) entry.dias_uteis++
-        entry.custo_total = (entry.dias_uteis + entry.dias_sabado) * entry.custo_diario
+        if (dow === 6) entry.dias_sabado += pct
+        else if (dow !== 0) entry.dias_uteis += pct
+        entry.custo_total += pct * entry.custo_diario
       }
       setEntries(Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome)))
       setLoadingEquipe(false)
@@ -3475,8 +3476,8 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                     <p className="text-sm font-medium text-[#0F172A]">{e.nome}</p>
                     <p className="text-xs text-[#94A3B8] mt-0.5">{e.cargo ?? '—'}</p>
                     <div className="flex gap-2 mt-1">
-                      <span className="text-xs text-[#64748B]">{e.dias_uteis}d úteis</span>
-                      {e.dias_sabado > 0 && <span className="text-xs text-amber-600">+{e.dias_sabado}sáb</span>}
+                      <span className="text-xs text-[#64748B]">{Number.isInteger(e.dias_uteis) ? e.dias_uteis : e.dias_uteis.toFixed(1)}d úteis</span>
+                      {e.dias_sabado > 0 && <span className="text-xs text-amber-600">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
                     </div>
                   </div>
                   <span className="text-sm font-bold text-violet-700 shrink-0">{moeda(e.custo_total)}</span>
@@ -3503,8 +3504,8 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                     <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{e.nome}</td>
                     <td className="px-4 py-3 text-sm text-[#64748B]">{e.cargo ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-[#374151]">
-                      <span>{e.dias_uteis}d úteis</span>
-                      {e.dias_sabado > 0 && <span className="text-amber-600 ml-1">+{e.dias_sabado}sáb</span>}
+                      <span>{Number.isInteger(e.dias_uteis) ? e.dias_uteis : e.dias_uteis.toFixed(1)}d úteis</span>
+                      {e.dias_sabado > 0 && <span className="text-amber-600 ml-1">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
                     </td>
                     <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">{moeda(e.custo_diario)}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>

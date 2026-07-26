@@ -7,7 +7,7 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -26,13 +26,14 @@ interface Alocacao {
   veiculo_id: string | null
   veiculo_nome: string | null
   transporte_tipo: string | null
+  percentual: number
 }
 
 type TransporteTipo = 'veiculo' | 'transporte_publico' | 'casa'
 const TRANSPORTES: { tipo: TransporteTipo; label: string; Icon: any }[] = [
-  { tipo: 'veiculo',           label: 'Veículo empresa', Icon: Car  },
+  { tipo: 'veiculo',            label: 'Veículo empresa', Icon: Car  },
   { tipo: 'transporte_publico', label: 'Transp. público', Icon: Bus  },
-  { tipo: 'casa',              label: 'Direto',          Icon: Home },
+  { tipo: 'casa',               label: 'Direto',          Icon: Home },
 ]
 
 const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon: any }[] = [
@@ -85,7 +86,7 @@ export default function AlocacaoPage() {
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, veiculo_id, transporte_tipo, obras:obra_id(titulo), veiculos:veiculo_id(nome)')
+        .select('id, funcionario_id, data, tipo, obra_id, veiculo_id, transporte_tipo, percentual, obras:obra_id(titulo), veiculos:veiculo_id(nome)')
         .gte('data', inicio).lte('data', fim),
       sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
     ])
@@ -105,6 +106,7 @@ export default function AlocacaoPage() {
         veiculo_id: a.veiculo_id,
         veiculo_nome: a.veiculos?.nome ?? null,
         transporte_tipo: a.transporte_tipo,
+        percentual: a.percentual ?? 100,
       }))
     )
     setLoading(false)
@@ -115,10 +117,13 @@ export default function AlocacaoPage() {
   const diasNoMes = new Date(ano, mes + 1, 0).getDate()
   const dias = Array.from({ length: diasNoMes }, (_, i) => i + 1)
 
-  const alocMap = new Map<string, Alocacao>()
+  // Map: "fid_dia" → Alocacao[] (múltiplas por dia)
+  const alocMap = new Map<string, Alocacao[]>()
   alocacoes.forEach(a => {
     const dia = parseInt(a.data.split('-')[2])
-    alocMap.set(`${a.funcionario_id}_${dia}`, a)
+    const key = `${a.funcionario_id}_${dia}`
+    if (!alocMap.has(key)) alocMap.set(key, [])
+    alocMap.get(key)!.push(a)
   })
 
   function isWeekend(dia: number) { const d = new Date(ano, mes, dia).getDay(); return d === 0 || d === 6 }
@@ -144,7 +149,6 @@ export default function AlocacaoPage() {
           <ArrowLeft size={15} className="text-[#64748B]" />
         </button>
         <h1 className="font-syne font-bold text-lg text-[#0F172A] flex-1">Quadro de Alocação</h1>
-        {/* Navegação de mês */}
         <div className="flex items-center gap-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-1 py-1">
           <button onClick={() => navMes(-1)}
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
@@ -172,7 +176,7 @@ export default function AlocacaoPage() {
           <div className="w-3 h-3 rounded bg-[#F1F5F9] border border-[#E2E8F0]" />
           <span className="text-xs text-[#94A3B8]">Fim de semana</span>
         </div>
-        <span className="text-xs text-[#94A3B8] ml-2 shrink-0">Clique no dia para preencher todos • Clique na célula para editar um</span>
+        <span className="text-xs text-[#94A3B8] ml-2 shrink-0">Clique no dia para preencher todos • Clique na célula para editar</span>
       </div>
 
       {/* Grade */}
@@ -228,40 +232,32 @@ export default function AlocacaoPage() {
                       {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
                     </td>
                     {dias.map(dia => {
-                      const aloc = alocMap.get(`${f.id}_${dia}`)
+                      const alocArray = alocMap.get(`${f.id}_${dia}`) ?? []
                       const weekend = isWeekend(dia)
-                      const cfg = aloc ? TIPO_MAP[aloc.tipo] : null
                       return (
                         <td key={dia}
                           onClick={() => setModalCell({ fid: f.id, dia })}
                           className={`border-b border-r border-[#E2E8F0] cursor-pointer transition-colors
-                            ${!aloc && weekend ? (zebra ? 'bg-[#F4F6F9]' : 'bg-[#F0F2F5]') : zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
+                            ${alocArray.length === 0 && weekend ? (zebra ? 'bg-[#F4F6F9]' : 'bg-[#F0F2F5]') : zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
                           style={{ height: 44, padding: 3 }}>
-                          {aloc && cfg ? (
-                            <div className="rounded w-full h-full flex flex-col items-center justify-center gap-0.5 relative"
-                              style={{ backgroundColor: cfg.bg }}>
-                              {aloc.tipo === 'obra' && aloc.obra_nome ? (
-                                <span className="text-[10px] font-semibold leading-tight px-0.5 text-center overflow-hidden"
-                                  style={{ color: cfg.cor }}>
-                                  {abrev(aloc.obra_nome)}
-                                </span>
-                              ) : (
-                                <span className="text-[9px] font-semibold leading-tight px-0.5 text-center"
-                                  style={{ color: cfg.cor }}>
-                                  {cfg.label}
-                                </span>
-                              )}
-                              {aloc.transporte_tipo === 'veiculo' && aloc.veiculo_nome && (
-                                <span className="text-[9px] font-medium leading-none opacity-80 truncate px-0.5" style={{ color: cfg.cor }}>
-                                  {aloc.veiculo_nome.split(' ')[1] ?? aloc.veiculo_nome.split(' ')[0]}
-                                </span>
-                              )}
-                              {aloc.transporte_tipo === 'transporte_publico' && (
-                                <span className="text-[9px] font-medium leading-none opacity-80" style={{ color: cfg.cor }}>Ônibus</span>
-                              )}
-                              {aloc.transporte_tipo === 'casa' && (
-                                <span className="text-[9px] font-medium leading-none opacity-80" style={{ color: cfg.cor }}>Direto</span>
-                              )}
+                          {alocArray.length > 0 ? (
+                            <div className="rounded w-full h-full flex flex-col overflow-hidden gap-px">
+                              {alocArray.map((aloc, i) => {
+                                const cfg = TIPO_MAP[aloc.tipo]
+                                const showPct = alocArray.length > 1
+                                return (
+                                  <div key={aloc.id || i}
+                                    className="w-full flex items-center justify-center overflow-hidden px-0.5"
+                                    style={{ flex: aloc.percentual, minHeight: 0, backgroundColor: cfg.bg }}>
+                                    <span className="text-[9px] font-semibold leading-tight text-center truncate w-full"
+                                      style={{ color: cfg.cor }}>
+                                      {aloc.tipo === 'obra' && aloc.obra_nome
+                                        ? `${abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
+                                        : `${cfg.label}${showPct ? ` ${aloc.percentual}%` : ''}`}
+                                    </span>
+                                  </div>
+                                )
+                              })}
                             </div>
                           ) : (
                             <div className="rounded w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity hover:bg-[#EEF2FF]">
@@ -296,7 +292,7 @@ export default function AlocacaoPage() {
           fNome={funcionarios.find(f => f.id === modalCell.fid)?.nome ?? ''}
           dia={modalCell.dia} mes={mes} ano={ano}
           obras={obras} veiculos={veiculos}
-          alocacao={alocMap.get(`${modalCell.fid}_${modalCell.dia}`) ?? null}
+          alocacoes={alocMap.get(`${modalCell.fid}_${modalCell.dia}`) ?? []}
           onClose={() => setModalCell(null)}
           onSaved={() => { setModalCell(null); load() }}
         />
@@ -310,7 +306,7 @@ export default function AlocacaoPage() {
 function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClose, onSaved }: {
   dia: number; mes: number; ano: number
   funcionarios: Funcionario[]; obras: Obra[]; veiculos: Veiculo[]
-  alocMap: Map<string, Alocacao>
+  alocMap: Map<string, Alocacao[]>
   onClose: () => void; onSaved: () => void
 }) {
   const data = toDate(ano, mes, dia)
@@ -318,7 +314,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
   const [rows, setRows] = useState<Record<string, { tipo: TipoAlocacao | ''; obra_id: string; transporte_tipo: string; veiculo_id: string }>>(() => {
     const init: Record<string, any> = {}
     funcionarios.forEach(f => {
-      const a = alocMap.get(`${f.id}_${dia}`)
+      const a = (alocMap.get(`${f.id}_${dia}`) ?? [])[0]
       init[f.id] = { tipo: a?.tipo ?? '', obra_id: a?.obra_id ?? '', transporte_tipo: a?.transporte_tipo ?? '', veiculo_id: a?.veiculo_id ?? '' }
     })
     return init
@@ -351,22 +347,20 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
     setSaving(true)
     const sb = createClient()
     await Promise.all(
-      funcionarios.map(f => {
+      funcionarios.map(async f => {
         const row = rows[f.id]
-        const existing = alocMap.get(`${f.id}_${dia}`)
+        // Delete all existing allocations for this funcionario+day
+        await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
         if (row?.tipo) {
-          const payload = {
+          await sb.from('funcionario_alocacoes').insert({
             funcionario_id: f.id, data,
             tipo: row.tipo as TipoAlocacao,
             obra_id: row.tipo === 'obra' && row.obra_id ? row.obra_id : null,
+            percentual: 100,
             transporte_tipo: row.transporte_tipo || null,
             veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
-          }
-          return sb.from('funcionario_alocacoes').upsert(payload, { onConflict: 'funcionario_id,data' })
-        } else if (existing?.id) {
-          return sb.from('funcionario_alocacoes').delete().eq('id', existing.id)
+          })
         }
-        return Promise.resolve()
       })
     )
     setSaving(false)
@@ -384,7 +378,6 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
 
-        {/* Aplicar mesma obra para todos */}
         {obras.length > 0 && (
           <div className="px-6 py-3 border-b border-[#F1F5F9] bg-[#F8FAFC] shrink-0 flex items-center gap-2">
             <span className="text-xs text-[#64748B] shrink-0 font-medium">Mesma obra p/ todos:</span>
@@ -399,7 +392,6 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
           </div>
         )}
 
-        {/* Lista de funcionários */}
         <div className="flex-1 overflow-y-auto divide-y divide-[#F1F5F9]">
           {funcionarios.map(f => {
             const row = rows[f.id] ?? { tipo: '', obra_id: '', transporte_tipo: '', veiculo_id: '' }
@@ -473,49 +465,80 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
   )
 }
 
-// ── Modal célula individual ────────────────────────────────────────────────────
+// ── Modal célula individual — multi-alocação ──────────────────────────────────
 
-function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacao, onClose, onSaved }: {
+interface AlocRow {
+  _key: number
+  id?: string
+  tipo: TipoAlocacao | ''
+  obra_id: string
+  percentual: number
+}
+
+let _rowKey = 0
+function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', percentual = 100): AlocRow {
+  return { _key: ++_rowKey, tipo, obra_id, percentual }
+}
+
+function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacoes, onClose, onSaved }: {
   fid: string; fNome: string; dia: number; mes: number; ano: number
-  obras: Obra[]; veiculos: Veiculo[]; alocacao: Alocacao | null
+  obras: Obra[]; veiculos: Veiculo[]; alocacoes: Alocacao[]
   onClose: () => void; onSaved: () => void
 }) {
   const data = toDate(ano, mes, dia)
-  const [tipo, setTipo] = useState<TipoAlocacao | ''>(alocacao?.tipo ?? '')
-  const [obraId, setObraId] = useState(alocacao?.obra_id ?? '')
-  const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>(alocacao?.transporte_tipo as TransporteTipo ?? '')
-  const [veiculoId, setVeiculoId] = useState(alocacao?.veiculo_id ?? '')
+
+  const [rows, setRows] = useState<AlocRow[]>(() => {
+    if (alocacoes.length === 0) return [newRow()]
+    return alocacoes.map(a => newRow(a.tipo, a.obra_id ?? '', a.percentual))
+  })
+  const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>(
+    (alocacoes[0]?.transporte_tipo as TransporteTipo) ?? ''
+  )
+  const [veiculoId, setVeiculoId] = useState(alocacoes[0]?.veiculo_id ?? '')
   const [saving, setSaving] = useState(false)
+
+  const totalPct = rows.reduce((s, r) => s + (r.tipo ? r.percentual : 0), 0)
+  const pctOk = totalPct === 100 || totalPct === 0
+
+  function updateRow(key: number, patch: Partial<AlocRow>) {
+    setRows(p => p.map(r => r._key === key ? { ...r, ...patch } : r))
+  }
+  function removeRow(key: number) {
+    setRows(p => p.length === 1 ? [newRow()] : p.filter(r => r._key !== key))
+  }
+  function addRow() {
+    const remaining = Math.max(0, 100 - totalPct)
+    setRows(p => [...p, newRow('', '', remaining || 50)])
+  }
 
   async function salvar() {
     setSaving(true)
     const sb = createClient()
-    if (!tipo) {
-      if (alocacao?.id) await sb.from('funcionario_alocacoes').delete().eq('id', alocacao.id)
-    } else {
-      const payload = {
-        funcionario_id: fid, data, tipo,
-        obra_id: tipo === 'obra' && obraId ? obraId : null,
-        transporte_tipo: transporteTipo || null,
-        veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
-      }
-      const { error } = await sb.from('funcionario_alocacoes')
-        .upsert(payload, { onConflict: 'funcionario_id,data' })
-      if (error) { console.error('Upsert error:', error); alert('Erro ao salvar: ' + error.message) }
+    // Delete all existing for this funcionario+day
+    await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', fid).eq('data', data)
+    const toInsert = rows.filter(r => r.tipo).map(r => ({
+      funcionario_id: fid,
+      data,
+      tipo: r.tipo as TipoAlocacao,
+      obra_id: r.tipo === 'obra' && r.obra_id ? r.obra_id : null,
+      percentual: r.percentual,
+      transporte_tipo: transporteTipo || null,
+      veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
+    }))
+    if (toInsert.length > 0) {
+      const { error } = await sb.from('funcionario_alocacoes').insert(toInsert)
+      if (error) { console.error('Insert error:', error); alert('Erro ao salvar: ' + error.message); setSaving(false); return }
     }
     setSaving(false)
     onSaved()
   }
 
-  const opcoes: Array<{ tipo: TipoAlocacao | ''; label: string; Icon: any; cor?: string }> = [
-    { tipo: '', label: 'Limpar', Icon: Minus },
-    ...TIPOS.map(t => ({ tipo: t.tipo, label: t.label, Icon: t.Icon, cor: t.cor })),
-  ]
+  const hasTipo = rows.some(r => !!r.tipo)
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
           <div>
             <h2 className="font-syne font-semibold text-[#0F172A] text-sm">{fNome}</h2>
             <p className="text-xs text-[#94A3B8] capitalize">{labelData(ano, mes, dia)}</p>
@@ -523,39 +546,67 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacao, onClo
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
 
-        <div className="p-5 space-y-4">
-          <div className="grid grid-cols-3 gap-2">
-            {opcoes.map(op => {
-              const active = tipo === op.tipo
-              const cfg = op.tipo ? TIPO_MAP[op.tipo] : null
-              return (
-                <button key={String(op.tipo)} onClick={() => { setTipo(op.tipo); if (op.tipo !== 'obra') setObraId('') }}
-                  className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border text-xs font-medium transition-colors
-                    ${active && op.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] hover:border-[#CBD5E1]'}
-                    ${active && !op.tipo ? 'bg-[#F1F5F9] border-[#94A3B8] text-[#374151]' : ''}
-                    ${!active ? 'text-[#94A3B8]' : ''}`}
-                  style={active && cfg ? { backgroundColor: cfg.cor } : {}}>
-                  <op.Icon size={16}
-                    style={active && cfg ? { color: 'white' } : cfg ? { color: cfg.cor } : { color: '#94A3B8' }} />
-                  {op.label}
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {/* Linhas de alocação */}
+          {rows.map((row, idx) => (
+            <div key={row._key} className="border border-[#E2E8F0] rounded-xl p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-[#94A3B8] w-5 shrink-0">#{idx + 1}</span>
+                {/* Tipo */}
+                <div className="flex gap-1 flex-wrap flex-1">
+                  {TIPOS.map(t => (
+                    <button key={t.tipo}
+                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: t.tipo !== 'obra' ? '' : row.obra_id })}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
+                        ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
+                      style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Percentual */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <input
+                    type="number" min={1} max={100}
+                    value={row.percentual}
+                    onChange={e => updateRow(row._key, { percentual: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
+                    className="w-14 text-center text-sm font-semibold border border-[#E2E8F0] rounded-lg py-1 focus:outline-none focus:border-[#4F7CFF]"
+                  />
+                  <span className="text-xs text-[#94A3B8]">%</span>
+                </div>
+                <button onClick={() => removeRow(row._key)} className="shrink-0 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
+                  <Trash2 size={14} />
                 </button>
-              )
-            })}
+              </div>
+
+              {/* Obra selector */}
+              {row.tipo === 'obra' && (
+                <div className="pl-7">
+                  <select className="field text-sm py-1.5 w-full"
+                    value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value })}>
+                    <option value="">Selecione a obra...</option>
+                    {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Total percentual */}
+          <div className="flex items-center justify-between px-1">
+            <button onClick={addRow}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] hover:text-[#3d6ae0] transition-colors">
+              <Plus size={13} /> Adicionar alocação
+            </button>
+            <span className={`text-xs font-semibold ${pctOk ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+              Total: {totalPct}%{!pctOk && ' ≠ 100'}
+            </span>
           </div>
 
-          {tipo === 'obra' && (
-            <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Obra</label>
-              <select className="field" value={obraId} onChange={e => setObraId(e.target.value)}>
-                <option value="">Selecione a obra...</option>
-                {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
-              </select>
-            </div>
-          )}
-
-          {tipo && (
-            <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Transporte</label>
+          {/* Transporte (compartilhado por todo o dia) */}
+          {hasTipo && (
+            <div className="border-t border-[#F1F5F9] pt-3 space-y-2">
+              <p className="text-xs font-medium text-[#374151]">Transporte do dia</p>
               <div className="flex gap-2 flex-wrap">
                 {TRANSPORTES.map(t => (
                   <button key={t.tipo}
@@ -567,7 +618,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacao, onClo
                 ))}
               </div>
               {transporteTipo === 'veiculo' && (
-                <select className="field mt-2" value={veiculoId} onChange={e => setVeiculoId(e.target.value)}>
+                <select className="field text-sm w-full" value={veiculoId} onChange={e => setVeiculoId(e.target.value)}>
                   <option value="">Selecione o veículo...</option>
                   {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
                 </select>
@@ -576,13 +627,13 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacao, onClo
           )}
         </div>
 
-        <div className="px-5 pb-5 flex gap-3">
+        <div className="px-5 pb-5 pt-3 border-t border-[#E2E8F0] flex gap-3 shrink-0">
           <button onClick={onClose}
             className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
             Cancelar
           </button>
-          <button onClick={salvar} disabled={saving || (tipo === 'obra' && !obraId)}
-            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+          <button onClick={salvar} disabled={saving || (hasTipo && !pctOk) || rows.some(r => r.tipo === 'obra' && !r.obra_id)}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
