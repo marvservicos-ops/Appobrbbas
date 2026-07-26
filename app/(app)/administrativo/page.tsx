@@ -476,7 +476,7 @@ function ModalCategoria({ categoria, onClose, onSaved }: { categoria: Categoria 
                   <button key={nome_icone} type="button" onClick={() => setIcone(nome_icone)}
                     title={nome_icone}
                     className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${sel ? 'ring-2 ring-offset-1' : 'hover:bg-[#F1F5F9]'}`}
-                    style={sel ? { backgroundColor: cor + '20', ringColor: cor, borderColor: cor } : {}}>
+                    style={sel ? { backgroundColor: cor + '20', borderColor: cor } : {}}>
                     <IconeComp nome={nome_icone} size={16} cor={sel ? cor : '#94A3B8'} />
                   </button>
                 )
