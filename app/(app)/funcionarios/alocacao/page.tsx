@@ -239,27 +239,43 @@ export default function AlocacaoPage() {
                           onClick={() => setModalCell({ fid: f.id, dia })}
                           className={`border-b border-r border-[#E2E8F0] cursor-pointer transition-colors
                             ${alocArray.length === 0 && weekend ? (zebra ? 'bg-[#F4F6F9]' : 'bg-[#F0F2F5]') : zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
-                          style={{ height: 44, padding: 3 }}>
-                          {alocArray.length > 0 ? (
-                            <div className="rounded w-full h-full flex flex-col overflow-hidden gap-px">
-                              {alocArray.map((aloc, i) => {
-                                const cfg = TIPO_MAP[aloc.tipo]
-                                const showPct = alocArray.length > 1
-                                return (
-                                  <div key={aloc.id || i}
-                                    className="w-full flex items-center justify-center overflow-hidden px-0.5"
-                                    style={{ flex: aloc.percentual, minHeight: 0, backgroundColor: cfg.bg }}>
-                                    <span className="text-[9px] font-semibold leading-tight text-center truncate w-full"
-                                      style={{ color: cfg.cor }}>
-                                      {aloc.tipo === 'obra' && aloc.obra_nome
-                                        ? `${abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
-                                        : `${cfg.label}${showPct ? ` ${aloc.percentual}%` : ''}`}
-                                    </span>
+                          style={{ height: 48, padding: 3 }}>
+                          {alocArray.length > 0 ? (() => {
+                            const transp = alocArray[0]
+                            const veicNome = transp.veiculo_nome
+                            const transpLabel = transp.transporte_tipo === 'veiculo' && veicNome
+                              ? (veicNome.split(' ')[1] ?? veicNome.split(' ')[0])
+                              : transp.transporte_tipo === 'transporte_publico' ? 'Ônibus'
+                              : transp.transporte_tipo === 'casa' ? 'Direto'
+                              : null
+                            return (
+                              <div className="rounded w-full h-full flex flex-col overflow-hidden">
+                                <div className="flex flex-col flex-1 overflow-hidden gap-px min-h-0">
+                                  {alocArray.map((aloc, i) => {
+                                    const cfg = TIPO_MAP[aloc.tipo]
+                                    const showPct = alocArray.length > 1
+                                    return (
+                                      <div key={aloc.id || i}
+                                        className="w-full flex items-center justify-center overflow-hidden px-0.5"
+                                        style={{ flex: aloc.percentual, minHeight: 0, backgroundColor: cfg.bg }}>
+                                        <span className="text-[9px] font-semibold leading-tight text-center truncate w-full"
+                                          style={{ color: cfg.cor }}>
+                                          {aloc.tipo === 'obra' && aloc.obra_nome
+                                            ? `${abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
+                                            : `${cfg.label}${showPct ? ` ${aloc.percentual}%` : ''}`}
+                                        </span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                {transpLabel && (
+                                  <div className="w-full flex items-center justify-center bg-[#F1F5F9] shrink-0" style={{ height: 13 }}>
+                                    <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{transpLabel}</span>
                                   </div>
-                                )
-                              })}
-                            </div>
-                          ) : (
+                                )}
+                              </div>
+                            )
+                          })() : (
                             <div className="rounded w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity hover:bg-[#EEF2FF]">
                               <span className="text-[#C7D2FE] text-base leading-none">+</span>
                             </div>
