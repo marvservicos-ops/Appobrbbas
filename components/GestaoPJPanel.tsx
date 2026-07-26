@@ -10,6 +10,7 @@ const hoje = () => new Date().toISOString().split('T')[0]
 
 interface Contrato {
   id: string
+  numero_contrato: string | null
   data_inicio: string
   data_fim: string
   valor_mensal: number
@@ -62,13 +63,14 @@ export default function GestaoPJPanel() {
   // UI state
   const [tab, setTab] = useState<'overview' | 'contratos' | 'ferias' | 'pagamentos'>('overview')
   const [showAddContrato, setShowAddContrato] = useState(false)
+  const [editandoContrato, setEditandoContrato] = useState<Contrato | null>(null)
   const [showAddFerias, setShowAddFerias] = useState(false)
   const [showAddPagamento, setShowAddPagamento] = useState(false)
   const [saving, setSaving] = useState(false)
   const [expandedContrato, setExpandedContrato] = useState<string | null>(null)
 
   // Forms
-  const [fContrato, setFContrato] = useState({ data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' })
+  const [fContrato, setFContrato] = useState({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' })
   const [fFerias, setFFerias] = useState({ contrato_id: '', data_inicio: '', data_fim: '', valor_pago: '', observacao: '' })
   const [fPagamento, setFPagamento] = useState({ contrato_id: '', tipo: 'salario' as Pagamento['tipo'], competencia: '', valor: '', horas_extras: '', observacao: '' })
 
@@ -111,18 +113,38 @@ export default function GestaoPJPanel() {
     return Math.max(0, Math.round((d2.getTime() - d1.getTime()) / 86400000) + 1)
   }
 
+  function abrirEditarContrato(c: Contrato) {
+    setFContrato({
+      numero_contrato: c.numero_contrato ?? '',
+      data_inicio: c.data_inicio,
+      data_fim: c.data_fim,
+      valor_mensal: String(c.valor_mensal),
+      dias_ferias_acumulados: String(c.dias_ferias_acumulados),
+      observacao: c.observacao ?? '',
+    })
+    setEditandoContrato(c)
+    setShowAddContrato(true)
+  }
+
   async function salvarContrato() {
     if (!fContrato.data_inicio || !fContrato.data_fim || !fContrato.valor_mensal) return
     setSaving(true)
     const sb = createClient()
-    await sb.from('pj_contratos').insert({
+    const payload = {
+      numero_contrato: fContrato.numero_contrato || null,
       data_inicio: fContrato.data_inicio,
       data_fim: fContrato.data_fim,
       valor_mensal: parseFloat(fContrato.valor_mensal),
       dias_ferias_acumulados: parseInt(fContrato.dias_ferias_acumulados) || 15,
       observacao: fContrato.observacao || null,
-    })
-    setFContrato({ data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' })
+    }
+    if (editandoContrato) {
+      await sb.from('pj_contratos').update(payload).eq('id', editandoContrato.id)
+    } else {
+      await sb.from('pj_contratos').insert(payload)
+    }
+    setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' })
+    setEditandoContrato(null)
     setShowAddContrato(false)
     setSaving(false)
     load()
@@ -295,7 +317,7 @@ export default function GestaoPJPanel() {
         {/* ── CONTRATOS ─────────────────────────────────── */}
         {tab === 'contratos' && (
           <div className="space-y-4">
-            <button onClick={() => setShowAddContrato(true)}
+            <button onClick={() => { setEditandoContrato(null); setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' }); setShowAddContrato(true) }}
               className="w-full flex items-center gap-2 justify-center py-3 border-2 border-dashed border-[#E2E8F0] rounded-xl text-sm text-[#64748B] hover:border-[#4F7CFF] hover:text-[#4F7CFF] transition-colors">
               <Plus size={16} /> Novo Contrato
             </button>
@@ -303,8 +325,13 @@ export default function GestaoPJPanel() {
             {showAddContrato && (
               <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 space-y-3">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-sm font-semibold text-[#0F172A]">Novo Contrato</h3>
-                  <button onClick={() => setShowAddContrato(false)}><X size={16} className="text-[#94A3B8]" /></button>
+                  <h3 className="text-sm font-semibold text-[#0F172A]">{editandoContrato ? 'Editar Contrato' : 'Novo Contrato'}</h3>
+                  <button onClick={() => { setShowAddContrato(false); setEditandoContrato(null) }}><X size={16} className="text-[#94A3B8]" /></button>
+                </div>
+                <div>
+                  <label className="text-xs text-[#64748B] font-medium block mb-1">Número do contrato</label>
+                  <input type="text" placeholder="Ex: CT-001/2025" value={fContrato.numero_contrato} onChange={e => setFContrato(p => ({ ...p, numero_contrato: e.target.value }))}
+                    className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -334,7 +361,7 @@ export default function GestaoPJPanel() {
                     className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                 </div>
                 <div className="flex justify-end gap-2 pt-1">
-                  <button onClick={() => setShowAddContrato(false)} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
+                  <button onClick={() => { setShowAddContrato(false); setEditandoContrato(null) }} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
                   <button onClick={salvarContrato} disabled={saving}
                     className="px-4 py-2 text-sm font-medium bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D6AEE] disabled:opacity-50 transition-colors">
                     {saving ? 'Salvando...' : 'Salvar'}
@@ -351,18 +378,24 @@ export default function GestaoPJPanel() {
               const diasUsados = feriasContrato.reduce((s, f) => s + f.dias, 0)
               return (
                 <div key={c.id} className="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden">
-                  <button className="w-full flex items-center gap-3 px-5 py-4 hover:bg-[#F8FAFC] transition-colors text-left"
-                    onClick={() => setExpandedContrato(isExpanded ? null : c.id)}>
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${isAtivo ? 'bg-[#10B981]' : 'bg-[#CBD5E1]'}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-[#0F172A]">{dataBR(c.data_inicio)} → {dataBR(c.data_fim)}</span>
-                        {isAtivo && <span className="text-[10px] font-semibold bg-green-50 text-green-700 px-2 py-0.5 rounded-full">Ativo</span>}
+                  <div className="w-full flex items-center gap-3 px-5 py-4 hover:bg-[#F8FAFC] transition-colors">
+                    <button className="flex items-center gap-3 flex-1 min-w-0 text-left" onClick={() => setExpandedContrato(isExpanded ? null : c.id)}>
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${isAtivo ? 'bg-[#10B981]' : 'bg-[#CBD5E1]'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {c.numero_contrato && <span className="text-[10px] font-mono font-semibold bg-[#F1F5F9] text-[#475569] px-2 py-0.5 rounded">{c.numero_contrato}</span>}
+                          <span className="text-sm font-semibold text-[#0F172A]">{dataBR(c.data_inicio)} → {dataBR(c.data_fim)}</span>
+                          {isAtivo && <span className="text-[10px] font-semibold bg-green-50 text-green-700 px-2 py-0.5 rounded-full">Ativo</span>}
+                        </div>
+                        <p className="text-xs text-[#64748B] mt-0.5">{moeda(c.valor_mensal)}/mês · {c.dias_ferias_acumulados}d férias · {diasUsados}d usados</p>
                       </div>
-                      <p className="text-xs text-[#64748B] mt-0.5">{moeda(c.valor_mensal)}/mês · {c.dias_ferias_acumulados}d férias · {diasUsados}d usados</p>
-                    </div>
-                    {isExpanded ? <ChevronUp size={16} className="text-[#94A3B8] shrink-0" /> : <ChevronDown size={16} className="text-[#94A3B8] shrink-0" />}
-                  </button>
+                      {isExpanded ? <ChevronUp size={16} className="text-[#94A3B8] shrink-0" /> : <ChevronDown size={16} className="text-[#94A3B8] shrink-0" />}
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); abrirEditarContrato(c) }}
+                      className="p-1.5 text-[#94A3B8] hover:text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors shrink-0">
+                      <Pencil size={14} />
+                    </button>
+                  </div>
                   {isExpanded && (
                     <div className="px-5 pb-5 border-t border-[#F1F5F9] pt-4 space-y-4">
                       {c.observacao && <p className="text-xs text-[#64748B]">{c.observacao}</p>}
