@@ -2,7 +2,7 @@
 
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
-import { ReceiptText, TrendingDown } from 'lucide-react'
+import { ReceiptText, TrendingDown, ArrowLeft } from 'lucide-react'
 import ObraPagamentos from '@/components/ObraPagamentos'
 import ObraCentroCustos from '@/components/ObraCentroCustos'
 
@@ -21,7 +21,11 @@ function FinanceiroContent() {
   return (
     <div className="flex flex-col h-full">
       {/* Sub-navegação */}
-      <div className="flex gap-1 px-4 md:px-6 pt-4 pb-0 border-b border-[#E2E8F0] bg-white">
+      <div className="flex items-center gap-1 px-4 md:px-6 pt-4 pb-0 border-b border-[#E2E8F0] bg-white">
+        <button onClick={() => router.push(`/obras/${id}`)}
+          className="w-7 h-7 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors mr-2 shrink-0 -mb-px">
+          <ArrowLeft size={14} className="text-[#64748B]" />
+        </button>
         {([
           { key: 'medicoes', label: 'Medições', icon: ReceiptText },
           { key: 'centro-custos', label: 'Centro de Custos', icon: TrendingDown },
