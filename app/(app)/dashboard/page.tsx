@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
+import { useAccess } from '@/lib/useAccess'
 import {
   Wrench, TrendingUp, AlertTriangle, Package,
   Calendar, ChevronRight, Loader2, Clock, Users,
@@ -61,6 +62,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const { isAdmin } = useAccess()
   const [kpis, setKpis] = useState<KPIs | null>(null)
   const [obras, setObras] = useState<ObraAndamento[]>([])
   const [medicoes, setMedicoes] = useState<MedicaoVencendo[]>([])
@@ -68,6 +70,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (isAdmin === undefined) return
     async function load() {
       const sb = createClient()
       const hoje = new Date()
@@ -76,6 +79,14 @@ export default function DashboardPage() {
       const em7Str = em7dias.toISOString().split('T')[0]
       const mesInicio = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`
       const mesFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0]
+
+      const adminQueries = isAdmin ? [
+        sb.from('obra_medicoes').select('obra_id, status, valor_previsto')
+          .gte('data_prevista', mesInicio).lte('data_prevista', mesFim).eq('status', 'planejada'),
+        sb.from('obra_medicoes')
+          .select('id, obra_id, nome, data_prevista, valor_previsto, obras:obra_id(titulo)')
+          .eq('status', 'planejada').lte('data_prevista', em7Str).order('data_prevista'),
+      ] : [Promise.resolve({ data: [] }), Promise.resolve({ data: [] })]
 
       const [
         { data: obrasData },
@@ -87,11 +98,8 @@ export default function DashboardPage() {
       ] = await Promise.all([
         sb.from('obras').select('id, titulo, status, engenheiro_responsavel, previsao_termino')
           .in('status', ['Em Andamento', 'Aprovada']).order('titulo'),
-        sb.from('obra_medicoes').select('obra_id, status, valor_previsto')
-          .gte('data_prevista', mesInicio).lte('data_prevista', mesFim).eq('status', 'planejada'),
-        sb.from('obra_medicoes')
-          .select('id, obra_id, nome, data_prevista, valor_previsto, obras:obra_id(titulo)')
-          .eq('status', 'planejada').lte('data_prevista', em7Str).order('data_prevista'),
+        adminQueries[0],
+        adminQueries[1],
         sb.from('estoque_produtos').select('id, nome, quantidade_atual, quantidade_minima, unidade, estoque_id, estoques:estoque_id(nome)')
           .eq('ativo', true).not('quantidade_minima', 'is', null).gt('quantidade_minima', 0),
         sb.from('funcionarios').select('id').eq('ativo', true),
@@ -159,7 +167,7 @@ export default function DashboardPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [isAdmin])
 
   if (loading) return (
     <div className="flex flex-col h-full">
@@ -200,16 +208,18 @@ export default function DashboardPage() {
             )}
           </Link>
 
-          <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 bg-[#ECFDF5] rounded-xl flex items-center justify-center">
-                <TrendingUp size={15} className="text-[#10B981]" />
+          {isAdmin && (
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 bg-[#ECFDF5] rounded-xl flex items-center justify-center">
+                  <TrendingUp size={15} className="text-[#10B981]" />
+                </div>
+                <span className="text-xs text-[#64748B] font-medium">A faturar este mês</span>
               </div>
-              <span className="text-xs text-[#64748B] font-medium">A faturar este mês</span>
+              <p className="text-xl font-bold text-[#0F172A]">{moeda(kpis?.totalAFaturarMes ?? 0)}</p>
+              <p className="text-xs text-[#94A3B8] mt-1">medições planejadas</p>
             </div>
-            <p className="text-xl font-bold text-[#0F172A]">{moeda(kpis?.totalAFaturarMes ?? 0)}</p>
-            <p className="text-xs text-[#94A3B8] mt-1">medições planejadas</p>
-          </div>
+          )}
 
           <Link href="/funcionarios/alocacao"
             className={`bg-white border rounded-2xl p-4 transition-all hover:shadow-sm ${(kpis?.funcionariosSemAlocacaoHoje ?? 0) > 0 ? 'border-amber-200 hover:border-amber-400' : 'border-[#E2E8F0] hover:border-[#4F7CFF]'}`}>
@@ -289,8 +299,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Medições vencendo / atrasadas */}
-          <div className="bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden">
+          {/* Medições vencendo / atrasadas — só admin */}
+          {isAdmin && <div className="bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#F1F5F9]">
               <h2 className="font-syne font-semibold text-[#0F172A] text-sm">Medições pendentes</h2>
               <span className="text-xs text-[#94A3B8]">próximos 7 dias</span>
@@ -327,7 +337,7 @@ export default function DashboardPage() {
                 )
               })}
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* Estoque crítico */}
