@@ -171,7 +171,7 @@ export default function CentralFuncionarioPage() {
   return (
     <div className="flex flex-col h-full">
       <Topbar />
-      <div className="p-4 md:p-6 flex-1 overflow-y-auto max-w-3xl w-full mx-auto">
+      <div className="p-4 md:p-6 flex-1 overflow-y-auto">
 
         {/* Header */}
         <div className="flex items-start gap-3 mb-6">
