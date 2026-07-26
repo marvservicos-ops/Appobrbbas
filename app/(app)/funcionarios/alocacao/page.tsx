@@ -253,8 +253,12 @@ export default function AlocacaoPage() {
                                   {aloc.veiculo_nome.split(' ')[1] ?? aloc.veiculo_nome.split(' ')[0]}
                                 </span>
                               )}
-                              {aloc.transporte_tipo === 'transporte_publico' && <Bus size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
-                              {aloc.transporte_tipo === 'casa' && <Home size={8} style={{ color: cfg.cor, opacity: 0.7 }} />}
+                              {aloc.transporte_tipo === 'transporte_publico' && (
+                                <span className="text-[9px] font-medium leading-none opacity-80" style={{ color: cfg.cor }}>Ônibus</span>
+                              )}
+                              {aloc.transporte_tipo === 'casa' && (
+                                <span className="text-[9px] font-medium leading-none opacity-80" style={{ color: cfg.cor }}>Direto</span>
+                              )}
                             </div>
                           ) : (
                             <div className="rounded w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity hover:bg-[#EEF2FF]">
