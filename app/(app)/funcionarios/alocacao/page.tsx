@@ -246,7 +246,10 @@ export default function AlocacaoPage() {
                                   {abrev(aloc.obra_nome)}
                                 </span>
                               ) : (
-                                <cfg.Icon size={13} style={{ color: cfg.cor }} />
+                                <span className="text-[9px] font-semibold leading-tight px-0.5 text-center"
+                                  style={{ color: cfg.cor }}>
+                                  {cfg.label}
+                                </span>
                               )}
                               {aloc.transporte_tipo === 'veiculo' && aloc.veiculo_nome && (
                                 <span className="text-[9px] font-medium leading-none opacity-80 truncate px-0.5" style={{ color: cfg.cor }}>
