@@ -32,7 +32,7 @@ type TransporteTipo = 'veiculo' | 'transporte_publico' | 'casa'
 const TRANSPORTES: { tipo: TransporteTipo; label: string; Icon: any }[] = [
   { tipo: 'veiculo',           label: 'Veículo empresa', Icon: Car  },
   { tipo: 'transporte_publico', label: 'Transp. público', Icon: Bus  },
-  { tipo: 'casa',              label: 'Saiu de casa',    Icon: Home },
+  { tipo: 'casa',              label: 'Direto',          Icon: Home },
 ]
 
 const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon: any }[] = [
