@@ -172,6 +172,7 @@ export default function CentralFuncionarioPage() {
     <div className="flex flex-col h-full">
       <Topbar />
       <div className="p-4 md:p-6 flex-1 overflow-y-auto">
+        <div className="max-w-2xl">
 
         {/* Header */}
         <div className="flex items-start gap-3 mb-6">
@@ -440,6 +441,7 @@ export default function CentralFuncionarioPage() {
         )}
 
         </>}
+        </div>
       </div>
 
       {showEdit && (
