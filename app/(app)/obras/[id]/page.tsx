@@ -489,8 +489,24 @@ export default function ObraDetailPage() {
     const assunto = resolver(template.assunto)
     const corpo = resolver(template.corpo)
 
-    const mailto = `mailto:${encodeURIComponent(emailDestinatario)}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`
-    window.open(mailto, '_blank')
+    if (!emailDestinatario) {
+      alert('Destinatário não tem email cadastrado. Verifique o cadastro do gestor/comprador.')
+      setEnviandoEmail(false)
+      return
+    }
+
+    const res = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: emailDestinatario, subject: assunto, body: corpo }),
+    })
+
+    if (res.ok) {
+      alert(`Email "${template.nome}" enviado para ${emailDestinatario}`)
+    } else {
+      const { error } = await res.json()
+      alert(`Erro ao enviar: ${error}`)
+    }
     setEnviandoEmail(false)
   }
 
