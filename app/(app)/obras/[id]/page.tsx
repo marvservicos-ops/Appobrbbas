@@ -224,6 +224,7 @@ export default function ObraDetailPage() {
   const [emailTemplates, setEmailTemplates] = useState<{ id: string; nome: string; assunto: string; corpo: string; destinatario_tipo: string }[]>([])
   const [showEmailMenu, setShowEmailMenu] = useState(false)
   const [enviandoEmail, setEnviandoEmail] = useState(false)
+  const [emailModal, setEmailModal] = useState<{ to: string; assunto: string; corpo: string } | null>(null)
   const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
 
   // Modals
@@ -489,25 +490,26 @@ export default function ObraDetailPage() {
     const assunto = resolver(template.assunto)
     const corpo = resolver(template.corpo)
 
-    if (!emailDestinatario) {
-      alert('Destinatário não tem email cadastrado. Verifique o cadastro do gestor/comprador.')
-      setEnviandoEmail(false)
-      return
-    }
+    setEmailModal({ to: emailDestinatario, assunto, corpo })
+    setEnviandoEmail(false)
+  }
 
+  async function confirmarEnvioEmail() {
+    if (!emailModal) return
+    setEnviandoEmail(true)
     const res = await fetch('/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: emailDestinatario, subject: assunto, body: corpo }),
+      body: JSON.stringify({ to: emailModal.to, subject: emailModal.assunto, body: emailModal.corpo }),
     })
-
+    setEnviandoEmail(false)
     if (res.ok) {
-      alert(`Email "${template.nome}" enviado para ${emailDestinatario}`)
+      setEmailModal(null)
+      alert('Email enviado com sucesso!')
     } else {
       const { error } = await res.json()
       alert(`Erro ao enviar: ${error}`)
     }
-    setEnviandoEmail(false)
   }
 
   return (
@@ -1155,6 +1157,73 @@ export default function ObraDetailPage() {
           <AbaEquipe obraId={id} />
         )}
       </div>
+
+      {/* Modal Email */}
+      {emailModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-[600px] flex flex-col max-h-[90dvh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-[#EEF2FF] rounded-lg flex items-center justify-center">
+                  <Mail size={15} className="text-[#4F7CFF]" />
+                </div>
+                <h2 className="font-syne font-semibold text-[#0F172A]">Novo Email</h2>
+              </div>
+              <button onClick={() => setEmailModal(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
+                <X size={16} className="text-[#64748B]" />
+              </button>
+            </div>
+
+            {/* Campos */}
+            <div className="flex flex-col divide-y divide-[#F1F5F9] overflow-y-auto">
+              <div className="flex items-center gap-3 px-6 py-3">
+                <span className="text-xs font-semibold text-[#94A3B8] w-16 shrink-0">De</span>
+                <span className="text-sm text-[#374151]">joaovictor@marvservicos.com.br</span>
+              </div>
+              <div className="flex items-center gap-3 px-6 py-3">
+                <span className="text-xs font-semibold text-[#94A3B8] w-16 shrink-0">Para</span>
+                <input
+                  className="flex-1 text-sm text-[#374151] focus:outline-none bg-transparent"
+                  value={emailModal.to}
+                  onChange={e => setEmailModal(m => m ? { ...m, to: e.target.value } : m)}
+                  placeholder="destinatario@email.com"
+                />
+              </div>
+              <div className="flex items-center gap-3 px-6 py-3">
+                <span className="text-xs font-semibold text-[#94A3B8] w-16 shrink-0">Assunto</span>
+                <input
+                  className="flex-1 text-sm text-[#374151] focus:outline-none bg-transparent"
+                  value={emailModal.assunto}
+                  onChange={e => setEmailModal(m => m ? { ...m, assunto: e.target.value } : m)}
+                />
+              </div>
+              <div className="px-6 py-4">
+                <textarea
+                  rows={12}
+                  className="w-full text-sm text-[#374151] focus:outline-none bg-transparent resize-none leading-relaxed"
+                  value={emailModal.corpo}
+                  onChange={e => setEmailModal(m => m ? { ...m, corpo: e.target.value } : m)}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-[#E2E8F0] flex items-center justify-between">
+              <button onClick={() => setEmailModal(null)} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEnvioEmail}
+                disabled={enviandoEmail || !emailModal.to || !emailModal.assunto}
+                className="flex items-center gap-2 px-5 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
+                <Send size={14} />
+                {enviandoEmail ? 'Enviando...' : 'Enviar Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Material */}
       {showNovoMaterial && (
