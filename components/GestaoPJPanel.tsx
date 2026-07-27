@@ -378,7 +378,7 @@ export default function GestaoPJPanel() {
         {/* ── CONTRATOS ─────────────────────────────────── */}
         {tab === 'contratos' && (
           <div className="space-y-4">
-            <button onClick={() => { setEditandoContrato(null); setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' }); setShowAddContrato(true) }}
+            <button onClick={() => { setEditandoContrato(null); setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '', arquivo_url: '' }); setShowAddContrato(true) }}
               className="w-full flex items-center gap-2 justify-center py-3 border-2 border-dashed border-[#E2E8F0] rounded-xl text-sm text-[#64748B] hover:border-[#4F7CFF] hover:text-[#4F7CFF] transition-colors">
               <Plus size={16} /> Novo Contrato
             </button>
