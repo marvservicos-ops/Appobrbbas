@@ -16,6 +16,7 @@ interface Contrato {
   valor_mensal: number
   dias_ferias_acumulados: number
   observacao: string | null
+  arquivo_url: string | null
 }
 
 interface Ferias {
@@ -36,6 +37,8 @@ interface Pagamento {
   valor: number
   horas_extras: number | null
   observacao: string | null
+  comprovante_url: string | null
+  nota_fiscal_url: string | null
 }
 
 const tipoLabel: Record<Pagamento['tipo'], string> = {
@@ -65,14 +68,17 @@ export default function GestaoPJPanel() {
   const [showAddContrato, setShowAddContrato] = useState(false)
   const [editandoContrato, setEditandoContrato] = useState<Contrato | null>(null)
   const [showAddFerias, setShowAddFerias] = useState(false)
+  const [editandoFerias, setEditandoFerias] = useState<Ferias | null>(null)
   const [showAddPagamento, setShowAddPagamento] = useState(false)
+  const [editandoPagamento, setEditandoPagamento] = useState<Pagamento | null>(null)
+  const [uploadingComprovante, setUploadingComprovante] = useState(false)
   const [saving, setSaving] = useState(false)
   const [expandedContrato, setExpandedContrato] = useState<string | null>(null)
 
   // Forms
-  const [fContrato, setFContrato] = useState({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' })
+  const [fContrato, setFContrato] = useState({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '', arquivo_url: '' })
   const [fFerias, setFFerias] = useState({ contrato_id: '', data_inicio: '', data_fim: '', valor_pago: '', observacao: '' })
-  const [fPagamento, setFPagamento] = useState({ contrato_id: '', tipo: 'salario' as Pagamento['tipo'], competencia: '', valor: '', horas_extras: '', observacao: '' })
+  const [fPagamento, setFPagamento] = useState({ contrato_id: '', tipo: 'salario' as Pagamento['tipo'], competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_url: '' })
 
   useEffect(() => { load() }, [])
 
@@ -121,6 +127,7 @@ export default function GestaoPJPanel() {
       valor_mensal: String(c.valor_mensal),
       dias_ferias_acumulados: String(c.dias_ferias_acumulados),
       observacao: c.observacao ?? '',
+      arquivo_url: c.arquivo_url ?? '',
     })
     setEditandoContrato(c)
     setShowAddContrato(true)
@@ -137,17 +144,57 @@ export default function GestaoPJPanel() {
       valor_mensal: parseFloat(fContrato.valor_mensal),
       dias_ferias_acumulados: parseInt(fContrato.dias_ferias_acumulados) || 15,
       observacao: fContrato.observacao || null,
+      arquivo_url: fContrato.arquivo_url || null,
     }
     if (editandoContrato) {
       await sb.from('pj_contratos').update(payload).eq('id', editandoContrato.id)
     } else {
       await sb.from('pj_contratos').insert(payload)
     }
-    setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '' })
+    setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '', arquivo_url: '' })
     setEditandoContrato(null)
     setShowAddContrato(false)
     setSaving(false)
     load()
+  }
+
+  function abrirEditarFerias(f: Ferias) {
+    setFFerias({
+      contrato_id: f.contrato_id ?? '',
+      data_inicio: f.data_inicio,
+      data_fim: f.data_fim,
+      valor_pago: f.valor_pago != null ? String(f.valor_pago) : '',
+      observacao: f.observacao ?? '',
+    })
+    setEditandoFerias(f)
+    setShowAddFerias(true)
+  }
+
+  function abrirEditarPagamento(p: Pagamento) {
+    setFPagamento({
+      contrato_id: p.contrato_id ?? '',
+      tipo: p.tipo,
+      competencia: p.competencia,
+      valor: String(p.valor),
+      horas_extras: p.horas_extras != null ? String(p.horas_extras) : '',
+      observacao: p.observacao ?? '',
+      comprovante_url: p.comprovante_url ?? '',
+      nota_fiscal_url: p.nota_fiscal_url ?? '',
+    })
+    setEditandoPagamento(p)
+    setShowAddPagamento(true)
+  }
+
+  async function uploadArquivo(file: File, bucket: string, folder: string): Promise<string | null> {
+    setUploadingComprovante(true)
+    const sb = createClient()
+    const ext = file.name.split('.').pop()
+    const path = `${folder}/${Date.now()}.${ext}`
+    const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true })
+    if (error) { setUploadingComprovante(false); return null }
+    const { data } = sb.storage.from(bucket).getPublicUrl(path)
+    setUploadingComprovante(false)
+    return data.publicUrl
   }
 
   async function salvarFerias() {
@@ -155,15 +202,21 @@ export default function GestaoPJPanel() {
     setSaving(true)
     const dias = calcDiasFerias(fFerias.data_inicio, fFerias.data_fim)
     const sb = createClient()
-    await sb.from('pj_ferias').insert({
+    const payload = {
       contrato_id: fFerias.contrato_id || null,
       data_inicio: fFerias.data_inicio,
       data_fim: fFerias.data_fim,
       dias,
       valor_pago: fFerias.valor_pago ? parseFloat(fFerias.valor_pago) : null,
       observacao: fFerias.observacao || null,
-    })
+    }
+    if (editandoFerias) {
+      await sb.from('pj_ferias').update(payload).eq('id', editandoFerias.id)
+    } else {
+      await sb.from('pj_ferias').insert(payload)
+    }
     setFFerias({ contrato_id: '', data_inicio: '', data_fim: '', valor_pago: '', observacao: '' })
+    setEditandoFerias(null)
     setShowAddFerias(false)
     setSaving(false)
     load()
@@ -173,15 +226,23 @@ export default function GestaoPJPanel() {
     if (!fPagamento.competencia || !fPagamento.valor) return
     setSaving(true)
     const sb = createClient()
-    await sb.from('pj_pagamentos').insert({
+    const payload = {
       contrato_id: fPagamento.contrato_id || null,
       tipo: fPagamento.tipo,
       competencia: fPagamento.competencia,
       valor: parseFloat(fPagamento.valor),
       horas_extras: fPagamento.horas_extras ? parseFloat(fPagamento.horas_extras) : null,
       observacao: fPagamento.observacao || null,
-    })
-    setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '' })
+      comprovante_url: fPagamento.comprovante_url || null,
+      nota_fiscal_url: fPagamento.nota_fiscal_url || null,
+    }
+    if (editandoPagamento) {
+      await sb.from('pj_pagamentos').update(payload).eq('id', editandoPagamento.id)
+    } else {
+      await sb.from('pj_pagamentos').insert(payload)
+    }
+    setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_url: '' })
+    setEditandoPagamento(null)
     setShowAddPagamento(false)
     setSaving(false)
     load()
@@ -360,9 +421,22 @@ export default function GestaoPJPanel() {
                   <input type="text" placeholder="Ex: Renovação com reajuste de 10%" value={fContrato.observacao} onChange={e => setFContrato(p => ({ ...p, observacao: e.target.value }))}
                     className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                 </div>
+                <div>
+                  <label className="text-xs text-[#64748B] font-medium block mb-1">Arquivo do contrato (PDF/DOCX)</label>
+                  {fContrato.arquivo_url
+                    ? <div className="flex items-center gap-2">
+                        <a href={fContrato.arquivo_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">Ver contrato</a>
+                        <button onClick={() => setFContrato(p => ({ ...p, arquivo_url: '' }))} className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
+                      </div>
+                    : <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-[#E2E8F0] rounded-lg text-xs text-[#64748B] cursor-pointer hover:border-[#4F7CFF] ${uploadingComprovante ? 'opacity-50' : ''}`}>
+                        <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="hidden" disabled={uploadingComprovante}
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadArquivo(f, 'marv-pj', 'contratos'); if (url) setFContrato(p => ({ ...p, arquivo_url: url })) } }} />
+                        {uploadingComprovante ? 'Enviando...' : 'Selecionar arquivo'}
+                      </label>}
+                </div>
                 <div className="flex justify-end gap-2 pt-1">
                   <button onClick={() => { setShowAddContrato(false); setEditandoContrato(null) }} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
-                  <button onClick={salvarContrato} disabled={saving}
+                  <button onClick={salvarContrato} disabled={saving || uploadingComprovante}
                     className="px-4 py-2 text-sm font-medium bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D6AEE] disabled:opacity-50 transition-colors">
                     {saving ? 'Salvando...' : 'Salvar'}
                   </button>
@@ -398,7 +472,12 @@ export default function GestaoPJPanel() {
                   </div>
                   {isExpanded && (
                     <div className="px-5 pb-5 border-t border-[#F1F5F9] pt-4 space-y-4">
-                      {c.observacao && <p className="text-xs text-[#64748B]">{c.observacao}</p>}
+                      {(c.observacao || c.arquivo_url) && (
+                        <div className="flex items-center gap-3">
+                          {c.observacao && <p className="text-xs text-[#64748B] flex-1">{c.observacao}</p>}
+                          {c.arquivo_url && <a href={c.arquivo_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline shrink-0">Ver contrato</a>}
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div className="bg-[#F8FAFC] rounded-lg p-3">
                           <p className="text-xs text-[#94A3B8] mb-1">Saldo férias neste ciclo</p>
@@ -460,7 +539,7 @@ export default function GestaoPJPanel() {
               <p className="text-xs text-[#94A3B8] mt-1">{totalDiasAcumulados > 0 ? ((totalDiasUsados / totalDiasAcumulados) * 100).toFixed(0) : 0}% do banco utilizado</p>
             </div>
 
-            <button onClick={() => setShowAddFerias(true)}
+            <button onClick={() => { setEditandoFerias(null); setFFerias({ contrato_id: '', data_inicio: '', data_fim: '', valor_pago: '', observacao: '' }); setShowAddFerias(true) }}
               className="w-full flex items-center gap-2 justify-center py-3 border-2 border-dashed border-[#E2E8F0] rounded-xl text-sm text-[#64748B] hover:border-[#4F7CFF] hover:text-[#4F7CFF] transition-colors">
               <Plus size={16} /> Registrar Férias
             </button>
@@ -468,8 +547,8 @@ export default function GestaoPJPanel() {
             {showAddFerias && (
               <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 space-y-3">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-sm font-semibold text-[#0F172A]">Registrar Férias</h3>
-                  <button onClick={() => setShowAddFerias(false)}><X size={16} className="text-[#94A3B8]" /></button>
+                  <h3 className="text-sm font-semibold text-[#0F172A]">{editandoFerias ? 'Editar Férias' : 'Registrar Férias'}</h3>
+                  <button onClick={() => { setShowAddFerias(false); setEditandoFerias(null) }}><X size={16} className="text-[#94A3B8]" /></button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -507,7 +586,7 @@ export default function GestaoPJPanel() {
                     className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                 </div>
                 <div className="flex justify-end gap-2 pt-1">
-                  <button onClick={() => setShowAddFerias(false)} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
+                  <button onClick={() => { setShowAddFerias(false); setEditandoFerias(null) }} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
                   <button onClick={salvarFerias} disabled={saving}
                     className="px-4 py-2 text-sm font-medium bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D6AEE] disabled:opacity-50 transition-colors">
                     {saving ? 'Salvando...' : 'Salvar'}
@@ -526,8 +605,11 @@ export default function GestaoPJPanel() {
                     <p className="text-sm font-medium text-[#0F172A]">{dataBR(f.data_inicio)} → {dataBR(f.data_fim)}</p>
                     <p className="text-xs text-[#94A3B8]">{f.dias} dias{f.valor_pago ? ` · ${moeda(f.valor_pago)}` : ''}{f.observacao ? ` · ${f.observacao}` : ''}</p>
                   </div>
-                  <button onClick={() => deletarFerias(f.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors">
-                    <Trash2 size={13} className="text-[#CBD5E1] hover:text-red-400" />
+                  <button onClick={() => abrirEditarFerias(f)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF] transition-colors">
+                    <Pencil size={13} />
+                  </button>
+                  <button onClick={() => deletarFerias(f.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#CBD5E1] hover:text-red-400 transition-colors">
+                    <Trash2 size={13} />
                   </button>
                 </div>
               ))}
@@ -553,7 +635,7 @@ export default function GestaoPJPanel() {
               })}
             </div>
 
-            <button onClick={() => setShowAddPagamento(true)}
+            <button onClick={() => { setEditandoPagamento(null); setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_url: '' }); setShowAddPagamento(true) }}
               className="w-full flex items-center gap-2 justify-center py-3 border-2 border-dashed border-[#E2E8F0] rounded-xl text-sm text-[#64748B] hover:border-[#4F7CFF] hover:text-[#4F7CFF] transition-colors">
               <Plus size={16} /> Registrar Pagamento
             </button>
@@ -561,8 +643,8 @@ export default function GestaoPJPanel() {
             {showAddPagamento && (
               <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 space-y-3">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-sm font-semibold text-[#0F172A]">Registrar Pagamento</h3>
-                  <button onClick={() => setShowAddPagamento(false)}><X size={16} className="text-[#94A3B8]" /></button>
+                  <h3 className="text-sm font-semibold text-[#0F172A]">{editandoPagamento ? 'Editar Pagamento' : 'Registrar Pagamento'}</h3>
+                  <button onClick={() => { setShowAddPagamento(false); setEditandoPagamento(null) }}><X size={16} className="text-[#94A3B8]" /></button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -605,9 +687,37 @@ export default function GestaoPJPanel() {
                       className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-[#64748B] font-medium block mb-1">Comprovante de pagamento</label>
+                    {fPagamento.comprovante_url
+                      ? <div className="flex items-center gap-2">
+                          <a href={fPagamento.comprovante_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">Ver arquivo</a>
+                          <button onClick={() => setFPagamento(p => ({ ...p, comprovante_url: '' }))} className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
+                        </div>
+                      : <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-[#E2E8F0] rounded-lg text-xs text-[#64748B] cursor-pointer hover:border-[#4F7CFF] ${uploadingComprovante ? 'opacity-50' : ''}`}>
+                          <input type="file" className="hidden" disabled={uploadingComprovante}
+                            onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadArquivo(f, 'marv-pj', 'comprovantes'); if (url) setFPagamento(p => ({ ...p, comprovante_url: url })) } }} />
+                          {uploadingComprovante ? 'Enviando...' : 'Selecionar arquivo'}
+                        </label>}
+                  </div>
+                  <div>
+                    <label className="text-xs text-[#64748B] font-medium block mb-1">Nota Fiscal (HTML/XLSX)</label>
+                    {fPagamento.nota_fiscal_url
+                      ? <div className="flex items-center gap-2">
+                          <a href={fPagamento.nota_fiscal_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">Ver NF</a>
+                          <button onClick={() => setFPagamento(p => ({ ...p, nota_fiscal_url: '' }))} className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
+                        </div>
+                      : <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-[#E2E8F0] rounded-lg text-xs text-[#64748B] cursor-pointer hover:border-[#4F7CFF] ${uploadingComprovante ? 'opacity-50' : ''}`}>
+                          <input type="file" accept=".html,.htm,.xlsx,.xls,.pdf" className="hidden" disabled={uploadingComprovante}
+                            onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadArquivo(f, 'marv-pj', 'notas-fiscais'); if (url) setFPagamento(p => ({ ...p, nota_fiscal_url: url })) } }} />
+                          {uploadingComprovante ? 'Enviando...' : 'Selecionar NF'}
+                        </label>}
+                  </div>
+                </div>
                 <div className="flex justify-end gap-2 pt-1">
-                  <button onClick={() => setShowAddPagamento(false)} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
-                  <button onClick={salvarPagamento} disabled={saving}
+                  <button onClick={() => { setShowAddPagamento(false); setEditandoPagamento(null) }} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
+                  <button onClick={salvarPagamento} disabled={saving || uploadingComprovante}
                     className="px-4 py-2 text-sm font-medium bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D6AEE] disabled:opacity-50 transition-colors">
                     {saving ? 'Salvando...' : 'Salvar'}
                   </button>
@@ -622,16 +732,21 @@ export default function GestaoPJPanel() {
                     <DollarSign size={14} className={p.tipo === 'hora_extra' ? 'text-amber-600' : p.tipo === 'salario' ? 'text-blue-600' : 'text-purple-600'} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${tipoColor[p.tipo]}`}>{tipoLabel[p.tipo]}</span>
                       <span className="text-xs text-[#64748B]">{p.competencia}</span>
                       {p.horas_extras && <span className="text-xs text-amber-600">{p.horas_extras}h</span>}
+                      {p.comprovante_url && <a href={p.comprovante_url} target="_blank" rel="noreferrer" className="text-[10px] text-[#4F7CFF] underline">Comprovante</a>}
+                      {p.nota_fiscal_url && <a href={p.nota_fiscal_url} target="_blank" rel="noreferrer" className="text-[10px] text-[#4F7CFF] underline">NF</a>}
                     </div>
                     {p.observacao && <p className="text-xs text-[#94A3B8] mt-0.5 truncate">{p.observacao}</p>}
                   </div>
                   <p className="text-sm font-semibold text-[#0F172A] shrink-0">{moeda(p.valor)}</p>
-                  <button onClick={() => deletarPagamento(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors">
-                    <Trash2 size={13} className="text-[#CBD5E1] hover:text-red-400" />
+                  <button onClick={() => abrirEditarPagamento(p)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF] transition-colors">
+                    <Pencil size={13} />
+                  </button>
+                  <button onClick={() => deletarPagamento(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#CBD5E1] hover:text-red-400 transition-colors">
+                    <Trash2 size={13} />
                   </button>
                 </div>
               ))}
