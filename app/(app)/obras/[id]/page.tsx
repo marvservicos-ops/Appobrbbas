@@ -3390,7 +3390,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
       setLoadingEquipe(true)
       const sb = createClient()
       let q = sb.from('funcionario_alocacoes')
-        .select('data, funcionario_id, percentual, funcionarios(id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes)')
+        .select('data, funcionario_id, percentual')
         .eq('obra_id', obraId).eq('tipo', 'obra')
       if (filtroMes) {
         const [ano, mesNum] = filtroMes.split('-').map(Number)
@@ -3400,9 +3400,18 @@ function AbaEquipe({ obraId }: { obraId: string }) {
         q = q.gte('data', inicio).lte('data', fim)
       }
       const { data: rows } = await q
+      if (!rows || rows.length === 0) { setEntries([]); setLoadingEquipe(false); return }
+
+      // Buscar dados dos funcionários separadamente
+      const ids = [...new Set(rows.map((r: any) => r.funcionario_id))]
+      const { data: funcs } = await sb.from('funcionarios')
+        .select('id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes')
+        .in('id', ids)
+      const funcMap = new Map((funcs ?? []).map((f: any) => [f.id, f]))
+
       const map = new Map<string, EquipeEntry>()
-      for (const r of (rows ?? []) as any[]) {
-        const f = r.funcionarios
+      for (const r of rows as any[]) {
+        const f = funcMap.get(r.funcionario_id)
         if (!f) continue
         const custoDia: number = f.custo_diario ?? (f.salario_bruto && f.dias_mes ? f.salario_bruto / f.dias_mes : 0)
         if (!map.has(r.funcionario_id)) {
