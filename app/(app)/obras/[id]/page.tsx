@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, Building2, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package } from 'lucide-react'
+import { ArrowLeft, Search, Bell, Building2, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, Mail, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO, Empresa } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
@@ -221,6 +221,9 @@ export default function ObraDetailPage() {
   const [showNFManual, setShowNFManual] = useState(false)
   const [editandoOrcamento, setEditandoOrcamento] = useState<ObraMaterial[] | null>(null)
   const [pastaAtiva, setPastaAtiva] = useState<string>('__todas__')
+  const [emailTemplates, setEmailTemplates] = useState<{ id: string; nome: string; assunto: string; corpo: string; destinatario_tipo: string }[]>([])
+  const [showEmailMenu, setShowEmailMenu] = useState(false)
+  const [enviandoEmail, setEnviandoEmail] = useState(false)
   const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
 
   // Modals
@@ -308,13 +311,14 @@ export default function ObraDetailPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes] = await Promise.all([
+    const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes, templatesRes] = await Promise.all([
       supabase.from('obras').select('*').eq('id', id).single(),
       supabase.from('cronograma_etapas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('documentos').select('*').eq('obra_id', id).order('pasta').order('created_at', { ascending: false }),
       supabase.from('doc_pastas').select('*').eq('obra_id', id).order('ordem'),
       supabase.from('rdos').select('*').eq('obra_id', id).order('numero', { ascending: false }),
       supabase.from('obra_materiais').select('*').eq('obra_id', id).order('created_at', { ascending: false }),
+      supabase.from('email_templates').select('id, nome, assunto, corpo, destinatario_tipo').order('nome'),
     ])
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (etapasRes.data) setEtapas(etapasRes.data as CronogramaEtapa[])
@@ -322,6 +326,7 @@ export default function ObraDetailPage() {
     if (pastasRes.data) setPastas(pastasRes.data as DocPasta[])
     if (rdosRes.data) setRdos(rdosRes.data as RDO[])
     if (materiaisRes.data) setMateriais(materiaisRes.data as ObraMaterial[])
+    if (templatesRes.data) setEmailTemplates(templatesRes.data as typeof emailTemplates)
     setLoading(false)
   }
 
@@ -454,6 +459,41 @@ export default function ObraDetailPage() {
     load()
   }
 
+  async function enviarEmailTemplate(template: typeof emailTemplates[number]) {
+    if (!obra) return
+    setEnviandoEmail(true)
+    setShowEmailMenu(false)
+
+    // Buscar email do destinatário
+    let emailDestinatario = ''
+    let nomeDestinatario = ''
+    if (template.destinatario_tipo === 'gestor' && obra.gestor_id) {
+      const { data } = await createClient().from('clientes').select('nome, email').eq('id', obra.gestor_id).single()
+      emailDestinatario = data?.email ?? ''
+      nomeDestinatario = data?.nome ?? ''
+    } else if (template.destinatario_tipo === 'comprador' && obra.comprador_id) {
+      const { data } = await createClient().from('clientes').select('nome, email').eq('id', obra.comprador_id).single()
+      emailDestinatario = data?.email ?? ''
+      nomeDestinatario = data?.nome ?? ''
+    }
+
+    // Resolver variáveis
+    const resolver = (texto: string) => texto
+      .replace(/\{\{nome_obra\}\}/g, obra.titulo ?? '')
+      .replace(/\{\{nome_gestor\}\}/g, nomeDestinatario)
+      .replace(/\{\{email_gestor\}\}/g, emailDestinatario)
+      .replace(/\{\{numero_contrato\}\}/g, obra.numero_contrato ?? '')
+      .replace(/\{\{data_inicio\}\}/g, obra.data_inicio ? new Date(obra.data_inicio + 'T12:00:00').toLocaleDateString('pt-BR') : '')
+      .replace(/\{\{endereco\}\}/g, obra.endereco ?? '')
+
+    const assunto = resolver(template.assunto)
+    const corpo = resolver(template.corpo)
+
+    const mailto = `mailto:${encodeURIComponent(emailDestinatario)}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`
+    window.open(mailto, '_blank')
+    setEnviandoEmail(false)
+  }
+
   return (
     <div className="flex flex-col min-h-[calc(100dvh-7.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:min-h-full min-w-0 overflow-x-hidden">
       {/* Topbar */}
@@ -467,6 +507,43 @@ export default function ObraDetailPage() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
             <input placeholder="Buscar..." className="pl-9 pr-4 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-sm w-52 focus:outline-none focus:border-[#4F7CFF] transition-colors" />
           </div>
+
+          {/* Botão Enviar Email */}
+          {isAdmin && emailTemplates.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowEmailMenu(v => !v)}
+                disabled={enviandoEmail}
+                className="flex items-center gap-1.5 px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60">
+                <Mail size={14} />
+                Enviar Email
+                <ChevronDown size={13} />
+              </button>
+              {showEmailMenu && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowEmailMenu(false)} />
+                  <div className="absolute right-0 top-full mt-2 bg-white border border-[#E2E8F0] rounded-xl shadow-lg z-40 min-w-[220px] overflow-hidden">
+                    <div className="px-3 py-2 border-b border-[#F1F5F9]">
+                      <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">Selecionar modelo</p>
+                    </div>
+                    {emailTemplates.map(t => (
+                      <button key={t.id} onClick={() => enviarEmailTemplate(t)}
+                        className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#F8FAFC] transition-colors text-left">
+                        <Send size={13} className="text-[#4F7CFF] shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-[#0F172A]">{t.nome}</p>
+                          <p className="text-[10px] text-[#94A3B8]">
+                            {t.destinatario_tipo === 'gestor' ? 'Para: Gestor' : t.destinatario_tipo === 'comprador' ? 'Para: Comprador' : 'Destinatário manual'}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <button className="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
             <Bell size={18} className="text-[#64748B]" />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#4F7CFF] rounded-full" />

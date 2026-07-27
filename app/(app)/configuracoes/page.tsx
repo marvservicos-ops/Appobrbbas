@@ -1,10 +1,183 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent, Car, Plus, Trash2, Power } from 'lucide-react'
+import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent, Car, Plus, Trash2, Power, Mail, Pencil, X, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Veiculo { id: string; nome: string; placa: string; cor: string; ativo: boolean }
+
+interface EmailTemplate {
+  id: string
+  nome: string
+  assunto: string
+  corpo: string
+  destinatario_tipo: 'gestor' | 'comprador' | 'manual'
+}
+
+const VARIAVEIS = ['{{nome_obra}}', '{{nome_gestor}}', '{{email_gestor}}', '{{numero_contrato}}', '{{data_inicio}}', '{{endereco}}']
+
+function SecaoEmailTemplates() {
+  const [templates, setTemplates] = useState<EmailTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editando, setEditando] = useState<EmailTemplate | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ nome: '', assunto: '', corpo: '', destinatario_tipo: 'gestor' as EmailTemplate['destinatario_tipo'] })
+  const [salvando, setSalvando] = useState(false)
+
+  async function load() {
+    const { data } = await createClient().from('email_templates').select('*').order('nome')
+    setTemplates((data ?? []) as EmailTemplate[])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  function abrirNovo() {
+    setEditando(null)
+    setForm({ nome: '', assunto: '', corpo: '', destinatario_tipo: 'gestor' })
+    setShowForm(true)
+  }
+
+  function abrirEditar(t: EmailTemplate) {
+    setEditando(t)
+    setForm({ nome: t.nome, assunto: t.assunto, corpo: t.corpo, destinatario_tipo: t.destinatario_tipo })
+    setShowForm(true)
+  }
+
+  function inserirVariavel(v: string) {
+    setForm(f => ({ ...f, corpo: f.corpo + v }))
+  }
+
+  async function salvar() {
+    if (!form.nome.trim() || !form.assunto.trim() || !form.corpo.trim()) return
+    setSalvando(true)
+    const sb = createClient()
+    if (editando) {
+      await sb.from('email_templates').update(form).eq('id', editando.id)
+    } else {
+      await sb.from('email_templates').insert(form)
+    }
+    setShowForm(false)
+    setSalvando(false)
+    load()
+  }
+
+  async function excluir(id: string) {
+    if (!confirm('Excluir este modelo?')) return
+    await createClient().from('email_templates').delete().eq('id', id)
+    load()
+  }
+
+  return (
+    <section className="card">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#EEF2FF] flex items-center justify-center">
+            <Mail size={18} className="text-[#4F7CFF]" />
+          </div>
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A]">Modelos de Email</h2>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Gatilhos rápidos para envio via Gmail</p>
+          </div>
+        </div>
+        <button onClick={abrirNovo} className="flex items-center gap-1.5 px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-sm font-medium rounded-lg transition-colors">
+          <Plus size={14} /> Novo modelo
+        </button>
+      </div>
+
+      {/* Variáveis disponíveis */}
+      <div className="bg-[#F8FAFC] rounded-xl p-3 mb-4">
+        <p className="text-xs font-semibold text-[#64748B] mb-2">Variáveis disponíveis no assunto e corpo:</p>
+        <div className="flex flex-wrap gap-1.5">
+          {VARIAVEIS.map(v => (
+            <code key={v} className="text-[11px] bg-white border border-[#E2E8F0] text-[#4F7CFF] px-2 py-0.5 rounded font-mono">{v}</code>
+          ))}
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="border border-[#E2E8F0] rounded-xl p-5 mb-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-[#0F172A]">{editando ? 'Editar modelo' : 'Novo modelo'}</h3>
+            <button onClick={() => setShowForm(false)}><X size={15} className="text-[#94A3B8]" /></button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-[#64748B] block mb-1">Nome do modelo *</label>
+              <input className="field text-sm" placeholder="Ex: Pesquisa de Satisfação" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[#64748B] block mb-1">Destinatário padrão</label>
+              <select className="field text-sm" value={form.destinatario_tipo} onChange={e => setForm(f => ({ ...f, destinatario_tipo: e.target.value as EmailTemplate['destinatario_tipo'] }))}>
+                <option value="gestor">Gestor da obra</option>
+                <option value="comprador">Comprador</option>
+                <option value="manual">Preencher manualmente</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Assunto *</label>
+            <input className="field text-sm" placeholder="Ex: Pesquisa de satisfação — {{nome_obra}}" value={form.assunto} onChange={e => setForm(f => ({ ...f, assunto: e.target.value }))} />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-[#64748B]">Corpo do email *</label>
+              <div className="flex gap-1 flex-wrap justify-end">
+                {VARIAVEIS.map(v => (
+                  <button key={v} type="button" onClick={() => inserirVariavel(v)}
+                    className="text-[10px] font-mono bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#4F7CFF] hover:text-white px-1.5 py-0.5 rounded transition-colors">
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <textarea rows={7} className="field text-sm resize-none font-mono text-xs" placeholder="Olá {{nome_gestor}},&#10;&#10;Gostaríamos de convidar você a responder nossa pesquisa de satisfação sobre a obra {{nome_obra}}:&#10;&#10;{{link_pesquisa}}&#10;&#10;Agradecemos sua colaboração!" value={form.corpo} onChange={e => setForm(f => ({ ...f, corpo: e.target.value }))} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
+            <button onClick={salvar} disabled={salvando || !form.nome || !form.assunto || !form.corpo}
+              className="px-4 py-2 text-sm font-medium bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D68F0] disabled:opacity-50 transition-colors">
+              {salvando ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-[#4F7CFF]" /></div>
+      ) : templates.length === 0 ? (
+        <p className="text-sm text-[#94A3B8] text-center py-8">Nenhum modelo criado</p>
+      ) : (
+        <div className="space-y-2">
+          {templates.map(t => (
+            <div key={t.id} className="flex items-start gap-3 p-4 border border-[#E2E8F0] rounded-xl group hover:bg-[#F8FAFC] transition-colors">
+              <div className="w-8 h-8 rounded-lg bg-[#EEF2FF] flex items-center justify-center shrink-0 mt-0.5">
+                <Mail size={14} className="text-[#4F7CFF]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-[#0F172A]">{t.nome}</p>
+                  <span className="text-[10px] bg-[#F1F5F9] text-[#64748B] px-2 py-0.5 rounded-full">
+                    {t.destinatario_tipo === 'gestor' ? 'Gestor' : t.destinatario_tipo === 'comprador' ? 'Comprador' : 'Manual'}
+                  </span>
+                </div>
+                <p className="text-xs text-[#64748B] mt-0.5 truncate">{t.assunto}</p>
+              </div>
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <button onClick={() => abrirEditar(t)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+                  <Pencil size={13} />
+                </button>
+                <button onClick={() => excluir(t.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-400 transition-colors">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
 
 function SecaoVeiculos() {
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
@@ -480,6 +653,9 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
         </section>
+
+        {/* Modelos de Email */}
+        <SecaoEmailTemplates />
 
         {/* Leitor QR/Barcode */}
         <section className="card border-dashed border-[#E2E8F0]">
