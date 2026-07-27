@@ -11,11 +11,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Campos obrigatórios: to, subject, body' }, { status: 400 })
   }
 
+  const isHtml = body.trim().startsWith('<')
   const { data, error } = await resend.emails.send({
     from: `MARV Serviços <${FROM}>`,
     to: [to],
     subject,
-    text: body,
+    ...(isHtml ? { html: body } : { text: body }),
   })
 
   if (error) {

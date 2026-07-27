@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react'
 import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent, Car, Plus, Trash2, Power, Mail, Pencil, X, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import dynamic from 'next/dynamic'
+
+const RichTextEditor = dynamic(() => import('@/components/RichTextEditor'), { ssr: false })
 
 interface Veiculo { id: string; nome: string; placa: string; cor: string; ativo: boolean }
 
@@ -23,6 +26,7 @@ function SecaoEmailTemplates() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nome: '', assunto: '', corpo: '', destinatario_tipo: 'gestor' as EmailTemplate['destinatario_tipo'] })
   const [salvando, setSalvando] = useState(false)
+  const insertRef = useState<((text: string) => void) | null>(null)
 
   async function load() {
     const { data } = await createClient().from('email_templates').select('*').order('nome')
@@ -45,7 +49,11 @@ function SecaoEmailTemplates() {
   }
 
   function inserirVariavel(v: string) {
-    setForm(f => ({ ...f, corpo: f.corpo + v }))
+    if (insertRef[0]) {
+      insertRef[0](v)
+    } else {
+      setForm(f => ({ ...f, corpo: f.corpo + v }))
+    }
   }
 
   async function salvar() {
@@ -131,7 +139,12 @@ function SecaoEmailTemplates() {
                 ))}
               </div>
             </div>
-            <textarea rows={7} className="field text-sm resize-none font-mono text-xs" placeholder="Olá {{nome_gestor}},&#10;&#10;Gostaríamos de convidar você a responder nossa pesquisa de satisfação sobre a obra {{nome_obra}}:&#10;&#10;{{link_pesquisa}}&#10;&#10;Agradecemos sua colaboração!" value={form.corpo} onChange={e => setForm(f => ({ ...f, corpo: e.target.value }))} />
+            <RichTextEditor
+              value={form.corpo}
+              onChange={html => setForm(f => ({ ...f, corpo: html }))}
+              onInsertRef={fn => { insertRef[1](fn) }}
+              placeholder="Olá {{nome_gestor}}, tudo bem?..."
+            />
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
