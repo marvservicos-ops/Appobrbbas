@@ -416,7 +416,10 @@ export default function GestaoPJPanel() {
                             <div key={f.id} className="flex items-center gap-2 text-xs py-1.5 border-b border-[#F1F5F9] last:border-0">
                               <span className="text-[#0F172A]">{dataBR(f.data_inicio)} → {dataBR(f.data_fim)}</span>
                               <span className="text-[#94A3B8]">({f.dias}d)</span>
-                              {f.valor_pago && <span className="text-green-600 ml-auto">{moeda(f.valor_pago)}</span>}
+                              {f.valor_pago && <span className="text-green-600">{moeda(f.valor_pago)}</span>}
+                              <button onClick={() => deletarFerias(f.id)} className="ml-auto w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
+                                <Trash2 size={12} />
+                              </button>
                             </div>
                           ))}
                         </div>
