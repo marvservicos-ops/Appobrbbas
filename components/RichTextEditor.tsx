@@ -5,7 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Undo, Redo } from 'lucide-react'
 
 const COLORS = ['#0F172A', '#4F7CFF', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#64748B']
@@ -31,6 +31,8 @@ function ToolbarBtn({ active, onClick, children }: { active?: boolean; onClick: 
 }
 
 export default function RichTextEditor({ value, onChange, onInsertRef, placeholder }: Props) {
+  const internalChange = useRef(false)
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -39,7 +41,10 @@ export default function RichTextEditor({ value, onChange, onInsertRef, placehold
       Color,
     ],
     content: value || '',
-    onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    onUpdate: ({ editor }) => {
+      internalChange.current = true
+      onChange(editor.getHTML())
+    },
     editorProps: {
       attributes: {
         class: 'prose prose-sm max-w-none focus:outline-none min-h-[140px] px-3 py-2 text-sm text-[#374151] leading-relaxed',
@@ -47,9 +52,13 @@ export default function RichTextEditor({ value, onChange, onInsertRef, placehold
     },
   })
 
-  // Sync external value changes (e.g. when opening a different template)
+  // Sync external value changes only when they come from outside (e.g. opening a different template)
   useEffect(() => {
     if (!editor) return
+    if (internalChange.current) {
+      internalChange.current = false
+      return
+    }
     const current = editor.getHTML()
     if (value !== current) {
       editor.commands.setContent(value || '')
