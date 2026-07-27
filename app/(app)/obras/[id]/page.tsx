@@ -3403,7 +3403,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
       if (!rows || rows.length === 0) { setEntries([]); setLoadingEquipe(false); return }
 
       // Buscar dados dos funcionários separadamente
-      const ids = [...new Set(rows.map((r: any) => r.funcionario_id))]
+      const ids = Array.from(new Set(rows.map((r: any) => r.funcionario_id as string)))
       const { data: funcs } = await sb.from('funcionarios')
         .select('id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes')
         .in('id', ids)
