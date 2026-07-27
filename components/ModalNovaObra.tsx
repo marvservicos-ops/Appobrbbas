@@ -156,7 +156,7 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
     status: (obra?.status ?? 'Em Orçamento') as StatusObra,
     engenheiro_responsavel: obra?.engenheiro_responsavel ?? '',
     numero_contrato: obra?.numero_contrato ?? '',
-    valor_rt: obra?.valor_rt != null ? String(obra.valor_rt) : '',
+    valor_art: obra?.valor_art != null ? String(obra.valor_art) : '',
     endereco: obra?.endereco ?? '',
     pavimento: obra?.pavimento ?? '',
     data_inicio: obra?.data_inicio ?? '',
@@ -224,7 +224,7 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
       gestor_id: form.gestor_id || null,
       comprador_id: form.comprador_id || null,
       cliente_id: form.gestor_id || form.comprador_id || null,
-      valor_rt: form.valor_rt ? parseFloat(form.valor_rt) : null,
+      valor_art: form.valor_art ? parseFloat(form.valor_art) : null,
     }
     const { error: err } = editing
       ? await supabase.from('obras').update(payload).eq('id', obra!.id)
@@ -300,9 +300,9 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
 
                 {/* Valor RT */}
                 <div>
-                  <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor da RT (R$)</label>
+                  <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor da ART (R$)</label>
                   <input type="number" step="0.01" min="0" placeholder="0,00"
-                    value={form.valor_rt} onChange={e => set('valor_rt', e.target.value)} className="field" />
+                    value={form.valor_art} onChange={e => set('valor_art', e.target.value)} className="field" />
                 </div>
               </div>
             </div>

@@ -55,7 +55,7 @@ export interface Obra {
   comprador_id?: string | null
   gestor?: Cliente
   comprador?: Cliente
-  valor_rt?: number | null
+  valor_art?: number | null
   created_at: string
   updated_at: string
 }
