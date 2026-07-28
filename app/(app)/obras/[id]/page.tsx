@@ -3537,6 +3537,7 @@ interface EquipeEntry {
   custo_hora: number
   dias_uteis: number
   dias_sabado: number
+  dias_domingo: number
   dias_noturno: number
   custo_total: number
 }
@@ -3571,6 +3572,8 @@ function AbaEquipe({ obraId }: { obraId: string }) {
 
       const cfg = new Map((cfgRows ?? []).map((c: any) => [c.chave, parseFloat(c.valor?.percentual ?? c.valor) || 0]))
       const pctNoturno = (cfg.get('adicional_noturno') ?? 0) / 100
+      const pctSabado = (cfg.get('adicional_sabado') ?? 0) / 100
+      const pctDomingo = (cfg.get('adicional_domingo_feriado') ?? 0) / 100
 
       // Buscar dados dos funcionários separadamente
       const ids = Array.from(new Set(rows.map((r: any) => r.funcionario_id as string)))
@@ -3587,7 +3590,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
         const horasDia: number = f.horas_dia ?? 8
         const custoHora = horasDia > 0 ? custoDia / horasDia : 0
         if (!map.has(r.funcionario_id)) {
-          map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, custo_hora: custoHora, dias_uteis: 0, dias_sabado: 0, dias_noturno: 0, custo_total: 0 })
+          map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, custo_hora: custoHora, dias_uteis: 0, dias_sabado: 0, dias_domingo: 0, dias_noturno: 0, custo_total: 0 })
         }
         const entry = map.get(r.funcionario_id)!
         const pct = (r.percentual ?? 100) / 100
@@ -3596,12 +3599,16 @@ function AbaEquipe({ obraId }: { obraId: string }) {
           entry.dias_noturno += pct
         } else if (dow === 6) {
           entry.dias_sabado += pct
-        } else if (dow !== 0) {
+        } else if (dow === 0) {
+          entry.dias_domingo += pct
+        } else {
           entry.dias_uteis += pct
         }
-        // Custo base do dia + acréscimo noturno
+        // Custo base + adicionais
         entry.custo_total += pct * entry.custo_diario
         if (r.noturno && pctNoturno > 0) entry.custo_total += pct * entry.custo_diario * pctNoturno
+        if (!r.noturno && dow === 6 && pctSabado > 0) entry.custo_total += pct * entry.custo_diario * pctSabado
+        if (!r.noturno && dow === 0 && pctDomingo > 0) entry.custo_total += pct * entry.custo_diario * pctDomingo
       }
       setEntries(Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome)))
       setLoadingEquipe(false)
@@ -3666,6 +3673,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                     <div className="flex gap-2 mt-1">
                       <span className="text-xs text-[#64748B]">{Number.isInteger(e.dias_uteis) ? e.dias_uteis : e.dias_uteis.toFixed(1)}d úteis</span>
                       {e.dias_sabado > 0 && <span className="text-xs text-amber-600">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
+                      {e.dias_domingo > 0 && <span className="text-xs text-red-500">+{Number.isInteger(e.dias_domingo) ? e.dias_domingo : e.dias_domingo.toFixed(1)}dom</span>}
                       {e.dias_noturno > 0 && <span className="text-xs text-indigo-500">+{Number.isInteger(e.dias_noturno) ? e.dias_noturno : e.dias_noturno.toFixed(1)}d not.</span>}
                     </div>
                   </div>
@@ -3695,6 +3703,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                     <td className="px-4 py-3 text-sm text-[#374151]">
                       <span>{Number.isInteger(e.dias_uteis) ? e.dias_uteis : e.dias_uteis.toFixed(1)}d úteis</span>
                       {e.dias_sabado > 0 && <span className="text-amber-600 ml-1">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
+                      {e.dias_domingo > 0 && <span className="text-red-500 ml-1">+{Number.isInteger(e.dias_domingo) ? e.dias_domingo : e.dias_domingo.toFixed(1)}dom</span>}
                       {e.dias_noturno > 0 && <span className="text-indigo-500 ml-1">+{Number.isInteger(e.dias_noturno) ? e.dias_noturno : e.dias_noturno.toFixed(1)}d not.</span>}
                     </td>
                     <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">{moeda(e.custo_diario)}</td>
