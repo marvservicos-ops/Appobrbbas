@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ContratoManutencao, ManutencaoAditivo, ManutencaoNF, ManutencaoFuncionario, Equipamento } from '@/lib/types'
 import Link from 'next/link'
@@ -339,141 +339,349 @@ function AbaEquipe({ contratoId }: { contratoId: string }) {
 }
 
 // ── Aba Equipamentos ──────────────────────────────────
-function AbaEquipamentos({ contratoId }: { contratoId: string }) {
-  const [equipamentos, setEquipamentos] = useState<Equipamento[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ nome: '', tipo: 'Split' as Equipamento['tipo'], marca: '', modelo: '', capacidade_btu: '', numero_serie: '', localizacao: '', data_instalacao: '' })
+interface Grupo { id: string; nome: string; ordem: number }
+interface EquipamentoComGrupo extends Equipamento { grupo_id: string | null }
 
-  async function load() {
-    const { data } = await createClient().from('equipamentos').select('*').eq('contrato_id', contratoId).order('created_at')
-    setEquipamentos((data ?? []) as Equipamento[])
-  }
+const TIPO_COLOR: Record<string, string> = {
+  Split: 'bg-[#EEF2FF] text-[#4F7CFF]',
+  Cassete: 'bg-[#D1FAE5] text-[#059669]',
+  VRF: 'bg-[#FEF3C7] text-[#D97706]',
+  Janela: 'bg-[#FCE7F3] text-[#DB2777]',
+  'Piso-teto': 'bg-[#E0E7FF] text-[#4338CA]',
+  Outro: 'bg-[#F1F5F9] text-[#64748B]',
+}
 
-  useEffect(() => { load() }, [contratoId])
+function FormEquipamento({ contratoId, grupos, grupoIdInicial, onSaved, onCancel }: {
+  contratoId: string; grupos: Grupo[]; grupoIdInicial?: string | null
+  onSaved: () => void; onCancel: () => void
+}) {
+  const [form, setForm] = useState({
+    nome: '', tipo: 'Split' as Equipamento['tipo'], marca: '', modelo: '',
+    capacidade_btu: '', numero_serie: '', localizacao: '', data_instalacao: '',
+    grupo_id: grupoIdInicial ?? '',
+  })
 
   async function salvar() {
     if (!form.nome) return
     await createClient().from('equipamentos').insert({
       contrato_id: contratoId,
-      nome: form.nome,
-      tipo: form.tipo,
-      marca: form.marca || null,
-      modelo: form.modelo || null,
+      nome: form.nome, tipo: form.tipo,
+      marca: form.marca || null, modelo: form.modelo || null,
       capacidade_btu: form.capacidade_btu ? parseInt(form.capacidade_btu) : null,
       numero_serie: form.numero_serie || null,
       localizacao: form.localizacao || null,
       data_instalacao: form.data_instalacao || null,
+      grupo_id: form.grupo_id || null,
       ativo: true,
     })
-    setForm({ nome: '', tipo: 'Split', marca: '', modelo: '', capacidade_btu: '', numero_serie: '', localizacao: '', data_instalacao: '' })
-    setShowForm(false)
-    load()
-  }
-
-  async function excluir(id: string) {
-    if (!confirm('Excluir equipamento?')) return
-    await createClient().from('equipamentos').delete().eq('id', id)
-    load()
-  }
-
-  const tipoColor: Record<string, string> = {
-    Split: 'bg-[#EEF2FF] text-[#4F7CFF]',
-    Cassete: 'bg-[#D1FAE5] text-[#059669]',
-    VRF: 'bg-[#FEF3C7] text-[#D97706]',
-    Janela: 'bg-[#FCE7F3] text-[#DB2777]',
-    'Piso-teto': 'bg-[#E0E7FF] text-[#4338CA]',
-    Outro: 'bg-[#F1F5F9] text-[#64748B]',
+    onSaved()
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <button onClick={() => setShowForm(v => !v)} className="flex items-center gap-2 px-4 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-sm font-semibold rounded-xl transition-colors">
-          <Plus size={15} /> Novo Equipamento
+    <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Nome / Identificação *</label>
+          <input className="field text-sm" placeholder="Ex: Split Sala de Reuniões" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Tipo</label>
+          <select className="field text-sm" value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value as Equipamento['tipo'] }))}>
+            {['Split', 'Cassete', 'VRF', 'Janela', 'Piso-teto', 'Outro'].map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Capacidade (BTU)</label>
+          <input type="number" className="field text-sm" placeholder="Ex: 12000" value={form.capacidade_btu} onChange={e => setForm(f => ({ ...f, capacidade_btu: e.target.value }))} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Marca</label>
+          <input className="field text-sm" placeholder="Ex: Daikin" value={form.marca} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Modelo</label>
+          <input className="field text-sm" placeholder="Ex: FTXS12LVMA" value={form.modelo} onChange={e => setForm(f => ({ ...f, modelo: e.target.value }))} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Nº de Série</label>
+          <input className="field text-sm" value={form.numero_serie} onChange={e => setForm(f => ({ ...f, numero_serie: e.target.value }))} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Data de Instalação</label>
+          <input type="date" className="field text-sm" value={form.data_instalacao} onChange={e => setForm(f => ({ ...f, data_instalacao: e.target.value }))} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Grupo</label>
+          <select className="field text-sm" value={form.grupo_id} onChange={e => setForm(f => ({ ...f, grupo_id: e.target.value }))}>
+            <option value="">Sem grupo</option>
+            {grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-white rounded-lg">Cancelar</button>
+        <button onClick={salvar} disabled={!form.nome} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Salvar</button>
+      </div>
+    </div>
+  )
+}
+
+function GrupoSection({ grupo, equipamentos, contratoId, grupos, onReload, collapsed, onToggle }: {
+  grupo: Grupo | null; equipamentos: EquipamentoComGrupo[]; contratoId: string
+  grupos: Grupo[]; onReload: () => void; collapsed: boolean; onToggle: () => void
+}) {
+  const [showForm, setShowForm] = useState(false)
+  const [editandoNome, setEditandoNome] = useState(false)
+  const [novoNome, setNovoNome] = useState(grupo?.nome ?? '')
+
+  async function excluirEquip(id: string) {
+    if (!confirm('Excluir equipamento?')) return
+    await createClient().from('equipamentos').delete().eq('id', id)
+    onReload()
+  }
+
+  async function moverEquip(equipId: string, grupoId: string | null) {
+    await createClient().from('equipamentos').update({ grupo_id: grupoId }).eq('id', equipId)
+    onReload()
+  }
+
+  async function salvarNomeGrupo() {
+    if (!grupo || !novoNome.trim()) return
+    await createClient().from('grupos_equipamentos').update({ nome: novoNome.trim() }).eq('id', grupo.id)
+    setEditandoNome(false)
+    onReload()
+  }
+
+  async function excluirGrupo() {
+    if (!grupo) return
+    if (!confirm('Excluir grupo? Os equipamentos ficarão sem grupo.')) return
+    await createClient().from('equipamentos').update({ grupo_id: null }).eq('grupo_id', grupo.id)
+    await createClient().from('grupos_equipamentos').delete().eq('id', grupo.id)
+    onReload()
+  }
+
+  const isUngrouped = grupo === null
+
+  return (
+    <div className="border border-[#E2E8F0] rounded-2xl overflow-hidden">
+      {/* Header do grupo */}
+      <div
+        className={`flex items-center gap-3 px-4 py-3 cursor-pointer select-none transition-colors
+          ${isUngrouped ? 'bg-[#F8FAFC] hover:bg-[#F1F5F9]' : 'bg-white hover:bg-[#F8FAFC]'}`}
+        onClick={onToggle}
+      >
+        <span className="text-[#94A3B8] shrink-0">
+          {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+        </span>
+        <div className="w-7 h-7 rounded-lg bg-[#EEF2FF] flex items-center justify-center shrink-0">
+          <MapPin size={13} className="text-[#4F7CFF]" />
+        </div>
+
+        {/* Nome editável */}
+        {!isUngrouped && editandoNome ? (
+          <input
+            autoFocus
+            className="flex-1 text-sm font-semibold text-[#0F172A] bg-transparent border-b border-[#4F7CFF] focus:outline-none"
+            value={novoNome}
+            onClick={e => e.stopPropagation()}
+            onChange={e => setNovoNome(e.target.value)}
+            onBlur={salvarNomeGrupo}
+            onKeyDown={e => { if (e.key === 'Enter') salvarNomeGrupo(); if (e.key === 'Escape') setEditandoNome(false) }}
+          />
+        ) : (
+          <span className="flex-1 text-sm font-semibold text-[#0F172A]">
+            {isUngrouped ? 'Sem grupo' : grupo!.nome}
+          </span>
+        )}
+
+        <span className="text-xs text-[#94A3B8] shrink-0">{equipamentos.length} máq.</span>
+
+        {/* Ações do grupo */}
+        {!isUngrouped && (
+          <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { setEditandoNome(true); setNovoNome(grupo!.nome) }}
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+              <Pencil size={11} />
+            </button>
+            <button onClick={excluirGrupo}
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+              <Trash2 size={11} />
+            </button>
+          </div>
+        )}
+
+        <button
+          onClick={e => { e.stopPropagation(); setShowForm(v => !v) }}
+          className="flex items-center gap-1 text-xs text-[#4F7CFF] hover:text-[#3D68F0] font-medium shrink-0 px-2 py-1 rounded-lg hover:bg-[#EEF2FF] transition-colors">
+          <Plus size={12} /> Máquina
         </button>
       </div>
 
-      {showForm && (
-        <div className="card space-y-3">
-          <h3 className="font-syne font-semibold text-[#0F172A] text-sm">Cadastrar equipamento</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Nome / Identificação *</label>
-              <input className="field text-sm" placeholder="Ex: Split Sala de Reuniões" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} />
+      {/* Corpo */}
+      {!collapsed && (
+        <div className="border-t border-[#E2E8F0]">
+          {showForm && (
+            <div className="p-4 border-b border-[#E2E8F0]">
+              <FormEquipamento
+                contratoId={contratoId}
+                grupos={grupos}
+                grupoIdInicial={grupo?.id ?? null}
+                onSaved={() => { setShowForm(false); onReload() }}
+                onCancel={() => setShowForm(false)}
+              />
             </div>
-            <div>
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Tipo</label>
-              <select className="field text-sm" value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value as Equipamento['tipo'] }))}>
-                {['Split', 'Cassete', 'VRF', 'Janela', 'Piso-teto', 'Outro'].map(t => <option key={t}>{t}</option>)}
-              </select>
+          )}
+
+          {equipamentos.length === 0 && !showForm ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-[#94A3B8]">Nenhuma máquina neste grupo</p>
             </div>
-            <div>
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Capacidade (BTU)</label>
-              <input type="number" className="field text-sm" placeholder="Ex: 12000" value={form.capacidade_btu} onChange={e => setForm(f => ({ ...f, capacidade_btu: e.target.value }))} />
+          ) : (
+            <div className="divide-y divide-[#F1F5F9]">
+              {equipamentos.map(eq => (
+                <div key={eq.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#F8FAFC] group transition-colors">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${TIPO_COLOR[eq.tipo] ?? TIPO_COLOR['Outro']}`}>
+                    {eq.tipo}
+                  </span>
+                  <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`} className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[#0F172A] hover:text-[#4F7CFF] transition-colors truncate">{eq.nome}</p>
+                    <p className="text-xs text-[#94A3B8] truncate">
+                      {[eq.marca, eq.modelo, eq.capacidade_btu ? `${eq.capacidade_btu.toLocaleString()} BTU` : null].filter(Boolean).join(' · ')}
+                    </p>
+                  </Link>
+
+                  {/* Mover de grupo */}
+                  <select
+                    className="text-xs border border-[#E2E8F0] rounded-lg px-2 py-1 text-[#64748B] bg-white opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                    value={eq.grupo_id ?? ''}
+                    onChange={e => moverEquip(eq.id, e.target.value || null)}
+                    onClick={e => e.preventDefault()}
+                  >
+                    <option value="">Sem grupo</option>
+                    {grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
+                  </select>
+
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`}
+                      className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                      <Pencil size={13} />
+                    </Link>
+                    <button onClick={() => excluirEquip(eq.id)}
+                      className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div>
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Marca</label>
-              <input className="field text-sm" placeholder="Ex: Daikin" value={form.marca} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Modelo</label>
-              <input className="field text-sm" placeholder="Ex: FTXS12LVMA" value={form.modelo} onChange={e => setForm(f => ({ ...f, modelo: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Nº de Série</label>
-              <input className="field text-sm" value={form.numero_serie} onChange={e => setForm(f => ({ ...f, numero_serie: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Data de Instalação</label>
-              <input type="date" className="field text-sm" value={form.data_instalacao} onChange={e => setForm(f => ({ ...f, data_instalacao: e.target.value }))} />
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-[#64748B] block mb-1">Localização no imóvel</label>
-              <input className="field text-sm" placeholder="Ex: 2º andar – Sala 201" value={form.localizacao} onChange={e => setForm(f => ({ ...f, localizacao: e.target.value }))} />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setShowForm(false)} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
-            <button onClick={salvar} disabled={!form.nome} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Salvar</button>
-          </div>
+          )}
         </div>
       )}
+    </div>
+  )
+}
 
-      {equipamentos.length === 0 ? (
+function AbaEquipamentos({ contratoId }: { contratoId: string }) {
+  const [grupos, setGrupos] = useState<Grupo[]>([])
+  const [equipamentos, setEquipamentos] = useState<EquipamentoComGrupo[]>([])
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [novoGrupo, setNovoGrupo] = useState('')
+  const [showNovoGrupo, setShowNovoGrupo] = useState(false)
+
+  async function load() {
+    const sb = createClient()
+    const [{ data: gs }, { data: eqs }] = await Promise.all([
+      sb.from('grupos_equipamentos').select('*').eq('contrato_id', contratoId).order('ordem').order('created_at'),
+      sb.from('equipamentos').select('*').eq('contrato_id', contratoId).order('created_at'),
+    ])
+    setGrupos((gs ?? []) as Grupo[])
+    setEquipamentos((eqs ?? []) as EquipamentoComGrupo[])
+  }
+
+  useEffect(() => { load() }, [contratoId])
+
+  async function criarGrupo() {
+    if (!novoGrupo.trim()) return
+    await createClient().from('grupos_equipamentos').insert({
+      contrato_id: contratoId,
+      nome: novoGrupo.trim(),
+      ordem: grupos.length,
+    })
+    setNovoGrupo('')
+    setShowNovoGrupo(false)
+    load()
+  }
+
+  function toggleCollapse(key: string) {
+    setCollapsed(p => ({ ...p, [key]: !p[key] }))
+  }
+
+  const semGrupo = equipamentos.filter(e => !e.grupo_id)
+  const total = equipamentos.length
+
+  return (
+    <div className="space-y-3">
+      {/* Barra de ações */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-[#64748B]">{total} equipamento{total !== 1 ? 's' : ''} no total</p>
+        <div className="flex gap-2">
+          {showNovoGrupo ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                className="field text-sm py-1.5 w-44"
+                placeholder="Nome do grupo..."
+                value={novoGrupo}
+                onChange={e => setNovoGrupo(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') criarGrupo(); if (e.key === 'Escape') setShowNovoGrupo(false) }}
+              />
+              <button onClick={criarGrupo} disabled={!novoGrupo.trim()}
+                className="px-3 py-1.5 text-xs bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">
+                Criar
+              </button>
+              <button onClick={() => setShowNovoGrupo(false)} className="text-xs text-[#64748B] hover:text-[#0F172A]">✕</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowNovoGrupo(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-[#E2E8F0] text-sm text-[#64748B] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+              <MapPin size={13} /> Novo grupo
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Grupos */}
+      {grupos.map(g => (
+        <GrupoSection
+          key={g.id}
+          grupo={g}
+          equipamentos={equipamentos.filter(e => e.grupo_id === g.id)}
+          contratoId={contratoId}
+          grupos={grupos}
+          onReload={load}
+          collapsed={!!collapsed[g.id]}
+          onToggle={() => toggleCollapse(g.id)}
+        />
+      ))}
+
+      {/* Sem grupo */}
+      {(semGrupo.length > 0 || grupos.length === 0) && (
+        <GrupoSection
+          grupo={null}
+          equipamentos={semGrupo}
+          contratoId={contratoId}
+          grupos={grupos}
+          onReload={load}
+          collapsed={!!collapsed['__none__']}
+          onToggle={() => toggleCollapse('__none__')}
+        />
+      )}
+
+      {total === 0 && grupos.length === 0 && (
         <div className="card text-center py-12">
           <Wrench size={36} className="text-[#E2E8F0] mx-auto mb-2" />
           <p className="text-[#94A3B8]">Nenhum equipamento cadastrado</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {equipamentos.map(eq => (
-            <div key={eq.id} className="card group hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tipoColor[eq.tipo] ?? tipoColor['Outro']}`}>{eq.tipo}</span>
-                  {eq.capacidade_btu && <span className="text-xs text-[#94A3B8]">{eq.capacidade_btu.toLocaleString()} BTU</span>}
-                </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`}
-                    className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                    <Pencil size={13} />
-                  </Link>
-                  <button onClick={() => excluir(eq.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-              <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`} className="block">
-                <h4 className="font-semibold text-[#0F172A] hover:text-[#4F7CFF] transition-colors">{eq.nome}</h4>
-                {(eq.marca || eq.modelo) && (
-                  <p className="text-xs text-[#64748B] mt-0.5">{[eq.marca, eq.modelo].filter(Boolean).join(' · ')}</p>
-                )}
-                {eq.localizacao && (
-                  <p className="text-xs text-[#94A3B8] mt-0.5">{eq.localizacao}</p>
-                )}
-              </Link>
-            </div>
-          ))}
+          <p className="text-xs text-[#CBD5E1] mt-1">Crie um grupo ou adicione máquinas diretamente</p>
         </div>
       )}
     </div>
