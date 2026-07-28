@@ -162,6 +162,23 @@ export default function AlocacaoPage() {
   const [modalDia, setModalDia] = useState<number | null>(null)
   const [modalCell, setModalCell] = useState<{ fid: string; dia: number } | null>(null)
   const [modalOrdem, setModalOrdem] = useState(false)
+  const [selectedFids, setSelectedFids] = useState<Set<string>>(new Set())
+  const [modalBulk, setModalBulk] = useState<number | null>(null)
+
+  function toggleSelect(fid: string) {
+    setSelectedFids(prev => {
+      const next = new Set(prev)
+      if (next.has(fid)) next.delete(fid); else next.add(fid)
+      return next
+    })
+  }
+  function toggleSelectAll() {
+    setSelectedFids(prev => prev.size === funcionarios.length ? new Set() : new Set(funcionarios.map(f => f.id)))
+  }
+  function handleDayClick(dia: number) {
+    if (selectedFids.size > 0) setModalBulk(dia)
+    else setModalDia(dia)
+  }
 
   useEffect(() => {
     if (!accessLoading && !isAdmin) router.replace('/obras')
@@ -305,14 +322,21 @@ export default function AlocacaoPage() {
             <thead className="sticky top-0 z-20">
               <tr>
                 <th className="sticky left-0 z-30 bg-[#F8FAFC] border-b-2 border-r border-[#E2E8F0] px-4 py-2 text-left">
-                  <span className="text-xs font-semibold text-[#64748B]">Funcionário</span>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" className="w-3.5 h-3.5 accent-[#4F7CFF]"
+                      checked={selectedFids.size === funcionarios.length && funcionarios.length > 0}
+                      onChange={toggleSelectAll} title="Selecionar todos" />
+                    <span className="text-xs font-semibold text-[#64748B]">
+                      {selectedFids.size > 0 ? `${selectedFids.size} selecionado${selectedFids.size > 1 ? 's' : ''}` : 'Funcionário'}
+                    </span>
+                  </div>
                 </th>
                 {dias.map(dia => {
                   const weekend = isWeekend(dia)
                   const hoje = isHoje(dia)
                   return (
                     <th key={dia}
-                      onClick={() => setModalDia(dia)}
+                      onClick={() => handleDayClick(dia)}
                       title={`Preencher ${dia}/${mes + 1}`}
                       className={`border-b-2 border-r border-[#E2E8F0] text-center cursor-pointer select-none transition-colors
                         ${weekend ? 'bg-[#F1F5F9]' : 'bg-[#F8FAFC] hover:bg-[#EEF2FF]'}
@@ -334,9 +358,18 @@ export default function AlocacaoPage() {
                 const zebra = fi % 2 === 0
                 return (
                   <tr key={f.id}>
-                    <td className={`sticky left-0 z-10 border-b border-r border-[#E2E8F0] px-4 py-2 ${zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}>
-                      <p className="text-sm font-medium text-[#0F172A] truncate">{f.nome}</p>
-                      {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
+                    <td
+                      onClick={() => toggleSelect(f.id)}
+                      className={`sticky left-0 z-10 border-b border-r border-[#E2E8F0] px-3 py-2 cursor-pointer select-none transition-colors
+                        ${selectedFids.has(f.id) ? 'bg-[#EEF2FF]' : zebra ? 'bg-white hover:bg-[#F8FAFC]' : 'bg-[#FAFAFA] hover:bg-[#F1F5F9]'}`}>
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" className="w-3.5 h-3.5 accent-[#4F7CFF] shrink-0 pointer-events-none"
+                          checked={selectedFids.has(f.id)} readOnly />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-[#0F172A] truncate">{f.nome}</p>
+                          {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
+                        </div>
+                      </div>
                     </td>
                     {dias.map(dia => {
                       const alocArray = alocMap.get(`${f.id}_${dia}`) ?? []
@@ -430,6 +463,29 @@ export default function AlocacaoPage() {
           onClose={() => setModalOrdem(false)}
           onSaved={() => { setModalOrdem(false); load() }}
         />
+      )}
+
+      {/* Modal alocação em massa */}
+      {modalBulk !== null && (
+        <ModalBulk
+          dia={modalBulk} mes={mes} ano={ano}
+          funcionarios={funcionarios.filter(f => selectedFids.has(f.id))}
+          obras={obras} manutencoes={manutencoes} veiculos={veiculos}
+          onClose={() => setModalBulk(null)}
+          onSaved={() => { setModalBulk(null); setSelectedFids(new Set()); load() }}
+        />
+      )}
+
+      {/* Barra flutuante seleção */}
+      {selectedFids.size > 0 && modalBulk === null && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-[#0F172A] text-white px-5 py-3 rounded-2xl shadow-xl">
+          <span className="text-sm font-medium">{selectedFids.size} funcionário{selectedFids.size > 1 ? 's' : ''} selecionado{selectedFids.size > 1 ? 's' : ''}</span>
+          <span className="text-[#475569] text-sm">—</span>
+          <span className="text-xs text-[#94A3B8]">Clique num dia para alocar</span>
+          <button onClick={() => setSelectedFids(new Set())} className="ml-2 text-[#64748B] hover:text-white transition-colors">
+            <X size={15} />
+          </button>
+        </div>
       )}
     </div>
   )
@@ -952,6 +1008,137 @@ function ModalOrdem({ funcionarios, onClose, onSaved }: {
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
             {saving ? 'Salvando...' : 'Salvar ordem'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal alocação em massa ────────────────────────────────────────────────────
+
+function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, onClose, onSaved }: {
+  dia: number; mes: number; ano: number
+  funcionarios: Funcionario[]; obras: Obra[]; manutencoes: Manutencao[]; veiculos: Veiculo[]
+  onClose: () => void; onSaved: () => void
+}) {
+  const data = toDate(ano, mes, dia)
+  const [tipo, setTipo] = useState<TipoAlocacao | ''>('')
+  const [obraId, setObraId] = useState('')
+  const [manutencaoId, setManutencaoId] = useState('')
+  const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>('')
+  const [veiculoId, setVeiculoId] = useState('')
+  const [noturno, setNoturno] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  async function salvar() {
+    if (!tipo) return
+    setSaving(true)
+    const sb = createClient()
+    await Promise.all(funcionarios.map(async f => {
+      await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
+      await sb.from('funcionario_alocacoes').insert({
+        funcionario_id: f.id, data, tipo,
+        obra_id: tipo === 'obra' && obraId ? obraId : null,
+        manutencao_id: tipo === 'manutencao' && manutencaoId ? manutencaoId : null,
+        percentual: 100,
+        noturno: (tipo === 'obra' || tipo === 'manutencao') ? noturno : false,
+        transporte_tipo: transporteTipo || null,
+        veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
+      })
+    }))
+    setSaving(false)
+    onSaved()
+  }
+
+  const canSave = !!tipo && (tipo !== 'obra' || !!obraId) && (tipo !== 'manutencao' || !!manutencaoId)
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A]">Alocar {funcionarios.length} funcionário{funcionarios.length > 1 ? 's' : ''}</h2>
+            <p className="text-xs text-[#94A3B8] capitalize mt-0.5">{labelData(ano, mes, dia)}</p>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Funcionários selecionados */}
+          <div className="flex flex-wrap gap-1.5">
+            {funcionarios.map(f => (
+              <span key={f.id} className="text-xs bg-[#EEF2FF] text-[#4F7CFF] font-medium px-2.5 py-1 rounded-full">{f.nome.split(' ')[0]}</span>
+            ))}
+          </div>
+
+          {/* Tipo */}
+          <div>
+            <p className="text-xs font-medium text-[#64748B] mb-2">Tipo de alocação *</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {TIPOS.map(t => (
+                <button key={t.tipo} onClick={() => { setTipo(tipo === t.tipo ? '' : t.tipo); setObraId(''); setManutencaoId('') }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                    ${tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
+                  style={tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {tipo === 'obra' && (
+            <select className="field text-sm w-full" value={obraId} onChange={e => setObraId(e.target.value)}>
+              <option value="">Selecione a obra...</option>
+              {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+            </select>
+          )}
+          {tipo === 'manutencao' && (
+            <select className="field text-sm w-full" value={manutencaoId} onChange={e => setManutencaoId(e.target.value)}>
+              <option value="">Selecione a manutenção...</option>
+              {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          )}
+
+          {(tipo === 'obra' || tipo === 'manutencao') && (
+            <label className="flex items-center gap-2 cursor-pointer w-fit">
+              <input type="checkbox" checked={noturno} onChange={e => setNoturno(e.target.checked)} className="w-4 h-4 accent-[#6366F1]" />
+              <Moon size={14} className="text-[#6366F1]" />
+              <span className="text-sm font-medium text-[#374151]">Noturno</span>
+            </label>
+          )}
+
+          {tipo && (
+            <div>
+              <p className="text-xs font-medium text-[#64748B] mb-2">Transporte</p>
+              <div className="flex gap-2 flex-wrap">
+                {TRANSPORTES.map(t => (
+                  <button key={t.tipo} onClick={() => { setTransporteTipo(transporteTipo === t.tipo ? '' : t.tipo); setVeiculoId('') }}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors
+                      ${transporteTipo === t.tipo ? 'bg-[#0F172A] text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}>
+                    <t.Icon size={12} /> {t.label}
+                  </button>
+                ))}
+              </div>
+              {transporteTipo === 'veiculo' && (
+                <select className="field text-sm w-full mt-2" value={veiculoId} onChange={e => setVeiculoId(e.target.value)}>
+                  <option value="">Selecione o veículo...</option>
+                  {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
+                </select>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 pb-5 pt-2 border-t border-[#E2E8F0] flex gap-3 shrink-0">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            Cancelar
+          </button>
+          <button onClick={salvar} disabled={saving || !canSave}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {saving ? 'Salvando...' : `Alocar ${funcionarios.length}`}
           </button>
         </div>
       </div>
