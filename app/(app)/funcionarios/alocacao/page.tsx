@@ -42,7 +42,7 @@ const TRANSPORTES: { tipo: TransporteTipo; label: string; Icon: any }[] = [
 const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon: any }[] = [
   { tipo: 'obra',       label: 'Obra',       cor: '#4F7CFF', bg: '#EEF2FF', Icon: Wrench      },
   { tipo: 'manutencao', label: 'Manutenção', cor: '#0EA5E9', bg: '#E0F2FE', Icon: Thermometer },
-  { tipo: 'escritorio', label: 'Escritório',  cor: '#8B5CF6', bg: '#F5F3FF', Icon: Building2 },
+  { tipo: 'escritorio', label: 'Galpão',  cor: '#8B5CF6', bg: '#F5F3FF', Icon: Building2 },
   { tipo: 'folga',      label: 'Folga',       cor: '#10B981', bg: '#ECFDF5', Icon: Sun       },
   { tipo: 'atestado',   label: 'Atestado',    cor: '#F59E0B', bg: '#FFFBEB', Icon: FileText  },
   { tipo: 'falta',      label: 'Falta',       cor: '#EF4444', bg: '#FEF2F2', Icon: UserX     },
