@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -160,6 +160,7 @@ export default function AlocacaoPage() {
   const [loading, setLoading] = useState(true)
   const [modalDia, setModalDia] = useState<number | null>(null)
   const [modalCell, setModalCell] = useState<{ fid: string; dia: number } | null>(null)
+  const [modalOrdem, setModalOrdem] = useState(false)
 
   useEffect(() => {
     if (!accessLoading && !isAdmin) router.replace('/obras')
@@ -171,7 +172,7 @@ export default function AlocacaoPage() {
     const inicio = toDate(ano, mes, 1)
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
     const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }, { data: manuts }] = await Promise.all([
-      sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
+      sb.from('funcionarios').select('id, nome, cargo, ordem').eq('ativo', true).order('ordem', { ascending: true, nullsFirst: false }).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
         .select('id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)')
@@ -242,10 +243,16 @@ export default function AlocacaoPage() {
         </button>
         <h1 className="font-syne font-bold text-lg text-[#0F172A] flex-1">Quadro de Alocação</h1>
         {!loading && funcionarios.length > 0 && (
-          <button onClick={() => exportarRelatorio(funcionarios, obras, alocacoes, mes, ano)}
-            className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Exportar relatório mensal">
-            <Download size={15} className="text-[#64748B]" />
-          </button>
+          <>
+            <button onClick={() => setModalOrdem(true)}
+              className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Reordenar funcionários">
+              <ListOrdered size={15} className="text-[#64748B]" />
+            </button>
+            <button onClick={() => exportarRelatorio(funcionarios, obras, alocacoes, mes, ano)}
+              className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Exportar relatório mensal">
+              <Download size={15} className="text-[#64748B]" />
+            </button>
+          </>
         )}
         <div className="flex items-center gap-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-1 py-1">
           <button onClick={() => navMes(-1)}
@@ -411,6 +418,15 @@ export default function AlocacaoPage() {
           alocacoes={alocMap.get(`${modalCell.fid}_${modalCell.dia}`) ?? []}
           onClose={() => setModalCell(null)}
           onSaved={() => { setModalCell(null); load() }}
+        />
+      )}
+
+      {/* Modal reordenar */}
+      {modalOrdem && (
+        <ModalOrdem
+          funcionarios={funcionarios}
+          onClose={() => setModalOrdem(false)}
+          onSaved={() => { setModalOrdem(false); load() }}
         />
       )}
     </div>
@@ -834,6 +850,88 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
             {saving ? 'Salvando...' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal reordenar funcionários ───────────────────────────────────────────────
+
+function ModalOrdem({ funcionarios, onClose, onSaved }: {
+  funcionarios: Funcionario[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [lista, setLista] = useState<Funcionario[]>([...funcionarios])
+  const [saving, setSaving] = useState(false)
+  const dragIdx = useRef<number | null>(null)
+
+  function onDragStart(idx: number) { dragIdx.current = idx }
+  function onDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault()
+    if (dragIdx.current === null || dragIdx.current === idx) return
+    setLista(prev => {
+      const next = [...prev]
+      const [moved] = next.splice(dragIdx.current!, 1)
+      next.splice(idx, 0, moved)
+      dragIdx.current = idx
+      return next
+    })
+  }
+  function onDragEnd() { dragIdx.current = null }
+
+  async function salvar() {
+    setSaving(true)
+    const sb = createClient()
+    await Promise.all(lista.map((f, i) =>
+      sb.from('funcionarios').update({ ordem: i }).eq('id', f.id)
+    ))
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A]">Ordem dos funcionários</h2>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Arraste para reorganizar</p>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          {lista.map((f, idx) => (
+            <div
+              key={f.id}
+              draggable
+              onDragStart={() => onDragStart(idx)}
+              onDragOver={e => onDragOver(e, idx)}
+              onDragEnd={onDragEnd}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] cursor-grab active:cursor-grabbing select-none"
+            >
+              <GripVertical size={15} className="text-[#CBD5E1] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-[#0F172A] truncate">{f.nome}</p>
+                {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
+              </div>
+              <span className="text-xs text-[#CBD5E1] font-mono shrink-0">{idx + 1}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="px-5 py-4 border-t border-[#E2E8F0] flex gap-3 shrink-0">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            Cancelar
+          </button>
+          <button onClick={salvar} disabled={saving}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {saving ? 'Salvando...' : 'Salvar ordem'}
           </button>
         </div>
       </div>
