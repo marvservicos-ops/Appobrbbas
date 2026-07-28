@@ -3565,11 +3565,11 @@ function AbaEquipe({ obraId }: { obraId: string }) {
       }
       const [{ data: rows }, { data: cfgRows }] = await Promise.all([
         q,
-        sb.from('configuracoes').select('chave, valor'),
+        sb.from('configuracoes_empresa').select('chave, valor').like('chave', 'adicional_%'),
       ])
       if (!rows || rows.length === 0) { setEntries([]); setLoadingEquipe(false); return }
 
-      const cfg = new Map((cfgRows ?? []).map((c: any) => [c.chave, parseFloat(c.valor) || 0]))
+      const cfg = new Map((cfgRows ?? []).map((c: any) => [c.chave, parseFloat(c.valor?.percentual ?? c.valor) || 0]))
       const pctNoturno = (cfg.get('adicional_noturno') ?? 0) / 100
 
       // Buscar dados dos funcionários separadamente
