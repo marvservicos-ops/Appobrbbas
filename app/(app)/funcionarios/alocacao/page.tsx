@@ -419,6 +419,17 @@ export default function AlocacaoPage() {
 
 // ── Modal preencher dia inteiro ────────────────────────────────────────────────
 
+interface DiaFuncRow {
+  alocs: { _key: number; tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; percentual: number }[]
+  transporte_tipo: string
+  veiculo_id: string
+}
+
+let _diaKey = 0
+function newDiaAloc(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100) {
+  return { _key: ++_diaKey, tipo, obra_id, manutencao_id, percentual }
+}
+
 function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, alocMap, onClose, onSaved }: {
   dia: number; mes: number; ano: number
   funcionarios: Funcionario[]; obras: Obra[]; manutencoes: Manutencao[]; veiculos: Veiculo[]
@@ -427,25 +438,38 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
 }) {
   const data = toDate(ano, mes, dia)
 
-  const [rows, setRows] = useState<Record<string, { tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; transporte_tipo: string; veiculo_id: string }>>(() => {
-    const init: Record<string, any> = {}
+  const [rows, setRows] = useState<Record<string, DiaFuncRow>>(() => {
+    const init: Record<string, DiaFuncRow> = {}
     funcionarios.forEach(f => {
-      const a = (alocMap.get(`${f.id}_${dia}`) ?? [])[0]
-      init[f.id] = { tipo: a?.tipo ?? '', obra_id: a?.obra_id ?? '', manutencao_id: a?.manutencao_id ?? '', transporte_tipo: a?.transporte_tipo ?? '', veiculo_id: a?.veiculo_id ?? '' }
+      const existing = alocMap.get(`${f.id}_${dia}`) ?? []
+      init[f.id] = {
+        alocs: existing.length > 0
+          ? existing.map(a => newDiaAloc(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual))
+          : [newDiaAloc()],
+        transporte_tipo: existing[0]?.transporte_tipo ?? '',
+        veiculo_id: existing[0]?.veiculo_id ?? '',
+      }
     })
     return init
   })
   const [saving, setSaving] = useState(false)
   const [quickObra, setQuickObra] = useState('')
 
-  function setTipo(fid: string, tipo: TipoAlocacao | '') {
-    setRows(p => ({ ...p, [fid]: { ...p[fid], tipo, obra_id: tipo !== 'obra' ? '' : p[fid].obra_id, manutencao_id: tipo !== 'manutencao' ? '' : p[fid].manutencao_id } }))
+  function updateAloc(fid: string, key: number, patch: Partial<DiaFuncRow['alocs'][number]>) {
+    setRows(p => ({ ...p, [fid]: { ...p[fid], alocs: p[fid].alocs.map(a => a._key === key ? { ...a, ...patch } : a) } }))
   }
-  function setObra(fid: string, obra_id: string) {
-    setRows(p => ({ ...p, [fid]: { ...p[fid], obra_id } }))
+  function removeAloc(fid: string, key: number) {
+    setRows(p => {
+      const alocs = p[fid].alocs
+      return { ...p, [fid]: { ...p[fid], alocs: alocs.length === 1 ? [newDiaAloc()] : alocs.filter(a => a._key !== key) } }
+    })
   }
-  function setManutencao(fid: string, manutencao_id: string) {
-    setRows(p => ({ ...p, [fid]: { ...p[fid], manutencao_id } }))
+  function addAloc(fid: string) {
+    setRows(p => {
+      const used = p[fid].alocs.reduce((s, a) => s + (a.tipo ? a.percentual : 0), 0)
+      const remaining = Math.max(0, 100 - used)
+      return { ...p, [fid]: { ...p[fid], alocs: [...p[fid].alocs, newDiaAloc('', '', '', remaining || 50)] } }
+    })
   }
   function setTransporte(fid: string, transporte_tipo: string) {
     setRows(p => ({ ...p, [fid]: { ...p[fid], transporte_tipo, veiculo_id: transporte_tipo !== 'veiculo' ? '' : p[fid].veiculo_id } }))
@@ -453,11 +477,14 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
   function setVeiculoId(fid: string, veiculo_id: string) {
     setRows(p => ({ ...p, [fid]: { ...p[fid], veiculo_id } }))
   }
+
   function aplicarObra() {
     if (!quickObra) return
     setRows(p => {
       const n = { ...p }
-      funcionarios.forEach(f => { n[f.id] = { ...n[f.id], tipo: 'obra', obra_id: quickObra } })
+      funcionarios.forEach(f => {
+        n[f.id] = { ...n[f.id], alocs: [newDiaAloc('obra', quickObra, '', 100)] }
+      })
       return n
     })
   }
@@ -468,18 +495,18 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
     await Promise.all(
       funcionarios.map(async f => {
         const row = rows[f.id]
-        // Delete all existing allocations for this funcionario+day
         await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
-        if (row?.tipo) {
-          await sb.from('funcionario_alocacoes').insert({
-            funcionario_id: f.id, data,
-            tipo: row.tipo as TipoAlocacao,
-            obra_id: row.tipo === 'obra' && row.obra_id ? row.obra_id : null,
-            manutencao_id: row.tipo === 'manutencao' && row.manutencao_id ? row.manutencao_id : null,
-            percentual: 100,
-            transporte_tipo: row.transporte_tipo || null,
-            veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
-          })
+        const toInsert = row.alocs.filter(a => a.tipo).map(a => ({
+          funcionario_id: f.id, data,
+          tipo: a.tipo as TipoAlocacao,
+          obra_id: a.tipo === 'obra' && a.obra_id ? a.obra_id : null,
+          manutencao_id: a.tipo === 'manutencao' && a.manutencao_id ? a.manutencao_id : null,
+          percentual: a.percentual,
+          transporte_tipo: row.transporte_tipo || null,
+          veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
+        }))
+        if (toInsert.length > 0) {
+          await sb.from('funcionario_alocacoes').insert(toInsert)
         }
       })
     )
@@ -514,63 +541,96 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
 
         <div className="flex-1 overflow-y-auto divide-y divide-[#F1F5F9]">
           {funcionarios.map(f => {
-            const row = rows[f.id] ?? { tipo: '', obra_id: '', transporte_tipo: '', veiculo_id: '' }
+            const row = rows[f.id]
+            const alocs = row?.alocs ?? []
+            const hasTipo = alocs.some(a => !!a.tipo)
+            const totalPct = alocs.reduce((s, a) => s + (a.tipo ? a.percentual : 0), 0)
+            const multiAloc = alocs.filter(a => !!a.tipo).length > 1
             return (
               <div key={f.id} className="px-6 py-3 space-y-2">
-                <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                  <div className="w-40 shrink-0">
+                <div className="flex items-start gap-3">
+                  <div className="w-40 shrink-0 pt-1">
                     <p className="text-sm font-medium text-[#0F172A] truncate">{f.nome}</p>
                     {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
                   </div>
-                  <div className="flex gap-1.5 flex-wrap">
-                    <button onClick={() => setTipo(f.id, '')}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                        ${row.tipo === '' ? 'bg-[#F1F5F9] border-[#94A3B8] text-[#374151]' : 'border-[#E2E8F0] text-[#CBD5E1] hover:border-[#94A3B8] hover:text-[#64748B]'}`}>
-                      —
-                    </button>
-                    {TIPOS.map(t => (
-                      <button key={t.tipo} onClick={() => setTipo(f.id, t.tipo)}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                          ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
-                        style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
-                        {t.label}
-                      </button>
+                  <div className="flex-1 space-y-2 min-w-0">
+                    {alocs.map((aloc, idx) => (
+                      <div key={aloc._key} className="flex items-center gap-1.5 flex-wrap">
+                        {/* tipo buttons — compact */}
+                        <button onClick={() => updateAloc(f.id, aloc._key, { tipo: '', obra_id: '', manutencao_id: '' })}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
+                            ${aloc.tipo === '' ? 'bg-[#F1F5F9] border-[#94A3B8] text-[#374151]' : 'border-[#E2E8F0] text-[#CBD5E1] hover:border-[#94A3B8]'}`}>
+                          —
+                        </button>
+                        {TIPOS.map(t => (
+                          <button key={t.tipo}
+                            onClick={() => updateAloc(f.id, aloc._key, { tipo: aloc.tipo === t.tipo ? '' : t.tipo, obra_id: t.tipo !== 'obra' ? '' : aloc.obra_id, manutencao_id: t.tipo !== 'manutencao' ? '' : aloc.manutencao_id })}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
+                              ${aloc.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
+                            style={aloc.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
+                            {t.label}
+                          </button>
+                        ))}
+                        {aloc.tipo === 'obra' && (
+                          <select className="field text-xs py-1 flex-1 min-w-[120px]"
+                            value={aloc.obra_id} onChange={e => updateAloc(f.id, aloc._key, { obra_id: e.target.value })}>
+                            <option value="">Obra...</option>
+                            {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+                          </select>
+                        )}
+                        {aloc.tipo === 'manutencao' && (
+                          <select className="field text-xs py-1 flex-1 min-w-[120px]"
+                            value={aloc.manutencao_id} onChange={e => updateAloc(f.id, aloc._key, { manutencao_id: e.target.value })}>
+                            <option value="">Manutenção...</option>
+                            {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                          </select>
+                        )}
+                        {multiAloc && aloc.tipo && (
+                          <input type="number" min={1} max={100}
+                            value={aloc.percentual}
+                            onChange={e => updateAloc(f.id, aloc._key, { percentual: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
+                            className="w-12 text-center text-xs font-semibold border border-[#E2E8F0] rounded-lg py-1 focus:outline-none focus:border-[#4F7CFF]"
+                          />
+                        )}
+                        {(alocs.length > 1 || idx > 0) && (
+                          <button onClick={() => removeAloc(f.id, aloc._key)} className="text-[#CBD5E1] hover:text-[#EF4444] transition-colors shrink-0">
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     ))}
-                  </div>
-                  {row.tipo === 'obra' && (
-                    <select className="field text-sm py-1.5 min-w-0 flex-1 sm:w-48 sm:flex-none"
-                      value={row.obra_id} onChange={e => setObra(f.id, e.target.value)}>
-                      <option value="">Selecione a obra...</option>
-                      {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
-                    </select>
-                  )}
-                  {row.tipo === 'manutencao' && (
-                    <select className="field text-sm py-1.5 min-w-0 flex-1 sm:w-48 sm:flex-none"
-                      value={row.manutencao_id} onChange={e => setManutencao(f.id, e.target.value)}>
-                      <option value="">Selecione a manutenção...</option>
-                      {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
-                    </select>
-                  )}
-                </div>
-                {row.tipo && (
-                  <div className="flex items-center gap-2 pl-0 sm:pl-44 flex-wrap">
-                    <span className="text-[11px] text-[#94A3B8] shrink-0">Transporte:</span>
-                    {TRANSPORTES.map(t => (
-                      <button key={t.tipo} onClick={() => setTransporte(f.id, row.transporte_tipo === t.tipo ? '' : t.tipo)}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
-                          ${row.transporte_tipo === t.tipo ? 'bg-[#0F172A] text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}>
-                        <t.Icon size={10} /> {t.label}
+                    <div className="flex items-center justify-between">
+                      <button onClick={() => addAloc(f.id)}
+                        className="flex items-center gap-1 text-[11px] font-medium text-[#4F7CFF] hover:text-[#3d6ae0] transition-colors">
+                        <Plus size={11} /> Dividir dia
                       </button>
-                    ))}
-                    {row.transporte_tipo === 'veiculo' && (
-                      <select className="field text-xs py-1 w-44"
-                        value={row.veiculo_id} onChange={e => setVeiculoId(f.id, e.target.value)}>
-                        <option value="">Selecione o veículo...</option>
-                        {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
-                      </select>
+                      {multiAloc && (
+                        <span className={`text-[11px] font-semibold ${totalPct === 100 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                          {totalPct}%
+                        </span>
+                      )}
+                    </div>
+                    {hasTipo && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] text-[#94A3B8] shrink-0">Transporte:</span>
+                        {TRANSPORTES.map(t => (
+                          <button key={t.tipo} onClick={() => setTransporte(f.id, row.transporte_tipo === t.tipo ? '' : t.tipo)}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
+                              ${row.transporte_tipo === t.tipo ? 'bg-[#0F172A] text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}>
+                            <t.Icon size={10} /> {t.label}
+                          </button>
+                        ))}
+                        {row.transporte_tipo === 'veiculo' && (
+                          <select className="field text-xs py-1 w-44"
+                            value={row.veiculo_id} onChange={e => setVeiculoId(f.id, e.target.value)}>
+                            <option value="">Veículo...</option>
+                            {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
+                          </select>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
+                </div>
               </div>
             )
           })}
