@@ -7,7 +7,7 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered, Moon,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -30,6 +30,7 @@ interface Alocacao {
   veiculo_nome: string | null
   transporte_tipo: string | null
   percentual: number
+  noturno: boolean
 }
 
 type TransporteTipo = 'veiculo' | 'transporte_publico' | 'casa'
@@ -200,6 +201,7 @@ export default function AlocacaoPage() {
         veiculo_nome: a.veiculos?.nome ?? null,
         transporte_tipo: a.transporte_tipo,
         percentual: a.percentual ?? 100,
+        noturno: a.noturno ?? false,
       }))
     )
     setLoading(false)
@@ -353,6 +355,7 @@ export default function AlocacaoPage() {
                               : transp.transporte_tipo === 'transporte_publico' ? 'Ônibus'
                               : transp.transporte_tipo === 'casa' ? 'Direto'
                               : null
+                            const hasNoturno = alocArray.some(a => a.noturno)
                             return (
                               <div className="rounded w-full h-full flex flex-col overflow-hidden">
                                 <div className="flex flex-col flex-1 overflow-hidden gap-px min-h-0">
@@ -375,11 +378,10 @@ export default function AlocacaoPage() {
                                     )
                                   })}
                                 </div>
-                                {transpLabel && (
-                                  <div className="w-full flex items-center justify-center bg-[#F1F5F9] shrink-0" style={{ height: 13 }}>
-                                    <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{transpLabel}</span>
-                                  </div>
-                                )}
+                                <div className="w-full flex items-center justify-center bg-[#F1F5F9] shrink-0 gap-1" style={{ height: 13 }}>
+                                  {hasNoturno && <Moon size={8} className="text-[#6366F1] shrink-0" />}
+                                  {transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{transpLabel}</span>}
+                                </div>
                               </div>
                             )
                           })() : (
@@ -436,14 +438,14 @@ export default function AlocacaoPage() {
 // ── Modal preencher dia inteiro ────────────────────────────────────────────────
 
 interface DiaFuncRow {
-  alocs: { _key: number; tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; percentual: number }[]
+  alocs: { _key: number; tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; percentual: number; noturno: boolean }[]
   transporte_tipo: string
   veiculo_id: string
 }
 
 let _diaKey = 0
-function newDiaAloc(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100) {
-  return { _key: ++_diaKey, tipo, obra_id, manutencao_id, percentual }
+function newDiaAloc(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100, noturno = false) {
+  return { _key: ++_diaKey, tipo, obra_id, manutencao_id, percentual, noturno }
 }
 
 function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, alocMap, onClose, onSaved }: {
@@ -460,7 +462,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
       const existing = alocMap.get(`${f.id}_${dia}`) ?? []
       init[f.id] = {
         alocs: existing.length > 0
-          ? existing.map(a => newDiaAloc(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual))
+          ? existing.map(a => newDiaAloc(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual, a.noturno))
           : [newDiaAloc()],
         transporte_tipo: existing[0]?.transporte_tipo ?? '',
         veiculo_id: existing[0]?.veiculo_id ?? '',
@@ -518,6 +520,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
           obra_id: a.tipo === 'obra' && a.obra_id ? a.obra_id : null,
           manutencao_id: a.tipo === 'manutencao' && a.manutencao_id ? a.manutencao_id : null,
           percentual: a.percentual,
+          noturno: (a.tipo === 'obra' || a.tipo === 'manutencao') ? a.noturno : false,
           transporte_tipo: row.transporte_tipo || null,
           veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
         }))
@@ -601,6 +604,12 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                             {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
                           </select>
                         )}
+                        {(aloc.tipo === 'obra' || aloc.tipo === 'manutencao') && (
+                          <label className="flex items-center gap-1 cursor-pointer shrink-0">
+                            <input type="checkbox" checked={aloc.noturno} onChange={e => updateAloc(f.id, aloc._key, { noturno: e.target.checked })} className="w-3.5 h-3.5 accent-[#6366F1]" />
+                            <Moon size={11} className="text-[#6366F1]" />
+                          </label>
+                        )}
                         {multiAloc && aloc.tipo && (
                           <input type="number" min={1} max={100}
                             value={aloc.percentual}
@@ -677,11 +686,12 @@ interface AlocRow {
   obra_id: string
   manutencao_id: string
   percentual: number
+  noturno: boolean
 }
 
 let _rowKey = 0
-function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100): AlocRow {
-  return { _key: ++_rowKey, tipo, obra_id, manutencao_id, percentual }
+function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100, noturno = false): AlocRow {
+  return { _key: ++_rowKey, tipo, obra_id, manutencao_id, percentual, noturno }
 }
 
 function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, alocacoes, onClose, onSaved }: {
@@ -693,7 +703,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
 
   const [rows, setRows] = useState<AlocRow[]>(() => {
     if (alocacoes.length === 0) return [newRow()]
-    return alocacoes.map(a => newRow(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual))
+    return alocacoes.map(a => newRow(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual, a.noturno))
   })
   const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>(
     (alocacoes[0]?.transporte_tipo as TransporteTipo) ?? ''
@@ -727,6 +737,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
       obra_id: r.tipo === 'obra' && r.obra_id ? r.obra_id : null,
       manutencao_id: r.tipo === 'manutencao' && r.manutencao_id ? r.manutencao_id : null,
       percentual: r.percentual,
+      noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
     }))
@@ -801,6 +812,15 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                     <option value="">Selecione a manutenção...</option>
                     {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
                   </select>
+                </div>
+              )}
+              {(row.tipo === 'obra' || row.tipo === 'manutencao') && (
+                <div className="pl-7">
+                  <label className="flex items-center gap-2 cursor-pointer w-fit">
+                    <input type="checkbox" checked={row.noturno} onChange={e => updateRow(row._key, { noturno: e.target.checked })} className="w-4 h-4 accent-[#6366F1]" />
+                    <Moon size={13} className="text-[#6366F1]" />
+                    <span className="text-xs font-medium text-[#374151]">Noturno</span>
+                  </label>
                 </div>
               )}
             </div>
