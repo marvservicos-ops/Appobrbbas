@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent, Car, Plus, Trash2, Power, Mail, Pencil, X, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
@@ -26,7 +26,7 @@ function SecaoEmailTemplates() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nome: '', assunto: '', corpo: '', destinatario_tipo: 'gestor' as EmailTemplate['destinatario_tipo'] })
   const [salvando, setSalvando] = useState(false)
-  const insertRef = useState<((text: string) => void) | null>(null)
+  const editorInsertRef = useRef<((text: string) => void) | null>(null)
 
   async function load() {
     const { data } = await createClient().from('email_templates').select('*').order('nome')
@@ -49,8 +49,8 @@ function SecaoEmailTemplates() {
   }
 
   function inserirVariavel(v: string) {
-    if (insertRef[0]) {
-      insertRef[0](v)
+    if (editorInsertRef.current) {
+      editorInsertRef.current(v)
     } else {
       setForm(f => ({ ...f, corpo: f.corpo + v }))
     }
@@ -142,7 +142,7 @@ function SecaoEmailTemplates() {
             <RichTextEditor
               value={form.corpo}
               onChange={html => setForm(f => ({ ...f, corpo: html }))}
-              onInsertRef={fn => { insertRef[1](fn) }}
+              insertRef={editorInsertRef}
               placeholder="Olá {{nome_gestor}}, tudo bem?..."
             />
           </div>

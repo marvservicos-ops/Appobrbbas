@@ -5,7 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Undo, Redo } from 'lucide-react'
 
 const COLORS = ['#0F172A', '#4F7CFF', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#64748B']
@@ -13,7 +13,7 @@ const COLORS = ['#0F172A', '#4F7CFF', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'
 interface Props {
   value: string
   onChange: (html: string) => void
-  onInsertRef?: (fn: (text: string) => void) => void
+  insertRef?: React.MutableRefObject<((text: string) => void) | null>
   placeholder?: string
 }
 
@@ -30,20 +30,24 @@ function ToolbarBtn({ active, onClick, children }: { active?: boolean; onClick: 
   )
 }
 
-export default function RichTextEditor({ value, onChange, onInsertRef, placeholder }: Props) {
+export default function RichTextEditor({ value, onChange, insertRef, placeholder }: Props) {
   const internalChange = useRef(false)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      TextStyle,
-      Color,
-    ],
+    extensions: [StarterKit, Underline, TextStyle, Color],
     content: value || '',
     onUpdate: ({ editor }) => {
       internalChange.current = true
-      onChange(editor.getHTML())
+      onChangeRef.current(editor.getHTML())
+    },
+    onCreate: ({ editor }) => {
+      if (insertRef) {
+        insertRef.current = (text: string) => {
+          editor.chain().focus().insertContent(text).run()
+        }
+      }
     },
     editorProps: {
       attributes: {
@@ -52,7 +56,7 @@ export default function RichTextEditor({ value, onChange, onInsertRef, placehold
     },
   })
 
-  // Sync external value changes only when they come from outside (e.g. opening a different template)
+  // Sync only when value changes from outside (not from typing inside the editor)
   useEffect(() => {
     if (!editor) return
     if (internalChange.current) {
@@ -64,16 +68,6 @@ export default function RichTextEditor({ value, onChange, onInsertRef, placehold
       editor.commands.setContent(value || '')
     }
   }, [value, editor])
-
-  // Expose insert function to parent
-  const insertAtCursor = useCallback((text: string) => {
-    if (!editor) return
-    editor.chain().focus().insertContent(text).run()
-  }, [editor])
-
-  useEffect(() => {
-    onInsertRef?.(insertAtCursor)
-  }, [insertAtCursor, onInsertRef])
 
   if (!editor) return null
 
