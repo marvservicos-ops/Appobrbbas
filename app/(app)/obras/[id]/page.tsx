@@ -3592,15 +3592,16 @@ function AbaEquipe({ obraId }: { obraId: string }) {
         const entry = map.get(r.funcionario_id)!
         const pct = (r.percentual ?? 100) / 100
         const dow = new Date(r.data + 'T12:00:00').getDay()
-        if (dow === 6) entry.dias_sabado += pct
-        else if (dow !== 0) entry.dias_uteis += pct
-        // Custo base do dia
-        entry.custo_total += pct * entry.custo_diario
-        // Acréscimo noturno
         if (r.noturno) {
           entry.dias_noturno += pct
-          if (pctNoturno > 0) entry.custo_total += pct * entry.custo_diario * pctNoturno
+        } else if (dow === 6) {
+          entry.dias_sabado += pct
+        } else if (dow !== 0) {
+          entry.dias_uteis += pct
         }
+        // Custo base do dia + acréscimo noturno
+        entry.custo_total += pct * entry.custo_diario
+        if (r.noturno && pctNoturno > 0) entry.custo_total += pct * entry.custo_diario * pctNoturno
       }
       setEntries(Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome)))
       setLoadingEquipe(false)
