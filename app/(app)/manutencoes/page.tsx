@@ -13,19 +13,19 @@ interface ModalNovoContratoProps {
 }
 
 function ModalNovoContrato({ onClose, onSaved }: ModalNovoContratoProps) {
-  const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([])
-  const [form, setForm] = useState({ cliente_id: '', numero_contrato: '', valor_mensal: '', data_inicio: '', observacoes: '' })
+  const [empresas, setEmpresas] = useState<{ id: string; razao_social: string; apelido?: string | null }[]>([])
+  const [form, setForm] = useState({ empresa_id: '', numero_contrato: '', valor_mensal: '', data_inicio: '', observacoes: '' })
   const [salvando, setSalvando] = useState(false)
 
   useEffect(() => {
-    createClient().from('clientes').select('id, nome').order('nome').then(({ data }) => setClientes(data ?? []))
+    createClient().from('empresas').select('id, razao_social, apelido').order('razao_social').then(({ data }) => setEmpresas(data ?? []))
   }, [])
 
   async function salvar() {
-    if (!form.cliente_id || !form.valor_mensal || !form.data_inicio) return
+    if (!form.empresa_id || !form.valor_mensal || !form.data_inicio) return
     setSalvando(true)
     await createClient().from('contratos_manutencao').insert({
-      cliente_id: form.cliente_id,
+      empresa_id: form.empresa_id,
       numero_contrato: form.numero_contrato || null,
       valor_mensal: parseFloat(form.valor_mensal),
       data_inicio: form.data_inicio,
@@ -47,10 +47,10 @@ function ModalNovoContrato({ onClose, onSaved }: ModalNovoContratoProps) {
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="text-xs font-medium text-[#64748B] block mb-1">Cliente *</label>
-            <select className="field text-sm" value={form.cliente_id} onChange={e => setForm(f => ({ ...f, cliente_id: e.target.value }))}>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Empresa *</label>
+            <select className="field text-sm" value={form.empresa_id} onChange={e => setForm(f => ({ ...f, empresa_id: e.target.value }))}>
               <option value="">Selecione...</option>
-              {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              {empresas.map(e => <option key={e.id} value={e.id}>{e.apelido ?? e.razao_social}</option>)}
             </select>
           </div>
           <div>
@@ -74,7 +74,7 @@ function ModalNovoContrato({ onClose, onSaved }: ModalNovoContratoProps) {
         </div>
         <div className="px-6 pb-6 flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
-          <button onClick={salvar} disabled={salvando || !form.cliente_id || !form.valor_mensal || !form.data_inicio}
+          <button onClick={salvar} disabled={salvando || !form.empresa_id || !form.valor_mensal || !form.data_inicio}
             className="px-4 py-2 text-sm font-medium bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">
             {salvando ? 'Salvando...' : 'Criar Contrato'}
           </button>
@@ -83,6 +83,8 @@ function ModalNovoContrato({ onClose, onSaved }: ModalNovoContratoProps) {
     </div>
   )
 }
+
+
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function fmtDate(d?: string) { return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—' }
@@ -96,7 +98,7 @@ export default function ManutencoesPage() {
   async function load() {
     const { data } = await createClient()
       .from('contratos_manutencao')
-      .select('*, cliente:clientes(id, nome, email, telefone)')
+      .select('*, empresa:empresas(id, razao_social, apelido)')
       .order('created_at', { ascending: false })
     setContratos((data ?? []) as ContratoManutencao[])
     setLoading(false)
@@ -104,10 +106,11 @@ export default function ManutencoesPage() {
 
   useEffect(() => { load() }, [])
 
-  const filtrados = contratos.filter(c =>
-    c.cliente?.nome?.toLowerCase().includes(search.toLowerCase()) ||
-    c.numero_contrato?.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtrados = contratos.filter(c => {
+    const nome = (c.empresa as any)?.apelido ?? (c.empresa as any)?.razao_social ?? ''
+    return nome.toLowerCase().includes(search.toLowerCase()) ||
+      c.numero_contrato?.toLowerCase().includes(search.toLowerCase())
+  })
 
   const ativos = contratos.filter(c => c.ativo).length
   const totalMensal = contratos.filter(c => c.ativo).reduce((s, c) => s + c.valor_mensal, 0)
@@ -167,7 +170,7 @@ export default function ManutencoesPage() {
                   </span>
                 </div>
                 <h3 className="font-syne font-semibold text-[#0F172A] group-hover:text-[#4F7CFF] transition-colors truncate">
-                  {c.cliente?.nome ?? '—'}
+                  {(c.empresa as any)?.apelido ?? (c.empresa as any)?.razao_social ?? '—'}
                 </h3>
                 {c.numero_contrato && (
                   <p className="text-xs text-[#94A3B8] mt-0.5">{c.numero_contrato}</p>

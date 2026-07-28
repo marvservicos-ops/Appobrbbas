@@ -7,14 +7,15 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
-type TipoAlocacao = 'obra' | 'escritorio' | 'folga' | 'atestado' | 'falta'
+type TipoAlocacao = 'obra' | 'manutencao' | 'escritorio' | 'folga' | 'atestado' | 'falta'
 
 interface Funcionario { id: string; nome: string; cargo: string | null }
 interface Obra { id: string; titulo: string }
+interface Manutencao { id: string; nome: string }
 interface Veiculo { id: string; nome: string; placa: string | null; cor: string | null }
 interface Alocacao {
   id: string
@@ -23,6 +24,8 @@ interface Alocacao {
   tipo: TipoAlocacao
   obra_id: string | null
   obra_nome: string | null
+  manutencao_id: string | null
+  manutencao_nome: string | null
   veiculo_id: string | null
   veiculo_nome: string | null
   transporte_tipo: string | null
@@ -37,7 +40,8 @@ const TRANSPORTES: { tipo: TransporteTipo; label: string; Icon: any }[] = [
 ]
 
 const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon: any }[] = [
-  { tipo: 'obra',       label: 'Obra',       cor: '#4F7CFF', bg: '#EEF2FF', Icon: Wrench    },
+  { tipo: 'obra',       label: 'Obra',       cor: '#4F7CFF', bg: '#EEF2FF', Icon: Wrench      },
+  { tipo: 'manutencao', label: 'Manutenção', cor: '#0EA5E9', bg: '#E0F2FE', Icon: Thermometer },
   { tipo: 'escritorio', label: 'Escritório',  cor: '#8B5CF6', bg: '#F5F3FF', Icon: Building2 },
   { tipo: 'folga',      label: 'Folga',       cor: '#10B981', bg: '#ECFDF5', Icon: Sun       },
   { tipo: 'atestado',   label: 'Atestado',    cor: '#F59E0B', bg: '#FFFBEB', Icon: FileText  },
@@ -150,6 +154,7 @@ export default function AlocacaoPage() {
   const [ano, setAno] = useState(now.getFullYear())
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [obras, setObras] = useState<Obra[]>([])
+  const [manutencoes, setManutencoes] = useState<Manutencao[]>([])
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([])
   const [loading, setLoading] = useState(true)
@@ -165,17 +170,19 @@ export default function AlocacaoPage() {
     const sb = createClient()
     const inicio = toDate(ano, mes, 1)
     const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
-    const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }] = await Promise.all([
+    const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }, { data: manuts }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo').eq('ativo', true).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, veiculo_id, transporte_tipo, percentual, obras:obra_id(titulo), veiculos:veiculo_id(nome)')
+        .select('id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)')
         .gte('data', inicio).lte('data', fim),
       sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
+      sb.from('contratos_manutencao').select('id, empresa:empresas(apelido, razao_social)').eq('ativo', true).order('created_at'),
     ])
     if (obrasErr) console.error('Obras error:', obrasErr)
     if (alocErr) console.error('Alocacoes error:', alocErr)
     setFuncionarios(funcs ?? [])
+    setManutencoes(((manuts ?? []) as any[]).map((m: any) => ({ id: m.id, nome: m.empresa?.apelido ?? m.empresa?.razao_social ?? m.id })))
     setObras(obs ?? [])
     setVeiculos(veics ?? [])
     setAlocacoes(
@@ -186,6 +193,8 @@ export default function AlocacaoPage() {
         tipo: a.tipo,
         obra_id: a.obra_id,
         obra_nome: a.obras?.titulo ?? null,
+        manutencao_id: a.manutencao_id ?? null,
+        manutencao_nome: a.contratos_manutencao?.empresa?.apelido ?? a.contratos_manutencao?.empresa?.razao_social ?? null,
         veiculo_id: a.veiculo_id,
         veiculo_nome: a.veiculos?.nome ?? null,
         transporte_tipo: a.transporte_tipo,
@@ -351,6 +360,8 @@ export default function AlocacaoPage() {
                                           style={{ color: cfg.cor }}>
                                           {aloc.tipo === 'obra' && aloc.obra_nome
                                             ? `${abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
+                                            : aloc.tipo === 'manutencao' && aloc.manutencao_nome
+                                            ? `${abrev(aloc.manutencao_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
                                             : `${cfg.label}${showPct ? ` ${aloc.percentual}%` : ''}`}
                                         </span>
                                       </div>
@@ -384,7 +395,7 @@ export default function AlocacaoPage() {
       {modalDia !== null && (
         <ModalDia
           dia={modalDia} mes={mes} ano={ano}
-          funcionarios={funcionarios} obras={obras} veiculos={veiculos} alocMap={alocMap}
+          funcionarios={funcionarios} obras={obras} manutencoes={manutencoes} veiculos={veiculos} alocMap={alocMap}
           onClose={() => setModalDia(null)}
           onSaved={() => { setModalDia(null); load() }}
         />
@@ -396,7 +407,7 @@ export default function AlocacaoPage() {
           fid={modalCell.fid}
           fNome={funcionarios.find(f => f.id === modalCell.fid)?.nome ?? ''}
           dia={modalCell.dia} mes={mes} ano={ano}
-          obras={obras} veiculos={veiculos}
+          obras={obras} manutencoes={manutencoes} veiculos={veiculos}
           alocacoes={alocMap.get(`${modalCell.fid}_${modalCell.dia}`) ?? []}
           onClose={() => setModalCell(null)}
           onSaved={() => { setModalCell(null); load() }}
@@ -408,19 +419,19 @@ export default function AlocacaoPage() {
 
 // ── Modal preencher dia inteiro ────────────────────────────────────────────────
 
-function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClose, onSaved }: {
+function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, alocMap, onClose, onSaved }: {
   dia: number; mes: number; ano: number
-  funcionarios: Funcionario[]; obras: Obra[]; veiculos: Veiculo[]
+  funcionarios: Funcionario[]; obras: Obra[]; manutencoes: Manutencao[]; veiculos: Veiculo[]
   alocMap: Map<string, Alocacao[]>
   onClose: () => void; onSaved: () => void
 }) {
   const data = toDate(ano, mes, dia)
 
-  const [rows, setRows] = useState<Record<string, { tipo: TipoAlocacao | ''; obra_id: string; transporte_tipo: string; veiculo_id: string }>>(() => {
+  const [rows, setRows] = useState<Record<string, { tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; transporte_tipo: string; veiculo_id: string }>>(() => {
     const init: Record<string, any> = {}
     funcionarios.forEach(f => {
       const a = (alocMap.get(`${f.id}_${dia}`) ?? [])[0]
-      init[f.id] = { tipo: a?.tipo ?? '', obra_id: a?.obra_id ?? '', transporte_tipo: a?.transporte_tipo ?? '', veiculo_id: a?.veiculo_id ?? '' }
+      init[f.id] = { tipo: a?.tipo ?? '', obra_id: a?.obra_id ?? '', manutencao_id: a?.manutencao_id ?? '', transporte_tipo: a?.transporte_tipo ?? '', veiculo_id: a?.veiculo_id ?? '' }
     })
     return init
   })
@@ -428,10 +439,13 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
   const [quickObra, setQuickObra] = useState('')
 
   function setTipo(fid: string, tipo: TipoAlocacao | '') {
-    setRows(p => ({ ...p, [fid]: { ...p[fid], tipo, obra_id: tipo !== 'obra' ? '' : p[fid].obra_id } }))
+    setRows(p => ({ ...p, [fid]: { ...p[fid], tipo, obra_id: tipo !== 'obra' ? '' : p[fid].obra_id, manutencao_id: tipo !== 'manutencao' ? '' : p[fid].manutencao_id } }))
   }
   function setObra(fid: string, obra_id: string) {
     setRows(p => ({ ...p, [fid]: { ...p[fid], obra_id } }))
+  }
+  function setManutencao(fid: string, manutencao_id: string) {
+    setRows(p => ({ ...p, [fid]: { ...p[fid], manutencao_id } }))
   }
   function setTransporte(fid: string, transporte_tipo: string) {
     setRows(p => ({ ...p, [fid]: { ...p[fid], transporte_tipo, veiculo_id: transporte_tipo !== 'veiculo' ? '' : p[fid].veiculo_id } }))
@@ -461,6 +475,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
             funcionario_id: f.id, data,
             tipo: row.tipo as TipoAlocacao,
             obra_id: row.tipo === 'obra' && row.obra_id ? row.obra_id : null,
+            manutencao_id: row.tipo === 'manutencao' && row.manutencao_id ? row.manutencao_id : null,
             percentual: 100,
             transporte_tipo: row.transporte_tipo || null,
             veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
@@ -529,6 +544,13 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, veiculos, alocMap, onClo
                       {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
                     </select>
                   )}
+                  {row.tipo === 'manutencao' && (
+                    <select className="field text-sm py-1.5 min-w-0 flex-1 sm:w-48 sm:flex-none"
+                      value={row.manutencao_id} onChange={e => setManutencao(f.id, e.target.value)}>
+                      <option value="">Selecione a manutenção...</option>
+                      {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                    </select>
+                  )}
                 </div>
                 {row.tipo && (
                   <div className="flex items-center gap-2 pl-0 sm:pl-44 flex-wrap">
@@ -577,24 +599,25 @@ interface AlocRow {
   id?: string
   tipo: TipoAlocacao | ''
   obra_id: string
+  manutencao_id: string
   percentual: number
 }
 
 let _rowKey = 0
-function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', percentual = 100): AlocRow {
-  return { _key: ++_rowKey, tipo, obra_id, percentual }
+function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100): AlocRow {
+  return { _key: ++_rowKey, tipo, obra_id, manutencao_id, percentual }
 }
 
-function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacoes, onClose, onSaved }: {
+function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, alocacoes, onClose, onSaved }: {
   fid: string; fNome: string; dia: number; mes: number; ano: number
-  obras: Obra[]; veiculos: Veiculo[]; alocacoes: Alocacao[]
+  obras: Obra[]; manutencoes: Manutencao[]; veiculos: Veiculo[]; alocacoes: Alocacao[]
   onClose: () => void; onSaved: () => void
 }) {
   const data = toDate(ano, mes, dia)
 
   const [rows, setRows] = useState<AlocRow[]>(() => {
     if (alocacoes.length === 0) return [newRow()]
-    return alocacoes.map(a => newRow(a.tipo, a.obra_id ?? '', a.percentual))
+    return alocacoes.map(a => newRow(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual))
   })
   const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>(
     (alocacoes[0]?.transporte_tipo as TransporteTipo) ?? ''
@@ -613,7 +636,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacoes, onCl
   }
   function addRow() {
     const remaining = Math.max(0, 100 - totalPct)
-    setRows(p => [...p, newRow('', '', remaining || 50)])
+    setRows(p => [...p, newRow('', '', '', remaining || 50)])
   }
 
   async function salvar() {
@@ -626,6 +649,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacoes, onCl
       data,
       tipo: r.tipo as TipoAlocacao,
       obra_id: r.tipo === 'obra' && r.obra_id ? r.obra_id : null,
+      manutencao_id: r.tipo === 'manutencao' && r.manutencao_id ? r.manutencao_id : null,
       percentual: r.percentual,
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
@@ -684,13 +708,22 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacoes, onCl
                 </button>
               </div>
 
-              {/* Obra selector */}
+              {/* Seletores de obra / manutenção */}
               {row.tipo === 'obra' && (
                 <div className="pl-7">
                   <select className="field text-sm py-1.5 w-full"
                     value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value })}>
                     <option value="">Selecione a obra...</option>
                     {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+                  </select>
+                </div>
+              )}
+              {row.tipo === 'manutencao' && (
+                <div className="pl-7">
+                  <select className="field text-sm py-1.5 w-full"
+                    value={row.manutencao_id} onChange={e => updateRow(row._key, { manutencao_id: e.target.value })}>
+                    <option value="">Selecione a manutenção...</option>
+                    {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
                   </select>
                 </div>
               )}
@@ -737,7 +770,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, veiculos, alocacoes, onCl
             className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
             Cancelar
           </button>
-          <button onClick={salvar} disabled={saving || (hasTipo && !pctOk) || rows.some(r => r.tipo === 'obra' && !r.obra_id)}
+          <button onClick={salvar} disabled={saving || (hasTipo && !pctOk) || rows.some(r => r.tipo === 'obra' && !r.obra_id) || rows.some(r => r.tipo === 'manutencao' && !r.manutencao_id)}
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
             {saving ? 'Salvando...' : 'Salvar'}

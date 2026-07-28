@@ -492,7 +492,7 @@ export default function ManutencaoDetalhe() {
   useEffect(() => {
     createClient()
       .from('contratos_manutencao')
-      .select('*, cliente:clientes(id, nome, email, telefone)')
+      .select('*, empresa:empresas(id, razao_social, apelido)')
       .eq('id', id)
       .single()
       .then(({ data }) => { setContrato(data as ContratoManutencao); setLoading(false) })
@@ -521,7 +521,7 @@ export default function ManutencaoDetalhe() {
                 <Thermometer size={18} className="text-[#4F7CFF]" />
               </div>
               <div>
-                <h1 className="font-syne font-bold text-xl text-[#0F172A]">{contrato.cliente?.nome ?? '—'}</h1>
+                <h1 className="font-syne font-bold text-xl text-[#0F172A]">{(contrato.empresa as any)?.apelido ?? (contrato.empresa as any)?.razao_social ?? '—'}</h1>
                 <div className="flex items-center gap-3 mt-0.5">
                   {contrato.numero_contrato && <span className="text-xs text-[#94A3B8]">{contrato.numero_contrato}</span>}
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${contrato.ativo ? 'bg-[#D1FAE5] text-[#059669]' : 'bg-[#F1F5F9] text-[#94A3B8]'}`}>
