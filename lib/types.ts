@@ -213,6 +213,81 @@ export interface RDOFoto { id: string; rdo_id: string; url: string; path?: strin
 export interface RDOAssinatura { id: string; rdo_id: string; tipo: string; nome?: string; assinatura_url?: string; assinado_em?: string }
 // ──────────────────────────────────────────────────────
 
+// ── Manutenções ───────────────────────────────────────
+export type TipoEquipamentoAC = 'Split' | 'Cassete' | 'VRF' | 'Janela' | 'Piso-teto' | 'Outro'
+
+export interface ContratoManutencao {
+  id: string
+  cliente_id: string
+  cliente?: Cliente
+  empresa_id?: string | null
+  empresa?: Empresa
+  numero_contrato?: string | null
+  valor_mensal: number
+  data_inicio: string
+  data_fim?: string | null
+  ativo: boolean
+  observacoes?: string | null
+  created_at: string
+}
+
+export interface ManutencaoAditivo {
+  id: string
+  contrato_id: string
+  descricao: string
+  valor: number
+  data: string
+  created_at: string
+}
+
+export interface ManutencaoNF {
+  id: string
+  contrato_id: string
+  competencia: string
+  valor: number
+  numero_nf?: string | null
+  status: 'pendente' | 'emitida'
+  arquivo_url?: string | null
+  observacoes?: string | null
+  created_at: string
+}
+
+export interface ManutencaoFuncionario {
+  id: string
+  contrato_id: string
+  funcionario_id: string
+  funcionario?: { id: string; nome: string; cargo: string | null }
+  tipo: 'fixo' | 'eventual'
+}
+
+export interface Equipamento {
+  id: string
+  contrato_id: string
+  nome: string
+  tipo: TipoEquipamentoAC
+  marca?: string | null
+  modelo?: string | null
+  capacidade_btu?: number | null
+  numero_serie?: string | null
+  localizacao?: string | null
+  data_instalacao?: string | null
+  foto_url?: string | null
+  ativo: boolean
+  created_at: string
+}
+
+export interface ManutencaoHistorico {
+  id: string
+  equipamento_id: string
+  competencia: string
+  preventiva_feita: boolean
+  corretiva: boolean
+  corretiva_descricao?: string | null
+  corretiva_custo?: number | null
+  created_at: string
+}
+// ──────────────────────────────────────────────────────
+
 export type TipoMovimentacao = 'entrada' | 'saida' | 'devolucao' | 'ajuste'
 export type StatusMovimentacao = 'concluido' | 'pendente_devolucao' | 'devolvido_parcial' | 'devolvido_total'
 
