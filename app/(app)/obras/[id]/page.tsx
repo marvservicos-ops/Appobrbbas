@@ -3537,7 +3537,7 @@ interface EquipeEntry {
   custo_hora: number
   dias_uteis: number
   dias_sabado: number
-  horas_noturnas: number
+  dias_noturno: number
   custo_total: number
 }
 
@@ -3587,7 +3587,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
         const horasDia: number = f.horas_dia ?? 8
         const custoHora = horasDia > 0 ? custoDia / horasDia : 0
         if (!map.has(r.funcionario_id)) {
-          map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, custo_hora: custoHora, dias_uteis: 0, dias_sabado: 0, horas_noturnas: 0, custo_total: 0 })
+          map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, custo_hora: custoHora, dias_uteis: 0, dias_sabado: 0, dias_noturno: 0, custo_total: 0 })
         }
         const entry = map.get(r.funcionario_id)!
         const pct = (r.percentual ?? 100) / 100
@@ -3598,7 +3598,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
         entry.custo_total += pct * entry.custo_diario
         // Acréscimo noturno
         if (r.noturno) {
-          entry.horas_noturnas += pct * horasDia
+          entry.dias_noturno += pct
           if (pctNoturno > 0) entry.custo_total += pct * entry.custo_diario * pctNoturno
         }
       }
@@ -3665,7 +3665,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                     <div className="flex gap-2 mt-1">
                       <span className="text-xs text-[#64748B]">{Number.isInteger(e.dias_uteis) ? e.dias_uteis : e.dias_uteis.toFixed(1)}d úteis</span>
                       {e.dias_sabado > 0 && <span className="text-xs text-amber-600">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
-                      {e.horas_noturnas > 0 && <span className="text-xs text-indigo-500">+{Number.isInteger(e.horas_noturnas) ? e.horas_noturnas : e.horas_noturnas.toFixed(1)}h not.</span>}
+                      {e.dias_noturno > 0 && <span className="text-xs text-indigo-500">+{Number.isInteger(e.dias_noturno) ? e.dias_noturno : e.dias_noturno.toFixed(1)}d not.</span>}
                     </div>
                   </div>
                   <span className="text-sm font-bold text-violet-700 shrink-0">{moeda(e.custo_total)}</span>
@@ -3694,7 +3694,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                     <td className="px-4 py-3 text-sm text-[#374151]">
                       <span>{Number.isInteger(e.dias_uteis) ? e.dias_uteis : e.dias_uteis.toFixed(1)}d úteis</span>
                       {e.dias_sabado > 0 && <span className="text-amber-600 ml-1">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
-                      {e.horas_noturnas > 0 && <span className="text-indigo-500 ml-1">+{Number.isInteger(e.horas_noturnas) ? e.horas_noturnas : e.horas_noturnas.toFixed(1)}h not.</span>}
+                      {e.dias_noturno > 0 && <span className="text-indigo-500 ml-1">+{Number.isInteger(e.dias_noturno) ? e.dias_noturno : e.dias_noturno.toFixed(1)}d not.</span>}
                     </td>
                     <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">{moeda(e.custo_diario)}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
