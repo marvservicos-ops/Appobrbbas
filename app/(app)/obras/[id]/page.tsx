@@ -3596,11 +3596,10 @@ function AbaEquipe({ obraId }: { obraId: string }) {
         else if (dow !== 0) entry.dias_uteis += pct
         // Custo base do dia
         entry.custo_total += pct * entry.custo_diario
-        // Acréscimo noturno: se o dia for noturno, adiciona percentual sobre o custo do dia
-        if (r.noturno && pctNoturno > 0) {
-          const adicNoturno = pct * entry.custo_diario * pctNoturno
+        // Acréscimo noturno
+        if (r.noturno) {
           entry.horas_noturnas += pct * horasDia
-          entry.custo_total += adicNoturno
+          if (pctNoturno > 0) entry.custo_total += pct * entry.custo_diario * pctNoturno
         }
       }
       setEntries(Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome)))

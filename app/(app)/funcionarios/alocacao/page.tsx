@@ -7,7 +7,7 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered, Moon,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -412,8 +412,9 @@ export default function AlocacaoPage() {
                                   })}
                                 </div>
                                 <div className="w-full flex items-center justify-center bg-[#F1F5F9] shrink-0 gap-1" style={{ height: 13 }}>
-                                  {hasNoturno && <Moon size={8} className="text-[#6366F1] shrink-0" />}
-                                  {transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{transpLabel}</span>}
+                                  {hasNoturno && <span className="text-[8px] font-semibold text-[#6366F1] shrink-0">Noturno</span>}
+                                  {!hasNoturno && transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{transpLabel}</span>}
+                                  {hasNoturno && transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">· {transpLabel}</span>}
                                 </div>
                               </div>
                             )
@@ -663,7 +664,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                         {(aloc.tipo === 'obra' || aloc.tipo === 'manutencao') && (
                           <label className="flex items-center gap-1 cursor-pointer shrink-0">
                             <input type="checkbox" checked={aloc.noturno} onChange={e => updateAloc(f.id, aloc._key, { noturno: e.target.checked })} className="w-3.5 h-3.5 accent-[#6366F1]" />
-                            <Moon size={11} className="text-[#6366F1]" />
+                            <span className="text-xs font-medium text-[#6366F1]">Noturno</span>
                           </label>
                         )}
                         {multiAloc && aloc.tipo && (
@@ -874,7 +875,6 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                 <div className="pl-7">
                   <label className="flex items-center gap-2 cursor-pointer w-fit">
                     <input type="checkbox" checked={row.noturno} onChange={e => updateRow(row._key, { noturno: e.target.checked })} className="w-4 h-4 accent-[#6366F1]" />
-                    <Moon size={13} className="text-[#6366F1]" />
                     <span className="text-xs font-medium text-[#374151]">Noturno</span>
                   </label>
                 </div>
@@ -1135,7 +1135,6 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                 <div className="pl-7">
                   <label className="flex items-center gap-2 cursor-pointer w-fit">
                     <input type="checkbox" checked={row.noturno} onChange={e => updateRow(row._key, { noturno: e.target.checked })} className="w-4 h-4 accent-[#6366F1]" />
-                    <Moon size={13} className="text-[#6366F1]" />
                     <span className="text-xs font-medium text-[#374151]">Noturno</span>
                   </label>
                 </div>
