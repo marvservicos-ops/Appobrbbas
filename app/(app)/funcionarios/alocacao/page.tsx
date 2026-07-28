@@ -1055,13 +1055,16 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
     }))
+    let err: any = null
     await Promise.all(funcionarios.map(async f => {
       await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
       if (toInsert.length > 0) {
-        await sb.from('funcionario_alocacoes').insert(toInsert.map(r => ({ ...r, funcionario_id: f.id, data })))
+        const { error } = await sb.from('funcionario_alocacoes').insert(toInsert.map(r => ({ ...r, funcionario_id: f.id, data })))
+        if (error) err = error
       }
     }))
     setSaving(false)
+    if (err) { alert('Erro ao salvar: ' + err.message); return }
     onSaved()
   }
 
