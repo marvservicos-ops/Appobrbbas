@@ -193,7 +193,7 @@ export default function AlocacaoPage() {
       sb.from('funcionarios').select('id, nome, cargo, ordem').eq('ativo', true).order('ordem', { ascending: true, nullsFirst: false }).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)')
+        .select('id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, noturno, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)')
         .gte('data', inicio).lte('data', fim),
       sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
       sb.from('contratos_manutencao').select('id, empresa:empresas(apelido, razao_social)').eq('ativo', true).order('created_at'),
