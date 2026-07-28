@@ -1023,39 +1023,53 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
   onClose: () => void; onSaved: () => void
 }) {
   const data = toDate(ano, mes, dia)
-  const [tipo, setTipo] = useState<TipoAlocacao | ''>('')
-  const [obraId, setObraId] = useState('')
-  const [manutencaoId, setManutencaoId] = useState('')
+  const [rows, setRows] = useState<AlocRow[]>([newRow()])
   const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>('')
   const [veiculoId, setVeiculoId] = useState('')
-  const [noturno, setNoturno] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  const totalPct = rows.reduce((s, r) => s + (r.tipo ? r.percentual : 0), 0)
+  const pctOk = totalPct === 100 || totalPct === 0
+  const hasTipo = rows.some(r => !!r.tipo)
+
+  function updateRow(key: number, patch: Partial<AlocRow>) {
+    setRows(p => p.map(r => r._key === key ? { ...r, ...patch } : r))
+  }
+  function removeRow(key: number) {
+    setRows(p => p.length === 1 ? [newRow()] : p.filter(r => r._key !== key))
+  }
+  function addRow() {
+    const remaining = Math.max(0, 100 - totalPct)
+    setRows(p => [...p, newRow('', '', '', remaining || 50)])
+  }
+
   async function salvar() {
-    if (!tipo) return
     setSaving(true)
     const sb = createClient()
+    const toInsert = rows.filter(r => r.tipo).map(r => ({
+      tipo: r.tipo as TipoAlocacao,
+      obra_id: r.tipo === 'obra' && r.obra_id ? r.obra_id : null,
+      manutencao_id: r.tipo === 'manutencao' && r.manutencao_id ? r.manutencao_id : null,
+      percentual: r.percentual,
+      noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
+      transporte_tipo: transporteTipo || null,
+      veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
+    }))
     await Promise.all(funcionarios.map(async f => {
       await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
-      await sb.from('funcionario_alocacoes').insert({
-        funcionario_id: f.id, data, tipo,
-        obra_id: tipo === 'obra' && obraId ? obraId : null,
-        manutencao_id: tipo === 'manutencao' && manutencaoId ? manutencaoId : null,
-        percentual: 100,
-        noturno: (tipo === 'obra' || tipo === 'manutencao') ? noturno : false,
-        transporte_tipo: transporteTipo || null,
-        veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
-      })
+      if (toInsert.length > 0) {
+        await sb.from('funcionario_alocacoes').insert(toInsert.map(r => ({ ...r, funcionario_id: f.id, data })))
+      }
     }))
     setSaving(false)
     onSaved()
   }
 
-  const canSave = !!tipo && (tipo !== 'obra' || !!obraId) && (tipo !== 'manutencao' || !!manutencaoId)
+  const canSave = hasTipo && pctOk && !rows.some(r => r.tipo === 'obra' && !r.obra_id) && !rows.some(r => r.tipo === 'manutencao' && !r.manutencao_id)
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md flex flex-col">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[92vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
           <div>
             <h2 className="font-syne font-semibold text-[#0F172A]">Alocar {funcionarios.length} funcionário{funcionarios.length > 1 ? 's' : ''}</h2>
@@ -1064,53 +1078,80 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
 
-        <div className="p-5 space-y-4">
-          {/* Funcionários selecionados */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Chips dos funcionários */}
           <div className="flex flex-wrap gap-1.5">
             {funcionarios.map(f => (
               <span key={f.id} className="text-xs bg-[#EEF2FF] text-[#4F7CFF] font-medium px-2.5 py-1 rounded-full">{f.nome.split(' ')[0]}</span>
             ))}
           </div>
 
-          {/* Tipo */}
-          <div>
-            <p className="text-xs font-medium text-[#64748B] mb-2">Tipo de alocação *</p>
-            <div className="flex gap-1.5 flex-wrap">
-              {TIPOS.map(t => (
-                <button key={t.tipo} onClick={() => { setTipo(tipo === t.tipo ? '' : t.tipo); setObraId(''); setManutencaoId('') }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                    ${tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
-                  style={tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
-                  {t.label}
+          {/* Linhas de alocação */}
+          {rows.map((row, idx) => (
+            <div key={row._key} className="border border-[#E2E8F0] rounded-xl p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-[#94A3B8] w-5 shrink-0">#{idx + 1}</span>
+                <div className="flex gap-1 flex-wrap flex-1">
+                  {TIPOS.map(t => (
+                    <button key={t.tipo}
+                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: t.tipo !== 'obra' ? '' : row.obra_id, manutencao_id: t.tipo !== 'manutencao' ? '' : row.manutencao_id })}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
+                        ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
+                      style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <input type="number" min={1} max={100} value={row.percentual}
+                    onChange={e => updateRow(row._key, { percentual: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
+                    className="w-14 text-center text-sm font-semibold border border-[#E2E8F0] rounded-lg py-1 focus:outline-none focus:border-[#4F7CFF]" />
+                  <span className="text-xs text-[#94A3B8]">%</span>
+                </div>
+                <button onClick={() => removeRow(row._key)} className="shrink-0 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
+                  <Trash2 size={14} />
                 </button>
-              ))}
+              </div>
+              {row.tipo === 'obra' && (
+                <div className="pl-7">
+                  <select className="field text-sm py-1.5 w-full" value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value })}>
+                    <option value="">Selecione a obra...</option>
+                    {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+                  </select>
+                </div>
+              )}
+              {row.tipo === 'manutencao' && (
+                <div className="pl-7">
+                  <select className="field text-sm py-1.5 w-full" value={row.manutencao_id} onChange={e => updateRow(row._key, { manutencao_id: e.target.value })}>
+                    <option value="">Selecione a manutenção...</option>
+                    {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  </select>
+                </div>
+              )}
+              {(row.tipo === 'obra' || row.tipo === 'manutencao') && (
+                <div className="pl-7">
+                  <label className="flex items-center gap-2 cursor-pointer w-fit">
+                    <input type="checkbox" checked={row.noturno} onChange={e => updateRow(row._key, { noturno: e.target.checked })} className="w-4 h-4 accent-[#6366F1]" />
+                    <Moon size={13} className="text-[#6366F1]" />
+                    <span className="text-xs font-medium text-[#374151]">Noturno</span>
+                  </label>
+                </div>
+              )}
             </div>
+          ))}
+
+          <div className="flex items-center justify-between px-1">
+            <button onClick={addRow} className="flex items-center gap-1.5 text-xs font-medium text-[#4F7CFF] hover:text-[#3d6ae0] transition-colors">
+              <Plus size={13} /> Adicionar alocação
+            </button>
+            <span className={`text-xs font-semibold ${pctOk ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+              Total: {totalPct}%{!pctOk && ' ≠ 100'}
+            </span>
           </div>
 
-          {tipo === 'obra' && (
-            <select className="field text-sm w-full" value={obraId} onChange={e => setObraId(e.target.value)}>
-              <option value="">Selecione a obra...</option>
-              {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
-            </select>
-          )}
-          {tipo === 'manutencao' && (
-            <select className="field text-sm w-full" value={manutencaoId} onChange={e => setManutencaoId(e.target.value)}>
-              <option value="">Selecione a manutenção...</option>
-              {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
-            </select>
-          )}
-
-          {(tipo === 'obra' || tipo === 'manutencao') && (
-            <label className="flex items-center gap-2 cursor-pointer w-fit">
-              <input type="checkbox" checked={noturno} onChange={e => setNoturno(e.target.checked)} className="w-4 h-4 accent-[#6366F1]" />
-              <Moon size={14} className="text-[#6366F1]" />
-              <span className="text-sm font-medium text-[#374151]">Noturno</span>
-            </label>
-          )}
-
-          {tipo && (
-            <div>
-              <p className="text-xs font-medium text-[#64748B] mb-2">Transporte</p>
+          {hasTipo && (
+            <div className="border-t border-[#F1F5F9] pt-3 space-y-2">
+              <p className="text-xs font-medium text-[#374151]">Transporte do dia</p>
               <div className="flex gap-2 flex-wrap">
                 {TRANSPORTES.map(t => (
                   <button key={t.tipo} onClick={() => { setTransporteTipo(transporteTipo === t.tipo ? '' : t.tipo); setVeiculoId('') }}
@@ -1121,7 +1162,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                 ))}
               </div>
               {transporteTipo === 'veiculo' && (
-                <select className="field text-sm w-full mt-2" value={veiculoId} onChange={e => setVeiculoId(e.target.value)}>
+                <select className="field text-sm w-full" value={veiculoId} onChange={e => setVeiculoId(e.target.value)}>
                   <option value="">Selecione o veículo...</option>
                   {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
                 </select>
@@ -1130,7 +1171,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
           )}
         </div>
 
-        <div className="px-5 pb-5 pt-2 border-t border-[#E2E8F0] flex gap-3 shrink-0">
+        <div className="px-5 pb-5 pt-3 border-t border-[#E2E8F0] flex gap-3 shrink-0">
           <button onClick={onClose}
             className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
             Cancelar
