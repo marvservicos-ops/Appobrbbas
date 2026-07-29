@@ -21,125 +21,67 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
     <>
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page {
-          size: 80mm 50mm;
-          margin: 0;
-        }
-        html, body {
-          font-family: 'Helvetica Neue', Arial, sans-serif;
-          background: white;
-        }
+        @page { size: 80mm 50mm; margin: 0; }
+        html, body { font-family: 'Helvetica Neue', Arial, sans-serif; background: white; }
         .label {
           width: 80mm;
           height: 50mm;
           display: flex;
-          padding: 3mm;
-          gap: 3mm;
+          padding: 2.5mm;
+          gap: 2mm;
+          overflow: hidden;
         }
         .left {
           display: flex;
           flex-direction: column;
-          justify-content: space-between;
+          gap: 1.5mm;
           flex: 1;
           min-width: 0;
           overflow: hidden;
         }
-        .logo {
-          font-size: 15px;
-          font-weight: 900;
-          letter-spacing: 2px;
-          color: #0F172A;
-          line-height: 1;
-        }
-        .logo span {
-          color: #4F7CFF;
-        }
-        .logo-sub {
-          font-size: 5px;
-          letter-spacing: 1.5px;
-          color: #94A3B8;
-          text-transform: uppercase;
-          margin-top: 1mm;
-        }
-        .equip-nome {
-          font-size: 10px;
-          font-weight: 700;
-          color: #0F172A;
-          line-height: 1.2;
-          overflow: hidden;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-        }
+        .logo { font-size: 11px; font-weight: 900; letter-spacing: 1.5px; color: #0F172A; line-height: 1; }
+        .logo span { color: #4F7CFF; }
+        .logo-sub { font-size: 4.5px; letter-spacing: 1.2px; color: #94A3B8; text-transform: uppercase; margin-top: 0.5mm; }
         .tipo-badge {
           display: inline-block;
-          font-size: 6px;
+          font-size: 5.5px;
           font-weight: 700;
           letter-spacing: 0.5px;
           text-transform: uppercase;
           background: #EEF2FF;
           color: #4F7CFF;
-          padding: 1px 4px;
-          border-radius: 3px;
-          margin-bottom: 1.5mm;
+          padding: 1px 3px;
+          border-radius: 2px;
         }
-        .fields {
-          display: flex;
-          flex-direction: column;
-          gap: 1mm;
+        .equip-nome {
+          font-size: 9px;
+          font-weight: 700;
+          color: #0F172A;
+          line-height: 1.15;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
         }
-        .field label {
-          font-size: 5px;
-          font-weight: 600;
-          letter-spacing: 0.5px;
-          text-transform: uppercase;
-          color: #94A3B8;
-          display: block;
-        }
-        .field span {
-          font-size: 7px;
-          font-weight: 600;
-          color: #374151;
-        }
-        .divider {
-          border: none;
-          border-top: 0.5px solid #E2E8F0;
-          margin: 1mm 0;
-        }
+        .divider { border: none; border-top: 0.4px solid #E2E8F0; }
+        .fields { display: flex; flex-direction: column; gap: 1mm; }
+        .field-label { font-size: 4.5px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: #94A3B8; }
+        .field-value { font-size: 6.5px; font-weight: 600; color: #374151; line-height: 1.2; }
         .right {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           gap: 1mm;
-          width: 28mm;
+          width: 26mm;
           flex-shrink: 0;
         }
-        .right img {
-          width: 26mm;
-          height: 26mm;
-          object-fit: contain;
-        }
-        .scan-text {
-          font-size: 5px;
-          color: #94A3B8;
-          text-align: center;
-          letter-spacing: 0.3px;
-        }
+        .right img { width: 24mm; height: 24mm; object-fit: contain; display: block; }
+        .scan-text { font-size: 4.5px; color: #94A3B8; text-align: center; line-height: 1.4; }
         @media screen {
-          body { background: #F1F5F9; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
-          .label { background: white; box-shadow: 0 4px 24px #0002; border-radius: 4px; }
-          .print-btn {
-            background: #4F7CFF;
-            color: white;
-            border: none;
-            padding: 10px 24px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 2px 8px #4F7CFF66;
-          }
+          body { background: #F1F5F9; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 24px; }
+          .label { background: white; box-shadow: 0 4px 24px #0002; border-radius: 4px; transform: scale(2); transform-origin: center center; margin: 60px 0; }
+          .print-btn { background: #4F7CFF; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px #4F7CFF66; }
         }
         @media print {
           body { background: white; display: block; margin: 0; padding: 0; }
@@ -150,31 +92,24 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
 
       <div className="label">
         <div className="left">
-          {/* Logo */}
           <div>
             <div className="logo">MARV<span>.</span></div>
             <div className="logo-sub">Mechanical Engineering</div>
           </div>
-
-          {/* Equipamento */}
-          <div>
-            <div className="tipo-badge">{e.tipo}</div>
-            <div className="equip-nome">{e.nome}</div>
-          </div>
-
-          {/* Campos */}
+          <div className="tipo-badge">{e.tipo}</div>
+          <div className="equip-nome">{e.nome}</div>
+          <div className="divider" />
           <div className="fields">
-            <hr className="divider" />
             {modelo && (
-              <div className="field">
-                <label>Modelo</label>
-                <span>{modelo}</span>
+              <div>
+                <div className="field-label">Modelo</div>
+                <div className="field-value">{modelo}</div>
               </div>
             )}
             {numeroSerie && (
-              <div className="field">
-                <label>Nº de Série</label>
-                <span>{numeroSerie}</span>
+              <div>
+                <div className="field-label">Nº de Série</div>
+                <div className="field-value">{numeroSerie}</div>
               </div>
             )}
           </div>
