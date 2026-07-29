@@ -351,24 +351,39 @@ const TIPO_COLOR: Record<string, string> = {
   Outro: 'bg-[#F1F5F9] text-[#64748B]',
 }
 
+const TIPOS_EQUIP = ['Split', 'Cassete', 'VRF', 'Janela', 'Piso-teto', 'Chiller', 'Fan Coil', 'Condensadora', 'Outro']
+
+let _formEquipId = 0
+
 function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSaved, onCancel }: {
   contratoId: string; grupos: Grupo[]; grupoIdInicial?: string | null
   equipamento?: EquipamentoComGrupo | null
   onSaved: () => void; onCancel: () => void
 }) {
-  const [form, setForm] = useState({
-    nome: equipamento?.nome ?? '', tipo: (equipamento?.tipo ?? 'Split') as Equipamento['tipo'],
-    marca: equipamento?.marca ?? '', modelo: equipamento?.modelo ?? '',
-    capacidade_btu: equipamento?.capacidade_btu ? String(equipamento.capacidade_btu) : '',
-    numero_serie: equipamento?.numero_serie ?? '', localizacao: equipamento?.localizacao ?? '',
-    data_instalacao: equipamento?.data_instalacao ?? '',
-    grupo_id: equipamento?.grupo_id ?? grupoIdInicial ?? '',
-  })
+  const datalistId = useState(() => `tipos-equip-${++_formEquipId}`)[0]
+
+  function emptyForm() {
+    return {
+      nome: '', tipo: 'Split',
+      marca: '', modelo: '', capacidade_btu: '',
+      numero_serie: '', localizacao: '', data_instalacao: '',
+      grupo_id: grupoIdInicial ?? '',
+    }
+  }
+
+  const [form, setForm] = useState(() => equipamento ? {
+    nome: equipamento.nome, tipo: equipamento.tipo ?? 'Split',
+    marca: equipamento.marca ?? '', modelo: equipamento.modelo ?? '',
+    capacidade_btu: equipamento.capacidade_btu ? String(equipamento.capacidade_btu) : '',
+    numero_serie: equipamento.numero_serie ?? '', localizacao: equipamento.localizacao ?? '',
+    data_instalacao: equipamento.data_instalacao ?? '',
+    grupo_id: equipamento.grupo_id ?? grupoIdInicial ?? '',
+  } : emptyForm())
 
   async function salvar() {
     if (!form.nome) return
     const payload = {
-      nome: form.nome, tipo: form.tipo,
+      nome: form.nome, tipo: form.tipo || 'Outro',
       marca: form.marca || null, modelo: form.modelo || null,
       capacidade_btu: form.capacidade_btu ? parseInt(form.capacidade_btu) : null,
       numero_serie: form.numero_serie || null,
@@ -378,10 +393,12 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
     }
     if (equipamento) {
       await createClient().from('equipamentos').update(payload).eq('id', equipamento.id)
+      onSaved()
     } else {
       await createClient().from('equipamentos').insert({ ...payload, contrato_id: contratoId, ativo: true })
+      setForm(emptyForm())
+      onSaved()
     }
-    onSaved()
   }
 
   return (
@@ -389,13 +406,13 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
           <label className="text-xs font-medium text-[#64748B] block mb-1">Nome / Identificação *</label>
-          <input className="field text-sm" placeholder="Ex: Split Sala de Reuniões" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} />
+          <input autoFocus className="field text-sm" placeholder="Ex: Split Sala de Reuniões" value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} />
         </div>
         <div>
           <label className="text-xs font-medium text-[#64748B] block mb-1">Tipo</label>
-          <input list="tipos-equip" className="field text-sm" placeholder="Ex: Split, VRF, Chiller..." value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} />
-          <datalist id="tipos-equip">
-            {['Split', 'Cassete', 'VRF', 'Janela', 'Piso-teto', 'Chiller', 'Fan Coil', 'Condensadora', 'Outro'].map(t => <option key={t} value={t} />)}
+          <input list={datalistId} className="field text-sm" placeholder="Ex: Split, VRF, Chiller..." value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} />
+          <datalist id={datalistId}>
+            {TIPOS_EQUIP.map(t => <option key={t} value={t} />)}
           </datalist>
         </div>
         <div>
