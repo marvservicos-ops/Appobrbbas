@@ -151,8 +151,13 @@ export default function AlocacaoPage() {
   const router = useRouter()
   const { isAdmin, loading: accessLoading } = useAccess()
   const now = new Date()
+  const [view, setView] = useState<'mensal' | 'semanal'>('mensal')
   const [mes, setMes] = useState(now.getMonth())
   const [ano, setAno] = useState(now.getFullYear())
+  // semanaBase: monday of the current week shown in weekly view
+  const [semanaBase, setSemanaBase] = useState<Date>(() => {
+    const d = new Date(now); const dow = d.getDay(); d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); d.setHours(0,0,0,0); return d
+  })
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([])
   const [obras, setObras] = useState<Obra[]>([])
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([])
@@ -175,7 +180,8 @@ export default function AlocacaoPage() {
   function toggleSelectAll() {
     setSelectedFids(prev => prev.size === funcionarios.length ? new Set() : new Set(funcionarios.map(f => f.id)))
   }
-  function handleDayClick(dia: number) {
+  function handleDayClick(dia: number, d?: Date) {
+    if (d) { setMes(d.getMonth()); setAno(d.getFullYear()) }
     if (selectedFids.size > 0) setModalBulk(dia)
     else setModalDia(dia)
   }
@@ -184,11 +190,31 @@ export default function AlocacaoPage() {
     if (!accessLoading && !isAdmin) router.replace('/obras')
   }, [isAdmin, accessLoading, router])
 
+  // Derived days array — works for both views
+  const dias: Date[] = view === 'mensal'
+    ? Array.from({ length: new Date(ano, mes + 1, 0).getDate() }, (_, i) => new Date(ano, mes, i + 1))
+    : Array.from({ length: 7 }, (_, i) => { const d = new Date(semanaBase); d.setDate(d.getDate() + i); return d })
+
+  function dateKey(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}` }
+  function isWeekendD(d: Date) { const w = d.getDay(); return w === 0 || w === 6 }
+  function isHojeD(d: Date) { return dateKey(d) === dateKey(now) }
+
+  function navMes(delta: number) { const d = new Date(ano, mes + delta, 1); setMes(d.getMonth()); setAno(d.getFullYear()) }
+  function navSemana(delta: number) { const d = new Date(semanaBase); d.setDate(d.getDate() + delta * 7); setSemanaBase(d); setMes(d.getMonth()); setAno(d.getFullYear()) }
+
+  function semanaLabel() {
+    const fim = new Date(semanaBase); fim.setDate(fim.getDate() + 6)
+    const fmt = (d: Date) => `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}`
+    const mesLabel = semanaBase.getMonth() === fim.getMonth() ? MESES[semanaBase.getMonth()] : `${MESES[semanaBase.getMonth()].slice(0,3)}–${MESES[fim.getMonth()].slice(0,3)}`
+    return `${fmt(semanaBase)} – ${fmt(fim)} · ${mesLabel}`
+  }
+
   const load = useCallback(async () => {
     setLoading(true)
     const sb = createClient()
-    const inicio = toDate(ano, mes, 1)
-    const fim = toDate(ano, mes, new Date(ano, mes + 1, 0).getDate())
+    const inicio = view === 'mensal' ? toDate(ano, mes, 1) : dateKey(semanaBase)
+    const fimDate = view === 'mensal' ? new Date(ano, mes + 1, 0) : (() => { const d = new Date(semanaBase); d.setDate(d.getDate() + 6); return d })()
+    const fim = view === 'mensal' ? toDate(ano, mes, fimDate.getDate()) : dateKey(fimDate)
     const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }, { data: manuts }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo, ordem').eq('ativo', true).order('ordem', { ascending: true, nullsFirst: false }).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
@@ -222,33 +248,17 @@ export default function AlocacaoPage() {
       }))
     )
     setLoading(false)
-  }, [mes, ano])
+  }, [mes, ano, view, semanaBase])
 
   useEffect(() => { load() }, [load])
 
-  const diasNoMes = new Date(ano, mes + 1, 0).getDate()
-  const dias = Array.from({ length: diasNoMes }, (_, i) => i + 1)
-
-  // Map: "fid_dia" → Alocacao[] (múltiplas por dia)
+  // Map: "fid_YYYY-MM-DD" → Alocacao[]
   const alocMap = new Map<string, Alocacao[]>()
   alocacoes.forEach(a => {
-    const dia = parseInt(a.data.split('-')[2])
-    const key = `${a.funcionario_id}_${dia}`
+    const key = `${a.funcionario_id}_${a.data}`
     if (!alocMap.has(key)) alocMap.set(key, [])
     alocMap.get(key)!.push(a)
   })
-
-  function isWeekend(dia: number) { const d = new Date(ano, mes, dia).getDay(); return d === 0 || d === 6 }
-  function isHoje(dia: number) {
-    const h = new Date()
-    return h.getDate() === dia && h.getMonth() === mes && h.getFullYear() === ano
-  }
-
-  function navMes(delta: number) {
-    const d = new Date(ano, mes + delta, 1)
-    setMes(d.getMonth())
-    setAno(d.getFullYear())
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -267,21 +277,32 @@ export default function AlocacaoPage() {
               className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Reordenar funcionários">
               <ListOrdered size={15} className="text-[#64748B]" />
             </button>
-            <button onClick={() => exportarRelatorio(funcionarios, obras, alocacoes, mes, ano)}
-              className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Exportar relatório mensal">
-              <Download size={15} className="text-[#64748B]" />
-            </button>
+            {view === 'mensal' && (
+              <button onClick={() => exportarRelatorio(funcionarios, obras, alocacoes, mes, ano)}
+                className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Exportar relatório mensal">
+                <Download size={15} className="text-[#64748B]" />
+              </button>
+            )}
           </>
         )}
+        {/* Toggle Mensal/Semanal */}
+        <div className="flex items-center bg-[#F1F5F9] rounded-xl p-0.5 border border-[#E2E8F0]">
+          {(['mensal', 'semanal'] as const).map(v => (
+            <button key={v} onClick={() => setView(v)}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${view === v ? 'bg-white shadow text-[#0F172A]' : 'text-[#94A3B8] hover:text-[#64748B]'}`}>
+              {v === 'mensal' ? 'Mensal' : 'Semanal'}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-1 py-1">
-          <button onClick={() => navMes(-1)}
+          <button onClick={() => view === 'mensal' ? navMes(-1) : navSemana(-1)}
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
             <ChevronLeft size={15} className="text-[#64748B]" />
           </button>
-          <span className="text-sm font-semibold text-[#0F172A] px-2 min-w-[130px] text-center">
-            {MESES[mes]} {ano}
+          <span className="text-sm font-semibold text-[#0F172A] px-2 text-center" style={{ minWidth: view === 'mensal' ? 130 : 200 }}>
+            {view === 'mensal' ? `${MESES[mes]} ${ano}` : semanaLabel()}
           </span>
-          <button onClick={() => navMes(1)}
+          <button onClick={() => view === 'mensal' ? navMes(1) : navSemana(1)}
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
             <ChevronRight size={15} className="text-[#64748B]" />
           </button>
@@ -314,10 +335,10 @@ export default function AlocacaoPage() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
-          <table className="border-collapse w-full" style={{ tableLayout: 'fixed', minWidth: 168 + diasNoMes * 40 }}>
+          <table className="border-collapse w-full" style={{ tableLayout: 'fixed', minWidth: view === 'semanal' ? 168 + 7 * 120 : 168 + dias.length * 40 }}>
             <colgroup>
               <col style={{ width: 168 }} />
-              {dias.map(dia => <col key={dia} />)}
+              {dias.map(d => <col key={dateKey(d)} style={view === 'semanal' ? { width: 120 } : {}} />)}
             </colgroup>
             <thead className="sticky top-0 z-20">
               <tr>
@@ -331,23 +352,27 @@ export default function AlocacaoPage() {
                     </span>
                   </div>
                 </th>
-                {dias.map(dia => {
-                  const weekend = isWeekend(dia)
-                  const hoje = isHoje(dia)
+                {dias.map(d => {
+                  const weekend = isWeekendD(d)
+                  const hoje = isHojeD(d)
+                  const diaN = d.getDate()
+                  const dk = dateKey(d)
                   return (
-                    <th key={dia}
-                      onClick={() => handleDayClick(dia)}
-                      title={`Preencher ${dia}/${mes + 1}`}
+                    <th key={dk}
+                      onClick={() => handleDayClick(diaN, d)}
+                      title={`Preencher ${diaN}/${d.getMonth()+1}`}
                       className={`border-b-2 border-r border-[#E2E8F0] text-center cursor-pointer select-none transition-colors
                         ${weekend ? 'bg-[#F1F5F9]' : 'bg-[#F8FAFC] hover:bg-[#EEF2FF]'}
                         ${hoje ? 'border-b-[#4F7CFF]' : ''}`}
-                      style={{ padding: '5px 2px' }}>
-                      <div className={`text-xs font-bold ${hoje ? 'text-[#4F7CFF]' : weekend ? 'text-[#94A3B8]' : 'text-[#374151]'}`}>
-                        {dia}
+                      style={{ padding: view === 'semanal' ? '8px 4px' : '5px 2px' }}>
+                      <div className={`font-bold ${hoje ? 'text-[#4F7CFF]' : weekend ? 'text-[#94A3B8]' : 'text-[#374151]'} ${view === 'semanal' ? 'text-sm' : 'text-xs'}`}>
+                        {view === 'semanal' ? `${DS[d.getDay()]} ${diaN}` : diaN}
                       </div>
-                      <div className={`text-[9px] font-medium ${weekend ? 'text-[#CBD5E1]' : 'text-[#94A3B8]'}`}>
-                        {DS[new Date(ano, mes, dia).getDay()]}
-                      </div>
+                      {view === 'mensal' && (
+                        <div className={`text-[9px] font-medium ${weekend ? 'text-[#CBD5E1]' : 'text-[#94A3B8]'}`}>
+                          {DS[d.getDay()]}
+                        </div>
+                      )}
                     </th>
                   )
                 })}
@@ -371,15 +396,17 @@ export default function AlocacaoPage() {
                         </div>
                       </div>
                     </td>
-                    {dias.map(dia => {
-                      const alocArray = alocMap.get(`${f.id}_${dia}`) ?? []
-                      const weekend = isWeekend(dia)
+                    {dias.map(d => {
+                      const dk = dateKey(d)
+                      const alocArray = alocMap.get(`${f.id}_${dk}`) ?? []
+                      const weekend = isWeekendD(d)
+                      const diaN = d.getDate()
                       return (
-                        <td key={dia}
-                          onClick={() => setModalCell({ fid: f.id, dia })}
+                        <td key={dk}
+                          onClick={() => { setMes(d.getMonth()); setAno(d.getFullYear()); setModalCell({ fid: f.id, dia: diaN }) }}
                           className={`border-b border-r border-[#E2E8F0] cursor-pointer transition-colors
                             ${alocArray.length === 0 && weekend ? (zebra ? 'bg-[#F4F6F9]' : 'bg-[#F0F2F5]') : zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
-                          style={{ height: 48, padding: 3 }}>
+                          style={{ height: view === 'semanal' ? 72 : 48, padding: 3 }}>
                           {alocArray.length > 0 ? (() => {
                             const transp = alocArray[0]
                             const veicNome = transp.veiculo_nome
@@ -397,14 +424,14 @@ export default function AlocacaoPage() {
                                     const showPct = alocArray.length > 1
                                     return (
                                       <div key={aloc.id || i}
-                                        className="w-full flex items-center justify-center overflow-hidden px-0.5"
+                                        className="w-full flex items-center justify-center overflow-hidden px-1"
                                         style={{ flex: aloc.percentual, minHeight: 0, backgroundColor: cfg.bg }}>
-                                        <span className="text-[9px] font-semibold leading-tight text-center truncate w-full"
+                                        <span className={`font-semibold leading-tight text-center truncate w-full ${view === 'semanal' ? 'text-[11px]' : 'text-[9px]'}`}
                                           style={{ color: cfg.cor }}>
                                           {aloc.tipo === 'obra' && aloc.obra_nome
-                                            ? `${abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
+                                            ? `${view === 'semanal' ? aloc.obra_nome : abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
                                             : aloc.tipo === 'manutencao' && aloc.manutencao_nome
-                                            ? `${abrev(aloc.manutencao_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
+                                            ? `${view === 'semanal' ? aloc.manutencao_nome : abrev(aloc.manutencao_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
                                             : `${cfg.label}${showPct ? ` ${aloc.percentual}%` : ''}`}
                                         </span>
                                       </div>
@@ -451,7 +478,7 @@ export default function AlocacaoPage() {
           fNome={funcionarios.find(f => f.id === modalCell.fid)?.nome ?? ''}
           dia={modalCell.dia} mes={mes} ano={ano}
           obras={obras} manutencoes={manutencoes} veiculos={veiculos}
-          alocacoes={alocMap.get(`${modalCell.fid}_${modalCell.dia}`) ?? []}
+          alocacoes={alocMap.get(`${modalCell.fid}_${toDate(ano, mes, modalCell.dia)}`) ?? []}
           onClose={() => setModalCell(null)}
           onSaved={() => { setModalCell(null); load() }}
         />
@@ -516,7 +543,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
   const [rows, setRows] = useState<Record<string, DiaFuncRow>>(() => {
     const init: Record<string, DiaFuncRow> = {}
     funcionarios.forEach(f => {
-      const existing = alocMap.get(`${f.id}_${dia}`) ?? []
+      const existing = alocMap.get(`${f.id}_${toDate(ano, mes, dia)}`) ?? []
       init[f.id] = {
         alocs: existing.length > 0
           ? existing.map(a => newDiaAloc(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual, a.noturno))
