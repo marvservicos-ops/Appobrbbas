@@ -351,20 +351,23 @@ const TIPO_COLOR: Record<string, string> = {
   Outro: 'bg-[#F1F5F9] text-[#64748B]',
 }
 
-function FormEquipamento({ contratoId, grupos, grupoIdInicial, onSaved, onCancel }: {
+function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSaved, onCancel }: {
   contratoId: string; grupos: Grupo[]; grupoIdInicial?: string | null
+  equipamento?: EquipamentoComGrupo | null
   onSaved: () => void; onCancel: () => void
 }) {
   const [form, setForm] = useState({
-    nome: '', tipo: 'Split' as Equipamento['tipo'], marca: '', modelo: '',
-    capacidade_btu: '', numero_serie: '', localizacao: '', data_instalacao: '',
-    grupo_id: grupoIdInicial ?? '',
+    nome: equipamento?.nome ?? '', tipo: (equipamento?.tipo ?? 'Split') as Equipamento['tipo'],
+    marca: equipamento?.marca ?? '', modelo: equipamento?.modelo ?? '',
+    capacidade_btu: equipamento?.capacidade_btu ? String(equipamento.capacidade_btu) : '',
+    numero_serie: equipamento?.numero_serie ?? '', localizacao: equipamento?.localizacao ?? '',
+    data_instalacao: equipamento?.data_instalacao ?? '',
+    grupo_id: equipamento?.grupo_id ?? grupoIdInicial ?? '',
   })
 
   async function salvar() {
     if (!form.nome) return
-    await createClient().from('equipamentos').insert({
-      contrato_id: contratoId,
+    const payload = {
       nome: form.nome, tipo: form.tipo,
       marca: form.marca || null, modelo: form.modelo || null,
       capacidade_btu: form.capacidade_btu ? parseInt(form.capacidade_btu) : null,
@@ -372,8 +375,12 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, onSaved, onCancel
       localizacao: form.localizacao || null,
       data_instalacao: form.data_instalacao || null,
       grupo_id: form.grupo_id || null,
-      ativo: true,
-    })
+    }
+    if (equipamento) {
+      await createClient().from('equipamentos').update(payload).eq('id', equipamento.id)
+    } else {
+      await createClient().from('equipamentos').insert({ ...payload, contrato_id: contratoId, ativo: true })
+    }
     onSaved()
   }
 
@@ -420,7 +427,7 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, onSaved, onCancel
       </div>
       <div className="flex justify-end gap-2">
         <button onClick={onCancel} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-white rounded-lg">Cancelar</button>
-        <button onClick={salvar} disabled={!form.nome} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Salvar</button>
+        <button onClick={salvar} disabled={!form.nome} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">{equipamento ? 'Salvar' : 'Adicionar'}</button>
       </div>
     </div>
   )
@@ -431,6 +438,7 @@ function GrupoSection({ grupo, equipamentos, contratoId, grupos, onReload, colla
   grupos: Grupo[]; onReload: () => void; collapsed: boolean; onToggle: () => void
 }) {
   const [showForm, setShowForm] = useState(false)
+  const [editandoEquip, setEditandoEquip] = useState<EquipamentoComGrupo | null>(null)
   const [editandoNome, setEditandoNome] = useState(false)
   const [novoNome, setNovoNome] = useState(grupo?.nome ?? '')
 
@@ -539,38 +547,52 @@ function GrupoSection({ grupo, equipamentos, contratoId, grupos, onReload, colla
           ) : (
             <div className="divide-y divide-[#F1F5F9]">
               {equipamentos.map(eq => (
-                <div key={eq.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#F8FAFC] group transition-colors">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${TIPO_COLOR[eq.tipo] ?? TIPO_COLOR['Outro']}`}>
-                    {eq.tipo}
-                  </span>
-                  <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`} className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#0F172A] hover:text-[#4F7CFF] transition-colors truncate">{eq.nome}</p>
-                    <p className="text-xs text-[#94A3B8] truncate">
-                      {[eq.marca, eq.modelo, eq.capacidade_btu ? `${eq.capacidade_btu.toLocaleString()} BTU` : null].filter(Boolean).join(' · ')}
-                    </p>
-                  </Link>
-
-                  {/* Mover de grupo */}
-                  <select
-                    className="text-xs border border-[#E2E8F0] rounded-lg px-2 py-1 text-[#64748B] bg-white opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
-                    value={eq.grupo_id ?? ''}
-                    onChange={e => moverEquip(eq.id, e.target.value || null)}
-                    onClick={e => e.preventDefault()}
-                  >
-                    <option value="">Sem grupo</option>
-                    {grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
-                  </select>
-
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`}
-                      className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                      <Pencil size={13} />
+                <div key={eq.id}>
+                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-[#F8FAFC] group transition-colors">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${TIPO_COLOR[eq.tipo] ?? TIPO_COLOR['Outro']}`}>
+                      {eq.tipo}
+                    </span>
+                    <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`} className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0F172A] hover:text-[#4F7CFF] transition-colors truncate">{eq.nome}</p>
+                      <p className="text-xs text-[#94A3B8] truncate">
+                        {[eq.marca, eq.modelo, eq.capacidade_btu ? `${eq.capacidade_btu.toLocaleString()} BTU` : null].filter(Boolean).join(' · ')}
+                      </p>
                     </Link>
-                    <button onClick={() => excluirEquip(eq.id)}
-                      className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                      <Trash2 size={13} />
-                    </button>
+
+                    {/* Mover de grupo */}
+                    <select
+                      className="text-xs border border-[#E2E8F0] rounded-lg px-2 py-1 text-[#64748B] bg-white opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                      value={eq.grupo_id ?? ''}
+                      onChange={e => moverEquip(eq.id, e.target.value || null)}
+                      onClick={e => e.preventDefault()}
+                    >
+                      <option value="">Sem grupo</option>
+                      {grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
+                    </select>
+
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <button
+                        onClick={() => setEditandoEquip(editandoEquip?.id === eq.id ? null : eq)}
+                        className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => excluirEquip(eq.id)}
+                        className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
+                  {editandoEquip?.id === eq.id && (
+                    <div className="px-4 pb-4">
+                      <FormEquipamento
+                        contratoId={contratoId}
+                        grupos={grupos}
+                        equipamento={eq}
+                        onSaved={() => { setEditandoEquip(null); onReload() }}
+                        onCancel={() => setEditandoEquip(null)}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
