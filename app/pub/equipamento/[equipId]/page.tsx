@@ -13,7 +13,7 @@ function competenciaLabel(c: string) {
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 
 export default async function PubEquipamentoPage({ params }: { params: { equipId: string } }) {
-  const sb = createClient()
+  const sb = await createClient()
 
   const [{ data: equip }, { data: dados }, { data: historico }] = await Promise.all([
     sb.from('equipamentos').select('*, contrato:contratos_manutencao(empresa:empresas(razao_social, apelido))').eq('id', params.equipId).single(),
