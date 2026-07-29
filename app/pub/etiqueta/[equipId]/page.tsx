@@ -26,11 +26,8 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
           margin: 0;
         }
         html, body {
-          width: 80mm;
-          height: 50mm;
           font-family: 'Helvetica Neue', Arial, sans-serif;
           background: white;
-          overflow: hidden;
         }
         .label {
           width: 80mm;
@@ -130,13 +127,9 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
           letter-spacing: 0.3px;
         }
         @media screen {
-          html, body { background: #F1F5F9; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+          body { background: #F1F5F9; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
           .label { background: white; box-shadow: 0 4px 24px #0002; border-radius: 4px; }
           .print-btn {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
             background: #4F7CFF;
             color: white;
             border: none;
@@ -149,6 +142,8 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
           }
         }
         @media print {
+          body { background: white; display: block; margin: 0; padding: 0; }
+          .label { width: 80mm; height: 50mm; }
           .print-btn { display: none; }
         }
       `}</style>
