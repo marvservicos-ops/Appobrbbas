@@ -267,15 +267,15 @@ export default function EquipamentoPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Foto */}
-          <div className="card flex flex-col items-center justify-center gap-3 min-h-[180px]">
+          <div className="card p-0 overflow-hidden relative min-h-[220px] flex flex-col">
             {equip.foto_url ? (
-              <img src={equip.foto_url} alt={equip.nome} className="w-full h-40 object-cover rounded-lg" />
+              <img src={equip.foto_url} alt={equip.nome} className="w-full h-full object-cover flex-1" style={{ minHeight: 220 }} />
             ) : (
-              <div className="w-full h-40 bg-[#F1F5F9] rounded-lg flex items-center justify-center">
+              <div className="flex-1 bg-[#F1F5F9] flex items-center justify-center" style={{ minHeight: 220 }}>
                 <Wrench size={32} className="text-[#CBD5E1]" />
               </div>
             )}
-            <label className="flex items-center gap-1.5 text-xs text-[#4F7CFF] hover:underline cursor-pointer">
+            <label className="absolute bottom-2 right-2 flex items-center gap-1.5 text-xs text-[#4F7CFF] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow cursor-pointer hover:bg-white transition-colors">
               {uploadingFoto ? 'Enviando...' : <><Upload size={12} /> {equip.foto_url ? 'Trocar foto' : 'Adicionar foto'}</>}
               <input type="file" className="hidden" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
             </label>
