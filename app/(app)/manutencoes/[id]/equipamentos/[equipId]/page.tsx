@@ -39,12 +39,12 @@ function QrModal({ equipId }: { equipId: string }) {
             <div className="flex gap-2 w-full">
               <a href={url} target="_blank" rel="noopener noreferrer"
                 className="flex-1 text-center text-xs text-[#4F7CFF] border border-[#C7D2FE] px-3 py-2 rounded-lg hover:bg-[#EEF2FF] transition-colors">
-                Abrir página
+                Abrir ficha
               </a>
-              <button onClick={() => window.open(qrSrc, '_blank')}
-                className="flex-1 text-xs bg-[#4F7CFF] text-white px-3 py-2 rounded-lg hover:bg-[#3D68F0] transition-colors">
-                Baixar QR
-              </button>
+              <a href={`/pub/etiqueta/${equipId}`} target="_blank" rel="noopener noreferrer"
+                className="flex-1 text-center text-xs bg-[#4F7CFF] text-white px-3 py-2 rounded-lg hover:bg-[#3D68F0] transition-colors">
+                Imprimir etiqueta
+              </a>
             </div>
             <button onClick={() => setOpen(false)} className="text-xs text-[#94A3B8] hover:text-[#64748B]">Fechar</button>
           </div>
