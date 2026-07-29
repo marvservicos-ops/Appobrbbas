@@ -191,17 +191,17 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
         </div>
       </div>
 
-      <button className="print-btn" onClick={() => window.print()}>
+      <button className="print-btn" id="print-btn">
         Imprimir / Salvar PDF
       </button>
 
       <script dangerouslySetInnerHTML={{ __html: `
+        document.getElementById('print-btn').addEventListener('click', function() { window.print(); });
         window.addEventListener('load', function() {
-          // auto-print when opened directly
-          if (document.referrer === '' || new URLSearchParams(location.search).get('print') === '1') {
-            setTimeout(() => window.print(), 800)
+          if (new URLSearchParams(location.search).get('print') === '1') {
+            setTimeout(() => window.print(), 800);
           }
-        })
+        });
       `}} />
     </>
   )
