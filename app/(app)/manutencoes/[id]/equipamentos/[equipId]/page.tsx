@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check } from 'lucide-react'
+import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Equipamento, ManutencaoHistorico } from '@/lib/types'
 
@@ -12,6 +12,46 @@ function competenciaLabel(c: string) {
   const [ano, mes] = c.split('-')
   const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
   return `${meses[parseInt(mes) - 1]} / ${ano}`
+}
+
+function QrModal({ equipId }: { equipId: string }) {
+  const [open, setOpen] = useState(false)
+  const url = typeof window !== 'undefined'
+    ? `${window.location.origin}/pub/equipamento/${equipId}`
+    : ''
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(url)}`
+
+  return (
+    <>
+      <div className="flex justify-end">
+        <button onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] px-3 py-1.5 rounded-xl hover:bg-white transition-colors">
+          <QrCode size={13} /> QR Code da ficha
+        </button>
+      </div>
+
+      {open && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 flex flex-col items-center gap-4 max-w-xs w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-syne font-semibold text-[#0F172A]">QR Code da Ficha</h3>
+            <img src={qrSrc} alt="QR Code" className="w-56 h-56 rounded-xl" />
+            <p className="text-xs text-[#94A3B8] text-center">Escaneie para ver a ficha técnica e histórico deste equipamento</p>
+            <div className="flex gap-2 w-full">
+              <a href={url} target="_blank" rel="noopener noreferrer"
+                className="flex-1 text-center text-xs text-[#4F7CFF] border border-[#C7D2FE] px-3 py-2 rounded-lg hover:bg-[#EEF2FF] transition-colors">
+                Abrir página
+              </a>
+              <button onClick={() => window.open(qrSrc, '_blank')}
+                className="flex-1 text-xs bg-[#4F7CFF] text-white px-3 py-2 rounded-lg hover:bg-[#3D68F0] transition-colors">
+                Baixar QR
+              </button>
+            </div>
+            <button onClick={() => setOpen(false)} className="text-xs text-[#94A3B8] hover:text-[#64748B]">Fechar</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
 
 interface Campo { id: string; nome: string; unidade: string | null; ordem: number }
@@ -264,6 +304,8 @@ export default function EquipamentoPage() {
       </div>
 
       <main className="flex-1 p-4 md:p-6 max-w-4xl mx-auto w-full space-y-6">
+
+        <QrModal equipId={equipId} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Foto */}
