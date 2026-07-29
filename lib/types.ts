@@ -214,7 +214,7 @@ export interface RDOAssinatura { id: string; rdo_id: string; tipo: string; nome?
 // ──────────────────────────────────────────────────────
 
 // ── Manutenções ───────────────────────────────────────
-export type TipoEquipamentoAC = 'Split' | 'Cassete' | 'VRF' | 'Janela' | 'Piso-teto' | 'Outro'
+export type TipoEquipamentoAC = 'Split' | 'Cassete' | 'VRF' | 'Janela' | 'Piso-teto' | 'Outro' | string
 
 export interface ContratoManutencao {
   id: string

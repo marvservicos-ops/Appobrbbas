@@ -393,9 +393,10 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
         </div>
         <div>
           <label className="text-xs font-medium text-[#64748B] block mb-1">Tipo</label>
-          <select className="field text-sm" value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value as Equipamento['tipo'] }))}>
-            {['Split', 'Cassete', 'VRF', 'Janela', 'Piso-teto', 'Outro'].map(t => <option key={t}>{t}</option>)}
-          </select>
+          <input list="tipos-equip" className="field text-sm" placeholder="Ex: Split, VRF, Chiller..." value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} />
+          <datalist id="tipos-equip">
+            {['Split', 'Cassete', 'VRF', 'Janela', 'Piso-teto', 'Chiller', 'Fan Coil', 'Condensadora', 'Outro'].map(t => <option key={t} value={t} />)}
+          </datalist>
         </div>
         <div>
           <label className="text-xs font-medium text-[#64748B] block mb-1">Capacidade (BTU)</label>
