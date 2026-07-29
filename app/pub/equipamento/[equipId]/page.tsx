@@ -99,7 +99,7 @@ export default async function PubEquipamentoPage({ params }: { params: { equipId
                       }}>Prev. {h.preventiva_feita ? 'feita' : 'não feita'}</span>
                       {h.corretiva && (
                         <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 999, background: '#FEE2E2', color: '#DC2626' }}>
-                          Corretiva{h.corretiva_custo ? ` · ${fmt(h.corretiva_custo)}` : ''}
+                          Corretiva
                         </span>
                       )}
                     </div>
