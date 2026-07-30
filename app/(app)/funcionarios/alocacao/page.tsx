@@ -31,6 +31,7 @@ interface Alocacao {
   transporte_tipo: string | null
   percentual: number
   noturno: boolean
+  observacao: string | null
 }
 
 type TransporteTipo = 'veiculo' | 'transporte_publico' | 'casa'
@@ -219,7 +220,7 @@ export default function AlocacaoPage() {
       sb.from('funcionarios').select('id, nome, cargo, ordem').eq('ativo', true).order('ordem', { ascending: true, nullsFirst: false }).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, noturno, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)')
+        .select('id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, noturno, observacao, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)')
         .gte('data', inicio).lte('data', fim),
       sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
       sb.from('contratos_manutencao').select('id, empresa:empresas(apelido, razao_social)').eq('ativo', true).order('created_at'),
@@ -245,6 +246,7 @@ export default function AlocacaoPage() {
         transporte_tipo: a.transporte_tipo,
         percentual: a.percentual ?? 100,
         noturno: a.noturno ?? false,
+        observacao: a.observacao ?? null,
       }))
     )
     setLoading(false)
@@ -416,6 +418,7 @@ export default function AlocacaoPage() {
                               : transp.transporte_tipo === 'casa' ? 'Direto'
                               : null
                             const hasNoturno = alocArray.some(a => a.noturno)
+                            const hasObs = alocArray.some(a => a.observacao)
                             return (
                               <div className="rounded w-full h-full flex flex-col overflow-hidden">
                                 <div className="flex flex-col flex-1 overflow-hidden gap-px min-h-0">
@@ -442,6 +445,7 @@ export default function AlocacaoPage() {
                                   {hasNoturno && <span className="text-[8px] font-semibold text-[#6366F1] shrink-0">Noturno</span>}
                                   {!hasNoturno && transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{transpLabel}</span>}
                                   {hasNoturno && transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">· {transpLabel}</span>}
+                                  {hasObs && <span className="text-[8px] text-[#F59E0B] shrink-0" title="Tem observação">●</span>}
                                 </div>
                               </div>
                             )
@@ -525,6 +529,7 @@ interface DiaFuncRow {
   alocs: { _key: number; tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; percentual: number; noturno: boolean }[]
   transporte_tipo: string
   veiculo_id: string
+  observacao: string
 }
 
 let _diaKey = 0
@@ -550,6 +555,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
           : [newDiaAloc()],
         transporte_tipo: existing[0]?.transporte_tipo ?? '',
         veiculo_id: existing[0]?.veiculo_id ?? '',
+        observacao: existing[0]?.observacao ?? '',
       }
     })
     return init
@@ -607,6 +613,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
           noturno: (a.tipo === 'obra' || a.tipo === 'manutencao') ? a.noturno : false,
           transporte_tipo: row.transporte_tipo || null,
           veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
+          observacao: row.observacao || null,
         }))
         if (toInsert.length > 0) {
           await sb.from('funcionario_alocacoes').insert(toInsert)
@@ -738,6 +745,14 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                         )}
                       </div>
                     )}
+                    <textarea
+                      rows={1}
+                      placeholder="Observação (opcional)..."
+                      value={row.observacao}
+                      onChange={e => setRows(p => ({ ...p, [f.id]: { ...p[f.id], observacao: e.target.value } }))}
+                      className="field text-xs py-1.5 w-full resize-none"
+                      style={{ minHeight: 28 }}
+                    />
                   </div>
                 </div>
               </div>
@@ -793,6 +808,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
     (alocacoes[0]?.transporte_tipo as TransporteTipo) ?? ''
   )
   const [veiculoId, setVeiculoId] = useState(alocacoes[0]?.veiculo_id ?? '')
+  const [observacao, setObservacao] = useState(alocacoes[0]?.observacao ?? '')
   const [saving, setSaving] = useState(false)
 
   const totalPct = rows.reduce((s, r) => s + (r.tipo ? r.percentual : 0), 0)
@@ -824,6 +840,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
       noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
+      observacao: observacao || null,
     }))
     if (toInsert.length > 0) {
       const { error } = await sb.from('funcionario_alocacoes').insert(toInsert)
@@ -942,6 +959,18 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
               )}
             </div>
           )}
+
+          {/* Observação */}
+          <div className="border-t border-[#F1F5F9] pt-3">
+            <p className="text-xs font-medium text-[#374151] mb-1.5">Observação</p>
+            <textarea
+              rows={2}
+              placeholder="Ex: cliente cancelou, funcionário foi deslocado mas não trabalhou..."
+              value={observacao}
+              onChange={e => setObservacao(e.target.value)}
+              className="field text-sm w-full resize-none"
+            />
+          </div>
         </div>
 
         <div className="px-5 pb-5 pt-3 border-t border-[#E2E8F0] flex gap-3 shrink-0">
@@ -1053,6 +1082,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
   const [rows, setRows] = useState<AlocRow[]>([newRow()])
   const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>('')
   const [veiculoId, setVeiculoId] = useState('')
+  const [observacao, setObservacao] = useState('')
   const [saving, setSaving] = useState(false)
 
   const totalPct = rows.reduce((s, r) => s + (r.tipo ? r.percentual : 0), 0)
@@ -1081,6 +1111,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
       noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
+      observacao: observacao || null,
     }))
     let err: any = null
     await Promise.all(funcionarios.map(async f => {
@@ -1198,6 +1229,18 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
               )}
             </div>
           )}
+
+          {/* Observação */}
+          <div className="border-t border-[#F1F5F9] pt-3">
+            <p className="text-xs font-medium text-[#374151] mb-1.5">Observação</p>
+            <textarea
+              rows={2}
+              placeholder="Ex: cliente cancelou, funcionários foram deslocados mas não trabalharam..."
+              value={observacao}
+              onChange={e => setObservacao(e.target.value)}
+              className="field text-sm w-full resize-none"
+            />
+          </div>
         </div>
 
         <div className="px-5 pb-5 pt-3 border-t border-[#E2E8F0] flex gap-3 shrink-0">
