@@ -18,7 +18,7 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
   const sb = await createClient()
 
   const [{ data: ferramenta }, { data: itemAberto }, { data: defeitos }, { data: conteudoMala }] = await Promise.all([
-    sb.from('ferramentas').select('*, mala:mala_id(id, nome, codigo_interno), responsavel_atual:funcionarios(id, nome)').eq('id', params.id).single(),
+    sb.from('ferramentas').select('*, mala:mala_id(id, nome, codigo_interno, responsavel_atual:funcionarios(id, nome)), responsavel_atual:funcionarios(id, nome)').eq('id', params.id).single(),
     sb.from('ferramenta_emprestimo_itens').select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))').eq('ferramenta_id', params.id).is('data_devolucao', null).maybeSingle(),
     sb.from('ferramenta_defeitos').select('*').eq('ferramenta_id', params.id).order('data', { ascending: false }).limit(10),
     sb.from('ferramentas').select('id, nome, codigo_interno, status').eq('mala_id', params.id).order('nome'),
@@ -41,6 +41,8 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {f.eh_mala ? (
               <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#EEF2FF', color: '#4F7CFF' }}>Mala</span>
+            ) : f.mala_id && f.status === 'disponivel' ? (
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#EEF2FF', color: '#4F7CFF' }}>Na mala</span>
             ) : (
               <span style={{
                 fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
@@ -71,6 +73,9 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
           <div style={{ background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: 16, padding: '14px 20px' }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#4338CA' }}>
               Faz parte da mala {f.mala.nome}{f.mala.codigo_interno ? ` (${f.mala.codigo_interno})` : ''}
+            </p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#4338CA' }}>
+              {f.mala.responsavel_atual ? `Com ${f.mala.responsavel_atual.nome}` : 'Sem responsável definido'}
             </p>
           </div>
         )}

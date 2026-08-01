@@ -42,7 +42,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
     setLoading(true)
     const supabase = createClient()
     const [{ data: f }, { data: hist }, { data: defs }] = await Promise.all([
-      supabase.from('ferramentas').select('*, mala:mala_id(id, nome, codigo_interno), responsavel_atual:funcionarios(id, nome)').eq('id', currentId).single(),
+      supabase.from('ferramentas').select('*, mala:mala_id(id, nome, codigo_interno, responsavel_atual:funcionarios(id, nome)), responsavel_atual:funcionarios(id, nome)').eq('id', currentId).single(),
       supabase.from('ferramenta_emprestimo_itens').select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))').eq('ferramenta_id', currentId).order('created_at', { ascending: false }),
       supabase.from('ferramenta_defeitos').select('*').eq('ferramenta_id', currentId).order('data', { ascending: false }),
     ])
@@ -141,6 +141,10 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
                     ferramenta.responsavel_atual
                       ? <p className="text-sm font-medium text-[#4F7CFF]">Com {ferramenta.responsavel_atual.nome}</p>
                       : <p className="text-sm text-[#94A3B8]">Sem responsável definido</p>
+                  ) : ferramenta.mala_id && ferramenta.status === 'disponivel' ? (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#EEF2FF] text-[#4F7CFF]">
+                      {ferramenta.mala?.responsavel_atual ? `Com ${ferramenta.mala.responsavel_atual.nome} (na mala)` : 'Na mala · sem responsável'}
+                    </span>
                   ) : (
                     <>
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLOR[ferramenta.status]}`}>
@@ -223,7 +227,11 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
                         <button key={item.id} onClick={() => abrirFilho(item.id)}
                           className="w-full flex items-center justify-between text-xs bg-[#F8FAFC] hover:bg-[#F1F5F9] rounded-lg px-3 py-2 transition-colors text-left">
                           <span className="text-[#374151] font-medium">{item.nome}{item.codigo_interno ? ` · ${item.codigo_interno}` : ''}</span>
-                          <span className={`px-1.5 py-0.5 rounded-full font-semibold ${STATUS_COLOR[item.status]}`}>{STATUS_LABEL[item.status]}</span>
+                          {item.status === 'disponivel' ? (
+                            <span className="px-1.5 py-0.5 rounded-full font-semibold bg-[#EEF2FF] text-[#4F7CFF]">Na mala</span>
+                          ) : (
+                            <span className={`px-1.5 py-0.5 rounded-full font-semibold ${STATUS_COLOR[item.status]}`}>{STATUS_LABEL[item.status]}</span>
+                          )}
                         </button>
                       ))}
                     </div>
