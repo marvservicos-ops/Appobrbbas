@@ -110,10 +110,27 @@ export interface Perfil {
   cargo?: string
 }
 
+export type TipoOC = 'servico' | 'material' | 'outro'
+export type StatusOC = 'ativa' | 'concluida'
+
+export interface ObraOC {
+  id: string
+  obra_id: string
+  numero_oc: string
+  tipo: TipoOC
+  valor_total: number
+  observacoes?: string | null
+  status: StatusOC
+  created_at: string
+  updated_at: string
+}
+
 export interface ObraMedicao {
   id: string
   obra_id: string
   aditivo_id?: string | null
+  oc_id?: string | null
+  oc?: ObraOC
   ordem: number
   nome: string
   percentual: number

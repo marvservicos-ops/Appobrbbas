@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, Building2, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardList, Copy, FileText, Loader2, Pencil, Plus, ReceiptText, Save, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Building2, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardList, Copy, FileText, KeyRound, Loader2, Pencil, Plus, ReceiptText, Save, ShoppingCart, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { Obra, ObraMedicao, Empresa } from '@/lib/types'
+import type { Obra, ObraMedicao, ObraOC, TipoOC, Empresa } from '@/lib/types'
 
 type EtapaDraft = { nome: string; percentual: number; data_prevista: string }
 
@@ -114,20 +114,24 @@ function ModalEditarMedicao({ medicao, valorBase, onClose, onSaved }: {
   )
 }
 
-// ─── Modal nova medição (base ou aditivo) ─────────────────────────────────────
-function ModalNovaMedicao({ obraId, valorBase, aditivoId, aditivoNome, aditivoValor, proximaOrdem, onClose, onSaved }: {
+// ─── Modal nova medição (base, aditivo ou OC) ─────────────────────────────────
+function ModalNovaMedicao({ obraId, valorBase, aditivoId, aditivoNome, aditivoValor, ocId, ocNumero, ocValorTotal, proximaOrdem, onClose, onSaved }: {
   obraId: string; valorBase: number
   aditivoId?: string; aditivoNome?: string; aditivoValor?: number
+  ocId?: string; ocNumero?: string; ocValorTotal?: number
   proximaOrdem: number; onClose: () => void; onSaved: () => void
 }) {
   const isAditivo = !!aditivoId
-  const [nome, setNome] = useState(isAditivo ? `Medição – ${aditivoNome}` : '')
+  const isOC = !!ocId
+  const [nome, setNome] = useState(isAditivo ? `Medição – ${aditivoNome}` : isOC ? `Medição – ${ocNumero}` : '')
   const [percentual, setPercentual] = useState('')
   const [dataPrevista, setDataPrevista] = useState('')
   const [saving, setSaving] = useState(false)
 
   const valorPrevisto = isAditivo
     ? (aditivoValor ?? 0) * Number(percentual || 0) / 100
+    : isOC
+    ? (ocValorTotal ?? 0) * Number(percentual || 0) / 100
     : valorBase * Number(percentual || 0) / 100
 
   async function handleSave() {
@@ -138,6 +142,7 @@ function ModalNovaMedicao({ obraId, valorBase, aditivoId, aditivoNome, aditivoVa
     const payload = {
       obra_id: obraId,
       aditivo_id: aditivoId ?? null,
+      oc_id: ocId ?? null,
       ordem: proximaOrdem,
       nome: nome.trim(),
       percentual: Number(percentual),
@@ -159,6 +164,7 @@ function ModalNovaMedicao({ obraId, valorBase, aditivoId, aditivoNome, aditivoVa
           <div>
             <h3 className="font-syne font-semibold text-[#0F172A]">Nova Medição</h3>
             {isAditivo && <p className="text-xs text-amber-600 mt-0.5">Aditivo: {aditivoNome} · {moeda(aditivoValor ?? 0)}</p>}
+            {isOC && <p className="text-xs text-[#4F7CFF] mt-0.5">OC: {ocNumero} · {moeda(ocValorTotal ?? 0)}</p>}
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]"><X size={15} className="text-[#64748B]" /></button>
         </div>
@@ -251,6 +257,187 @@ function ModalAditivo({ obraId, aditivo, onClose, onSaved }: {
   )
 }
 
+// ─── Modal OC (Ordem de Compra) ───────────────────────────────────────────────
+const TIPOS_OC: { id: TipoOC; label: string }[] = [
+  { id: 'servico', label: 'Serviço' },
+  { id: 'material', label: 'Material' },
+  { id: 'outro', label: 'Outro' },
+]
+
+function ModalOC({ obraId, oc, onClose, onSaved }: {
+  obraId: string; oc?: ObraOC; onClose: () => void; onSaved: () => void
+}) {
+  const editing = !!oc
+  const [numeroOc, setNumeroOc] = useState(oc?.numero_oc ?? '')
+  const [tipo, setTipo] = useState<TipoOC>(oc?.tipo ?? 'servico')
+  const [valorTotal, setValorTotal] = useState(oc ? String(oc.valor_total) : '')
+  const [observacoes, setObservacoes] = useState(oc?.observacoes ?? '')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!numeroOc.trim() || !valorTotal) return
+    setSaving(true)
+    const payload = { obra_id: obraId, numero_oc: numeroOc.trim(), tipo, valor_total: Number(valorTotal), observacoes: observacoes.trim() || null }
+    const { error } = editing
+      ? await createClient().from('obra_ocs').update(payload).eq('id', oc!.id)
+      : await createClient().from('obra_ocs').insert(payload)
+    setSaving(false)
+    if (error) { alert(error.message); return }
+    onSaved(); onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[440px]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <h3 className="font-syne font-semibold text-[#0F172A]">{editing ? 'Editar' : 'Nova'} Ordem de Compra</h3>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]"><X size={15} className="text-[#64748B]" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Número da OC *</label>
+            <input className="field" placeholder="Ex: OCGCP10677680" value={numeroOc} onChange={e => setNumeroOc(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Tipo</label>
+              <select className="field" value={tipo} onChange={e => setTipo(e.target.value as TipoOC)}>
+                {TIPOS_OC.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor total (R$) *</label>
+              <input type="number" step="0.01" min="0" className="field" placeholder="0,00" value={valorTotal} onChange={e => setValorTotal(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Observações</label>
+            <textarea className="field resize-none" rows={2} placeholder="Detalhes da OC..." value={observacoes} onChange={e => setObservacoes(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 px-5 pb-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
+          <button onClick={handleSave} disabled={saving || !numeroOc.trim() || !valorTotal} className="btn-primary text-sm disabled:opacity-50">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal Gerar Acesso do Cliente ────────────────────────────────────────────
+function ModalAcessoCliente({ obraId, obraTitulo, emailDestino, onClose }: {
+  obraId: string; obraTitulo: string; emailDestino?: string | null; onClose: () => void
+}) {
+  const [gerando, setGerando] = useState(false)
+  const [erro, setErro] = useState('')
+  const [acesso, setAcesso] = useState<{ token: string; pin: string } | null>(null)
+  const [copiedLink, setCopiedLink] = useState(false)
+  const [copiedPin, setCopiedPin] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+
+  const link = acesso ? `${window.location.origin}/portal/${acesso.token}` : ''
+
+  async function gerar() {
+    setGerando(true); setErro('')
+    try {
+      const res = await fetch('/api/portal/gerar-acesso', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ obraId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao gerar acesso')
+      setAcesso({ token: data.token, pin: data.pin })
+    } catch (e: any) {
+      setErro(e.message || 'Erro ao gerar acesso')
+    }
+    setGerando(false)
+  }
+
+  async function enviarEmail() {
+    if (!emailDestino || !acesso) return
+    setEnviando(true)
+    const body = `
+      <p>Olá,</p>
+      <p>Segue o acesso ao portal de acompanhamento das medições da obra <strong>${obraTitulo}</strong>:</p>
+      <p><strong>Link:</strong> <a href="${link}">${link}</a><br/>
+      <strong>PIN de acesso:</strong> ${acesso.pin}</p>
+      <p>Atenciosamente,<br/>MARV Serviços</p>
+    `
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: emailDestino, subject: `Acesso ao portal — ${obraTitulo}`, body }),
+      })
+      if (res.ok) setEnviado(true)
+    } catch {}
+    setEnviando(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[440px]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <h3 className="font-syne font-semibold text-[#0F172A]">Acesso do Cliente</h3>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]"><X size={15} className="text-[#64748B]" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          {!acesso ? (
+            <>
+              <p className="text-sm text-[#64748B]">
+                Gera um link permanente + PIN para o cliente acompanhar as OCs e medições desta obra, sem precisar de e-mail toda vez.
+                Gerar um novo acesso <strong>invalida o link anterior</strong>.
+              </p>
+              {erro && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{erro}</p>}
+              <button onClick={gerar} disabled={gerando} className="btn-primary w-full justify-center">
+                {gerando ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />} Gerar acesso
+              </button>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-[#64748B] mb-1">Link do portal</label>
+                <div className="flex gap-2">
+                  <input readOnly className="field flex-1 text-xs" value={link} />
+                  <button onClick={() => { navigator.clipboard.writeText(link); setCopiedLink(true); setTimeout(() => setCopiedLink(false), 1500) }}
+                    className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]">
+                    <Copy size={15} />
+                  </button>
+                </div>
+                {copiedLink && <p className="text-xs text-emerald-600 mt-1">Link copiado!</p>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#64748B] mb-1">PIN de acesso</label>
+                <div className="flex gap-2">
+                  <input readOnly className="field flex-1 font-mono text-lg tracking-widest" value={acesso.pin} />
+                  <button onClick={() => { navigator.clipboard.writeText(acesso.pin); setCopiedPin(true); setTimeout(() => setCopiedPin(false), 1500) }}
+                    className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]">
+                    <Copy size={15} />
+                  </button>
+                </div>
+                {copiedPin && <p className="text-xs text-emerald-600 mt-1">PIN copiado!</p>}
+              </div>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                Esse PIN não fica salvo em texto no sistema — anote agora, ele não pode ser recuperado depois (só regerado).
+              </p>
+              {emailDestino && (
+                <button onClick={enviarEmail} disabled={enviando || enviado} className="btn-secondary w-full justify-center">
+                  {enviando ? <Loader2 size={14} className="animate-spin" /> : null}
+                  {enviado ? 'Enviado!' : `Enviar por e-mail (${emailDestino})`}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Card de medição ──────────────────────────────────────────────────────────
 function CardMedicao({ m, isAditivo, aditivoNome, uploading, onEditar, onExcluir, onAtualizar, onAnexarNF, onAbrirNF, onRemoverNF, onEmitirNF }: {
   m: ObraMedicao; isAditivo: boolean; aditivoNome?: string; uploading: string | null
@@ -337,6 +524,13 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   const [obra, setObra] = useState<Obra | null>(null)
   const [medicoes, setMedicoes] = useState<ObraMedicao[]>([])
   const [aditivos, setAditivos] = useState<ObraAditivo[]>([])
+  const [ocs, setOcs] = useState<ObraOC[]>([])
+  const [showModalOC, setShowModalOC] = useState(false)
+  const [editandoOC, setEditandoOC] = useState<ObraOC | null>(null)
+  // Nova medição vinculada a OC: null = fechado, ObraOC = vinculada à OC
+  const [novaMedicaoOC, setNovaMedicaoOC] = useState<ObraOC | null>(null)
+  const [showNovaMedicaoOC, setShowNovaMedicaoOC] = useState(false)
+  const [showAcessoCliente, setShowAcessoCliente] = useState(false)
   const [valorContrato, setValorContrato] = useState(0)
   const [contratoInput, setContratoInput] = useState('')
   const [drafts, setDrafts] = useState<EtapaDraft[]>([
@@ -362,11 +556,12 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
 
   async function load() {
     const supabase = createClient()
-    const [{ data: obraData }, { data: medicaoData }, { data: financeiro }, { data: aditivoData }, { data: matData }, { data: notasData }] = await Promise.all([
+    const [{ data: obraData }, { data: medicaoData }, { data: financeiro }, { data: aditivoData }, { data: ocData }, { data: matData }, { data: notasData }] = await Promise.all([
       supabase.from('obras').select('*, tomador:tomador_empresa_id(*)').eq('id', obraId).single(),
       supabase.from('obra_medicoes').select('*').eq('obra_id', obraId).order('ordem'),
       supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
       supabase.from('obra_aditivos').select('*').eq('obra_id', obraId).order('created_at'),
+      supabase.from('obra_ocs').select('*').eq('obra_id', obraId).order('created_at'),
       supabase.from('obra_materiais').select('valor_venda_total').eq('obra_id', obraId).eq('tipo_compra', 'interna'),
       supabase.from('obra_notas_material').select('*').eq('obra_id', obraId).order('data_emissao', { ascending: false }),
     ])
@@ -374,6 +569,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     if ((obraData as any)?.tomador) setTomador((obraData as any).tomador as Empresa)
     setMedicoes((medicaoData ?? []) as ObraMedicao[])
     setAditivos((aditivoData ?? []) as ObraAditivo[])
+    setOcs((ocData ?? []) as ObraOC[])
     const vc = Number(financeiro?.valor_contrato || 0)
     setValorContrato(vc)
     setContratoInput(vc > 0 ? String(vc) : '')
@@ -397,8 +593,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
 
   const resumo = useMemo(() => {
     const ativas = medicoes.filter(x => x.status !== 'cancelada')
-    // Medições BASE (sem aditivo) — são as únicas que devem somar 100%
-    const ativasBase = ativas.filter(x => !x.aditivo_id)
+    // Medições BASE (sem aditivo nem OC) — são as únicas que devem somar 100%
+    const ativasBase = ativas.filter(x => !x.aditivo_id && !x.oc_id)
     const faturado = ativas.reduce((s, x) => s + Number(x.valor_faturado || 0), 0)
     const recebido = ativas.reduce((s, x) => s + Number(x.valor_recebido || 0), 0)
     const percentualFaturado = ativas.filter(x => x.status === 'faturada' || x.status === 'recebida').reduce((s, x) => s + Number(x.percentual), 0)
@@ -418,8 +614,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     const supabase = createClient()
     const { error: contractError } = await supabase.from('obra_financeiro').upsert({ obra_id: obraId, valor_contrato: novoValor, updated_at: new Date().toISOString() })
     if (contractError) { setError(contractError.message); setSaving(false); return }
-    // Só recalcula medições BASE (sem aditivo_id) — aditivos têm seu próprio valor
-    const medicoesBase = medicoes.filter(m => !m.aditivo_id)
+    // Só recalcula medições BASE (sem aditivo_id nem oc_id) — aditivos e OCs têm seu próprio valor
+    const medicoesBase = medicoes.filter(m => !m.aditivo_id && !m.oc_id)
     if (medicoesBase.length > 0) {
       await Promise.all(medicoesBase.map(m => {
         if (m.status === 'planejada') {
@@ -472,6 +668,14 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     setMedicoes(list => list.filter(x => x.aditivo_id !== a.id))
   }
 
+  async function excluirOC(oc: ObraOC) {
+    if (!confirm(`Excluir a OC "${oc.numero_oc}"? As medições vinculadas também serão excluídas.`)) return
+    const { error } = await createClient().from('obra_ocs').delete().eq('id', oc.id)
+    if (error) { alert(error.message); return }
+    setOcs(list => list.filter(x => x.id !== oc.id))
+    setMedicoes(list => list.filter(x => x.oc_id !== oc.id))
+  }
+
   async function anexarNF(m: ObraMedicao, file: File) {
     setUploading(m.id)
     const supabase = createClient()
@@ -508,23 +712,99 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     { label: 'Saldo a faturar', value: resumo.saldo, icon: CalendarDays, tone: 'bg-amber-50 text-amber-700' },
   ]
 
-  // Separar medições normais e de aditivo
+  // Separar medições normais, de aditivo e de OC
   const medicoesPorAditivo = (aditivoId: string) => medicoes.filter(m => m.aditivo_id === aditivoId)
-  const medicoesBase = medicoes.filter(m => !m.aditivo_id)
+  const medicoesPorOC = (ocId: string) => medicoes.filter(m => m.oc_id === ocId)
+  const medicoesBase = medicoes.filter(m => !m.aditivo_id && !m.oc_id)
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
       <Link href={`/obras/${obraId}`} className="inline-flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F172A] min-h-11">
         <ArrowLeft size={16} /> Voltar para a obra
       </Link>
-      <div className="mt-2 mb-6">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#4F7CFF]">Financeiro da obra</p>
-        <h1 className="font-syne text-xl md:text-3xl font-bold text-[#0F172A] mt-1">Plano de medições</h1>
-        <p className="text-sm text-[#64748B] mt-1 line-clamp-2">{obra.titulo}</p>
+      <div className="mt-2 mb-6 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#4F7CFF]">Financeiro da obra</p>
+          <h1 className="font-syne text-xl md:text-3xl font-bold text-[#0F172A] mt-1">Plano de medições</h1>
+          <p className="text-sm text-[#64748B] mt-1 line-clamp-2">{obra.titulo}</p>
+        </div>
+        <button onClick={() => setShowAcessoCliente(true)} className="btn-secondary text-xs px-3 py-2 shrink-0">
+          <KeyRound size={14} /> Gerar acesso do cliente
+        </button>
       </div>
 
-      {/* Valor do contrato */}
+      {/* Ordens de Compra (OCs) */}
+      <section className="card mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A] text-sm">Ordens de Compra (OCs)</h2>
+            <p className="text-xs text-[#64748B] mt-0.5">Cada OC tem seu próprio valor e sua própria sequência de medições.</p>
+          </div>
+          <button onClick={() => { setEditandoOC(null); setShowModalOC(true) }} className="btn-secondary text-xs px-3 py-1.5 shrink-0">
+            <Plus size={13} /> Nova OC
+          </button>
+        </div>
+
+        {ocs.length === 0 ? (
+          <p className="text-sm text-[#94A3B8] text-center py-3">Nenhuma OC cadastrada ainda</p>
+        ) : (
+          <div className="space-y-3">
+            {ocs.map(oc => {
+              const medicoesDaOC = medicoesPorOC(oc.id)
+              const faturadoOC = medicoesDaOC.filter(m => m.status !== 'cancelada').reduce((s, m) => s + Number(m.valor_faturado || 0), 0)
+              const saldoOC = Math.max(0, Number(oc.valor_total) - faturadoOC)
+              return (
+                <div key={oc.id} className="border border-[#C7D2FE] bg-[#EEF2FF]/40 rounded-xl p-3">
+                  <div className="flex items-start justify-between gap-3 group">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <ShoppingCart size={13} className="text-[#4F7CFF] shrink-0" />
+                        <p className="font-semibold text-[#0F172A] text-sm">{oc.numero_oc}</p>
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-white text-[#4F7CFF] border border-[#C7D2FE]">{TIPOS_OC.find(t => t.id === oc.tipo)?.label}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 flex-wrap text-xs">
+                        <span className="font-bold text-[#4F7CFF]">{moeda(Number(oc.valor_total))}</span>
+                        <span className="text-[#64748B]">Faturado: {moeda(faturadoOC)}</span>
+                        <span className="text-emerald-700 font-medium">Saldo: {moeda(saldoOC)}</span>
+                      </div>
+                      {oc.observacoes && <p className="text-xs text-[#64748B] mt-1">{oc.observacoes}</p>}
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => { setEditandoOC(oc); setShowModalOC(true) }} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#DBEAFE] text-[#4F7CFF]"><Pencil size={13} /></button>
+                      <button onClick={() => excluirOC(oc)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+
+                  {medicoesDaOC.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {medicoesDaOC.map(m => (
+                        <div key={m.id} className="bg-white border border-[#C7D2FE] rounded-lg p-2.5 flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-medium text-[#0F172A]">{m.nome}</p>
+                            <p className="text-xs text-[#64748B]">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · <span className={`font-semibold ${STATUS[m.status].cls.split(' ')[1]}`}>{STATUS[m.status].label}</span></p>
+                          </div>
+                          <button onClick={() => setEditandoMedicao(m)} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#4F7CFF]"><Pencil size={12} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => { setNovaMedicaoOC(oc); setShowNovaMedicaoOC(true) }}
+                    className="mt-2.5 w-full flex items-center justify-center gap-1.5 text-xs font-medium text-[#4F7CFF] hover:bg-[#DBEAFE] py-1.5 rounded-lg transition-colors border border-dashed border-[#C7D2FE]"
+                  >
+                    <Plus size={13} /> Adicionar medição a esta OC
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Valor do contrato (legado) */}
       <section className="card mb-4">
+        <p className="text-xs text-[#94A3B8] mb-2">Modelo antigo, mantido por compatibilidade — para obras novas, prefira cadastrar OCs acima.</p>
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <label className="text-sm font-medium text-[#374151] flex-1">
             Valor base do contrato
@@ -785,6 +1065,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
           medicao={editandoMedicao}
           valorBase={editandoMedicao.aditivo_id
             ? (aditivos.find(a => a.id === editandoMedicao.aditivo_id)?.valor ?? 0)
+            : editandoMedicao.oc_id
+            ? (ocs.find(o => o.id === editandoMedicao.oc_id)?.valor_total ?? 0)
             : valorContrato}
           onClose={() => setEditandoMedicao(null)}
           onSaved={changes => { setMedicoes(list => list.map(x => x.id === editandoMedicao.id ? { ...x, ...changes } : x)); setEditandoMedicao(null) }}
@@ -818,6 +1100,34 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
           proximaOrdem={proximaOrdem}
           onClose={() => setShowModalNota(false)}
           onSaved={() => { setShowModalNota(false); load() }}
+        />
+      )}
+      {showModalOC && (
+        <ModalOC
+          obraId={obraId}
+          oc={editandoOC ?? undefined}
+          onClose={() => { setShowModalOC(false); setEditandoOC(null) }}
+          onSaved={() => load()}
+        />
+      )}
+      {showNovaMedicaoOC && novaMedicaoOC && (
+        <ModalNovaMedicao
+          obraId={obraId}
+          valorBase={0}
+          ocId={novaMedicaoOC.id}
+          ocNumero={novaMedicaoOC.numero_oc}
+          ocValorTotal={Number(novaMedicaoOC.valor_total)}
+          proximaOrdem={proximaOrdem}
+          onClose={() => { setShowNovaMedicaoOC(false); setNovaMedicaoOC(null) }}
+          onSaved={() => load()}
+        />
+      )}
+      {showAcessoCliente && (
+        <ModalAcessoCliente
+          obraId={obraId}
+          obraTitulo={obra.titulo}
+          emailDestino={obra.gestor?.email || obra.comprador?.email}
+          onClose={() => setShowAcessoCliente(false)}
         />
       )}
     </div>

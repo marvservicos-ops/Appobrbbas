@@ -22,6 +22,7 @@
     "@types/pdf-parse": "^1.1.5",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.22.0",
+    "bcryptjs": "^2.4.3",
     "lucide-react": "^1.17.0",
     "next": "14.2.35",
     "pdf-parse": "^2.4.5",
@@ -31,6 +32,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
