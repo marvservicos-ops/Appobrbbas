@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2 } from 'lucide-react'
+import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
 import ModalDefeito from './ModalDefeito'
+import ModalEditarFerramenta from './ModalEditarFerramenta'
 
 const STATUS_LABEL: Record<string, string> = {
   disponivel: 'Disponível', emprestada: 'Emprestada', em_manutencao: 'Em manutenção', baixada: 'Baixada',
@@ -27,6 +28,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
   const [showQr, setShowQr] = useState(false)
   const [showDevolver, setShowDevolver] = useState(false)
   const [showDefeito, setShowDefeito] = useState(false)
+  const [showEditar, setShowEditar] = useState(false)
   const [processando, setProcessando] = useState(false)
 
   async function load() {
@@ -82,7 +84,12 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
         ) : (
           <>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
-              <h2 className="font-syne font-semibold text-[#0F172A]">{ferramenta.nome}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-syne font-semibold text-[#0F172A]">{ferramenta.nome}</h2>
+                <button onClick={() => setShowEditar(true)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors" title="Editar ferramenta">
+                  <Pencil size={14} />
+                </button>
+              </div>
               <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
             </div>
 
@@ -207,6 +214,9 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
       )}
       {showDefeito && ferramenta && (
         <ModalDefeito ferramentaId={ferramenta.id} onClose={() => setShowDefeito(false)} onSaved={() => { setShowDefeito(false); load(); onChanged() }} />
+      )}
+      {showEditar && ferramenta && (
+        <ModalEditarFerramenta ferramenta={ferramenta} onClose={() => setShowEditar(false)} onSaved={() => { setShowEditar(false); load(); onChanged() }} />
       )}
     </div>
   )
