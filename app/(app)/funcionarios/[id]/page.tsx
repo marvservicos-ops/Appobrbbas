@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2, Wrench } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 import GestaoPJPanel from '@/components/GestaoPJPanel'
 
@@ -55,6 +55,14 @@ interface RegistroItem {
   ca_valor: string | null
 }
 
+interface FerramentaItem {
+  id: string
+  data_emprestimo: string
+  data_devolucao: string | null
+  ferramenta_nome: string
+  codigo_interno: string | null
+}
+
 function calculos(f: Funcionario) {
   const salario = f.salario_bruto ?? 0
   const dias = f.dias_mes ?? 30
@@ -90,6 +98,7 @@ export default function CentralFuncionarioPage() {
   const { isAdmin, loading: accessLoading } = useAccess()
   const [funcionario, setFuncionario] = useState<Funcionario | null>(null)
   const [registros, setRegistros] = useState<RegistroItem[]>([])
+  const [ferramentas, setFerramentas] = useState<FerramentaItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filtroEstoque, setFiltroEstoque] = useState('')
   const [showEdit, setShowEdit] = useState(false)
@@ -101,7 +110,7 @@ export default function CentralFuncionarioPage() {
 
   async function load() {
     const supabase = createClient()
-    const [{ data: func }, { data: regs }] = await Promise.all([
+    const [{ data: func }, { data: regs }, { data: emprestimos }] = await Promise.all([
       supabase.from('funcionarios').select('*').eq('id', id).single(),
       supabase.from('estoque_registros')
         .select(`
@@ -112,9 +121,24 @@ export default function CentralFuncionarioPage() {
         .eq('funcionario_id', id)
         .eq('tipo', 'saida')
         .order('data', { ascending: false }),
+      supabase.from('ferramenta_emprestimos')
+        .select('data_emprestimo, itens:ferramenta_emprestimo_itens(id, data_devolucao, ferramenta:ferramentas(nome, codigo_interno))')
+        .eq('funcionario_id', id)
+        .order('data_emprestimo', { ascending: false }),
     ])
 
     setFuncionario(func)
+
+    const ferrItems: FerramentaItem[] = (emprestimos ?? []).flatMap((emp: any) =>
+      (emp.itens ?? []).map((it: any) => ({
+        id: it.id,
+        data_emprestimo: emp.data_emprestimo,
+        data_devolucao: it.data_devolucao,
+        ferramenta_nome: it.ferramenta?.nome ?? '—',
+        codigo_interno: it.ferramenta?.codigo_interno ?? null,
+      }))
+    )
+    setFerramentas(ferrItems)
 
     const items: RegistroItem[] = (regs ?? []).map((r: any) => {
       const caValor = r.valores?.find((v: any) => {
@@ -432,6 +456,51 @@ export default function CentralFuncionarioPage() {
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-[#374151] text-right whitespace-nowrap">
                       {r.quantidade} {r.unidade}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Ferramentas */}
+        <div className="mt-8 mb-3">
+          <h2 className="font-syne font-semibold text-[#0F172A]">Ferramentas</h2>
+        </div>
+        {ferramentas.length === 0 ? (
+          <div className="card flex flex-col items-center justify-center py-14 text-center">
+            <Wrench size={28} className="text-[#CBD5E1] mb-3" />
+            <p className="text-sm font-medium text-[#374151]">Nenhuma ferramenta registrada</p>
+            <p className="text-xs text-[#94A3B8] mt-1">Empréstimos de ferramentas para este funcionário aparecerão aqui.</p>
+          </div>
+        ) : (
+          <div className="card p-0 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Ferramenta</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Código</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Retirada</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Devolução</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ferramentas.map(f => (
+                  <tr key={f.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
+                    <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{f.ferramenta_nome}</td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      {f.codigo_interno
+                        ? <span className="text-xs font-mono bg-[#F1F5F9] px-2 py-0.5 rounded">{f.codigo_interno}</span>
+                        : <span className="text-xs text-[#CBD5E1]">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-[#64748B] whitespace-nowrap">{fmtData(f.data_emprestimo)}</td>
+                    <td className="px-4 py-3 text-sm text-[#64748B] whitespace-nowrap">{f.data_devolucao ? fmtData(f.data_devolucao) : '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${f.data_devolucao ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                        {f.data_devolucao ? 'Devolvida' : 'Em posse'}
+                      </span>
                     </td>
                   </tr>
                 ))}
