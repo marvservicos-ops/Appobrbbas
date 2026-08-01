@@ -1,31 +1,33 @@
 # Manual do Sistema — MARV Gestão
 
-Sistema de gestão de obras, estoque, funcionários, manutenções e financeiro, construído em Next.js 14 (App Router) + Supabase.
+Sistema de gestão de obras, estoque, ferramentas, funcionários, manutenções e financeiro, construído em Next.js 14 (App Router) + Supabase.
 
-> Este manual foi gerado a partir de uma revisão do código-fonte em 2026-07-31. Ele documenta o que o sistema faz e como está estruturado — não substitui uma auditoria de segurança nem o schema definitivo do banco (algumas tabelas foram criadas fora dos arquivos `.sql` versionados no repositório; veja seção 12).
+> Este manual foi gerado a partir de uma revisão do código-fonte, última atualização em 2026-08-01. Ele documenta o que o sistema faz e como está estruturado — não substitui uma auditoria de segurança nem o schema definitivo do banco (algumas tabelas foram criadas fora dos arquivos `.sql` versionados no repositório; veja seção 14).
 
 ## Sumário
 1. [Visão geral e autenticação](#1-visão-geral-e-autenticação)
 2. [Dashboard](#2-dashboard)
 3. [Obras](#3-obras)
 4. [Estoque](#4-estoque)
-5. [Funcionários](#5-funcionários)
-6. [Financeiro](#6-financeiro)
-7. [Manutenções](#7-manutenções)
-8. [Clientes, Documentos, Notas, Relatórios, Administrativo, Configurações, Perfil](#8-outras-páginas)
-9. [Admin e permissões](#9-admin-e-permissões)
-10. [APIs internas](#10-apis-internas)
-11. [Páginas públicas e impressão](#11-páginas-públicas-e-impressão)
-12. [Camada de dados e schema](#12-camada-de-dados-e-schema)
-13. [Componentes reutilizáveis](#13-componentes-reutilizáveis)
-14. [Observações e pontos de atenção](#14-observações-e-pontos-de-atenção)
+5. [Ferramentas (patrimônio)](#5-ferramentas-patrimônio)
+6. [Funcionários](#6-funcionários)
+7. [Financeiro e OCs](#7-financeiro-e-ocs)
+8. [Manutenções](#8-manutenções)
+9. [Outras páginas](#9-outras-páginas)
+10. [Admin e permissões](#10-admin-e-permissões)
+11. [APIs internas](#11-apis-internas)
+12. [Portal do Cliente](#12-portal-do-cliente)
+13. [Páginas públicas e impressão](#13-páginas-públicas-e-impressão)
+14. [Camada de dados e schema](#14-camada-de-dados-e-schema)
+15. [Componentes reutilizáveis](#15-componentes-reutilizáveis)
+16. [Observações e pontos de atenção](#16-observações-e-pontos-de-atenção)
 
 ---
 
 ## 1. Visão geral e autenticação
 
 - **Login** (`/login`): e-mail/senha via Supabase Auth. Fluxo de "esqueci a senha" (envio de link) e redefinição via link de recuperação.
-- **Middleware** (`middleware.ts`): protege todas as rotas exceto assets estáticos, `/login`, `/auth` e `/pub/*`. Sem sessão → redireciona para `/login`. Com sessão, ao acessar `/login` → redireciona para `/dashboard`.
+- **Middleware** (`middleware.ts`): protege todas as rotas exceto assets estáticos, `/login`, `/auth`, `/pub/*`, `/portal/*` e `/api/portal/*`. Sem sessão → redireciona para `/login`. Com sessão, ao acessar `/login` → redireciona para `/dashboard`.
 - **`/` (raiz)** redireciona para `/dashboard`.
 - **Layout autenticado** (`app/(app)/layout.tsx`): menu lateral (`Sidebar`) + conteúdo + widget flutuante de notas (`NotasFlutuante`).
 - **Perfis de acesso** (`app_profiles`): `role` = `admin` ou `usuario`; `permissions` (array) — hoje só existe a permissão `financeiro`; `active` (bloqueio de acesso).
@@ -48,16 +50,17 @@ Tela inicial (`/dashboard`), somente leitura:
 Cards de obra com busca e filtro por status (Em orçamento / Aprovada / Em andamento / Concluída). Botão **Nova Obra** (modal `ModalNovaObra`, também usado para editar via menu "⋮" no card).
 
 ### Detalhe da obra (`/obras/[id]`)
-Tela central do sistema (arquivo com ~3900 linhas). Abas:
+Tela central do sistema (arquivo com ~4000 linhas). Abas:
 
 - **Visão Geral**: dados do projeto (tipo de serviço, engenheiro responsável, nº contrato, datas, endereço), campo de status inline (`Em Orçamento → Aprovada → Em Andamento → Concluída`), card de tempo decorrido/restante com alerta de prazo vencido, dados de Gestor/Comprador e Tomador da NF (empresa), ações rápidas.
 - **Relatórios (RDO)**: lista de Relatórios Diários de Obra. Botão "Criar novo RDO" gera o registro com 2 períodos de clima padrão (manhã/tarde) e abre `/obras/[id]/rdo/[rdoId]`.
-- **Materiais**: CRUD de materiais da obra — origem (compra interna/do cliente), fornecedor, comprador, datas de compra/chegada prevista/real, quantidade, valores unitário/total, preço de venda, nº OC, status (`pendente → orçado → comprado → em_trânsito → recebido → instalado`), anexo de nota fiscal.
+- **Materiais**: CRUD de materiais da obra — origem (compra interna/do cliente), fornecedor, comprador, datas de compra/chegada prevista/real, quantidade, valores unitário/total, preço de venda, **Ordem de Compra (OC)** vinculada, status (`pendente → orçado → comprado → em_trânsito → recebido → instalado`), anexo de nota fiscal.
+  - **Nº da OC**: em vez de digitar texto livre, o campo agora é um seletor (`SeletorOC`) — escolhe uma `obra_oc` já existente da obra ou cria uma nova ali mesmo (número, tipo serviço/material/outro, valor total). Isso é o que faz um material aparecer corretamente agrupado na OC certa dentro do Financeiro e no Portal do Cliente (ver seções 7 e 12).
   - **Importação de NF em PDF**: extração automática via parsing client-side (regex de DANFE) ou via API (`POST /api/parse-nfe`, usa IA Gemini) — sempre com tela de revisão antes de gravar.
 - **Equipe** (só admin): aloca funcionários à obra, com dias trabalhados e custo diário/extra.
 - **Documentos**: pastas hierárquicas (com subpastas), upload de arquivos para o Supabase Storage, exclusão remove também do storage.
 - **Cronograma**: etapas com responsável, datas, % de progresso, status e cor; importação via Excel; exclusão individual ou em lote.
-- **Financeiro** (link externo, `/obras/[id]/financeiro`): ver seção 6.
+- **Financeiro** (link externo, `/obras/[id]/financeiro`): ver seção 7.
 - Botão **Enviar Email** (admin): usa os Modelos de Email cadastrados em Configurações, resolve variáveis (`{{nome_obra}}`, `{{nome_gestor}}`, etc.) e envia via `POST /api/send-email`.
 
 ### Modelos de RDO (`/obras/[id]/modelos`)
@@ -83,7 +86,7 @@ Apenas redireciona para `/obras/[id]/financeiro`.
 > **Atenção**: o sistema tem **dois módulos de estoque paralelos**. O atual (v2), acessado por `/estoque`, é o usado no dia a dia. Há também um módulo mais antigo (`/estoque/itens` e `/estoque/movimentacao`) que ainda funciona mas não deve ser o fluxo principal — vale decidir se será descontinuado.
 
 ### Módulo atual — `/estoque`
-- **Lista de estoques**: cada "estoque" é uma categoria (ex.: EPI, Limpeza, Uniformes) com ícone e cor próprios. Botão **Novo Estoque**.
+- **Lista de estoques**: cada "estoque" é uma categoria (ex.: EPI, Limpeza, Uniformes, Ferramentas) com ícone e cor próprios. Botão **Novo Estoque**.
 - **Detalhe do estoque** (`/estoque/[estoqueId]`), abas:
   - **Registros**: entradas/saídas com filtros de tipo e data, seleção em lote, campos customizados por estoque, assinatura em imagem, botão **Devolução** (em saídas) que cria uma entrada de retorno e recalcula o custo médio ponderado (CMP).
   - **Produtos**: nome, código/nº CA, código de barras (com leitor via câmera), unidade, quantidade atual/mínima, preço unitário (CMP), foto; exclusão é soft-delete; alertas visuais de "Crítico" e "Negativo"; ajustes manuais de quantidade geram log de auditoria.
@@ -93,6 +96,7 @@ Apenas redireciona para `/obras/[id]/financeiro`.
   - **Saída**: seleciona produto, valida saldo, campos customizados, responsável, assinatura; destino varia por tipo de estoque (EPI/Uniforme → funcionário; Limpeza → obra/funcionário/uso interno; outros → obra obrigatória).
   - **Entrada**: três fluxos — Lançar NF manual (multi-item), Importar NF em PDF (via IA), ou Novo Registro simples (item único).
   - Toda entrada recalcula o CMP: `(qtd_atual×cmp_atual + qtd_nova×preço_novo) / qtd_total`.
+- **Categoria "Ferramentas"**: um estoque com ícone `wrench` tem comportamento completamente diferente das demais categorias — ver seção 5.
 
 ### Módulo legado — `/estoque/itens` e `/estoque/movimentacao`
 - Grid de itens com foto, categoria, filtro, badges de nível (Zerado/Baixo).
@@ -100,7 +104,39 @@ Apenas redireciona para `/obras/[id]/financeiro`.
 - Formulário de entrada/saída com cálculo de CMP e opção "precisa ser devolvido" (com data prevista).
 - `/estoque/movimentacoes`: tabela global (últimas 100) com filtro por tipo.
 
-## 5. Funcionários
+## 5. Ferramentas (patrimônio)
+
+Vive **dentro de Estoque** como uma categoria especial: quando um estoque tem o ícone "chave inglesa" (`wrench`), a tela deixa de mostrar Registros/Produtos e passa a mostrar o painel de Ferramentas (`FerramentasPanel`). Diferente do estoque normal (quantidade fungível), aqui cada item é um **ativo individual rastreável** — ferramenta ou máquina, com identidade própria, QR code, histórico de custódia e defeitos.
+
+### Cadastro
+- Cada ferramenta tem: nome, **código interno/patrimônio** (obrigatório e único por categoria, ex. `FER-0001`, sugerido automaticamente ao cadastrar), categoria, marca/modelo, nº de série, valor de aquisição, data de aquisição, foto, observações.
+- Card de **patrimônio total** (soma do valor de aquisição das ferramentas ativas) e contagem por status: Disponível / Emprestada / Em manutenção / Baixada.
+
+### Empréstimo (custódia formal, com contrato)
+- Botão **Novo Empréstimo**: seleciona um funcionário responsável (obrigatório) + uma ou mais ferramentas disponíveis. Ao salvar, gera um **contrato de empréstimo** (impresso em papel, assinatura física — sem captura digital) que abre automaticamente em nova aba para impressão.
+- Devolução é **por item**: cada ferramenta do empréstimo pode voltar em uma data diferente das outras, sem precisar fechar o empréstimo inteiro.
+- Botão **Ver Empréstimos**: lista todos os contratos gerados (abertos/devolvidos), com link para reimprimir o contrato a qualquer momento.
+
+### Malas de ferramentas (custódia fixa, sem contrato)
+Para ferramentas que ficam permanentemente com um encarregado dentro de uma mala/kit (não passam pelo fluxo de empréstimo formal):
+- Uma ferramenta pode ser marcada como **"É uma mala"** (`eh_mala`), com um **responsável atual** atribuído diretamente (sem contrato, sem histórico de quem teve antes — só o responsável atual importa).
+- Outras ferramentas podem ser marcadas como **pertencentes a uma mala** (`mala_id`) — elas somem do grid principal e da lista de empréstimo (não são emprestadas individualmente, seguem a mala), mas continuam com status próprio (podem entrar em manutenção ou ser baixadas independentemente).
+- Na ficha da mala, o item mostra "Com {responsável} (na mala)" em vez de "Disponível", já que tecnicamente está com alguém.
+- Botão **Imprimir contrato** na ficha da mala: gera um "Termo de Responsabilidade" com o responsável atual e a lista completa de itens da mala — disparado automaticamente ao atribuir/trocar responsável; para reimpressão após adicionar itens, é manual (para não forçar reimpressão a cada item adicionado).
+
+### Defeito e manutenção
+- **Registrar defeito**: só disponível quando a ferramenta não está emprestada nem já em manutenção (força devolução antes). Move o status para "Em manutenção".
+- **Concluir manutenção**: marca o defeito como resolvido e volta o status para "Disponível".
+- **Dar baixa**: definitiva (perda/quebra irrecuperável), bloqueada enquanto a ferramenta estiver emprestada. Sem reversão nesta versão.
+
+### QR Code e ficha pública
+- Cada ferramenta tem um botão de QR Code, apontando para `/pub/ferramenta/[id]` (ficha somente leitura) e um link de etiqueta imprimível 80×50mm (`/pub/etiqueta-ferramenta/[id]`).
+- A ficha pública mostra status/custódia (inclusive "faz parte da mala X, com Y"), histórico de defeitos, e um botão **"Entrar para gerenciar"** que leva ao `/login` — nenhuma ação de escrita acontece na página pública.
+
+### Na ficha do funcionário
+A página `/funcionarios/[id]` tem uma seção **"Ferramentas"** listando todo o histórico de empréstimos daquele funcionário (nome, código, data de retirada/devolução, status "Em posse"/"Devolvida"), no mesmo padrão do histórico de recebimentos de estoque (EPIs).
+
+## 6. Funcionários
 
 Restrito a admin. Redireciona não-admins para `/obras`.
 
@@ -116,7 +152,7 @@ Tabela com cargo, custo total/mês, custo/dia, custo/hora, status. Cards de resu
 - Provisão rescisória: `FGTS acumulado = salário × FGTS% × meses de casa`; `multa = FGTS acumulado × 40%`.
 
 ### Ficha do funcionário (`/funcionarios/[id]`)
-Breakdown detalhado de custo, histórico de itens de estoque recebidos (EPIs etc.), filtro por estoque de origem.
+Breakdown detalhado de custo, histórico de itens de estoque recebidos (EPIs etc.), filtro por estoque de origem, e histórico de ferramentas emprestadas (ver seção 5).
 
 ### Quadro de Alocação (`/funcionarios/alocacao`)
 Grade tipo planilha — linhas = funcionários, colunas = dias (visão Mensal ou Semanal). Tipos de alocação: **Obra, Manutenção, Galpão, Folga, Atestado, Falta** (cada um com cor própria).
@@ -124,18 +160,22 @@ Grade tipo planilha — linhas = funcionários, colunas = dias (visão Mensal ou
 - Preenchimento em massa: clique no cabeçalho de um dia aplica para todos; seleção múltipla de funcionários + clique em um dia também aplica em lote.
 - Exportação de relatório mensal (impressão HTML) com totais por funcionário.
 
-## 6. Financeiro
+## 7. Financeiro e OCs
 
 Existem três telas financeiras distintas:
 
 1. **`/financeiro`** (geral, admin): relatório do valor total imobilizado em estoque (quantidade × preço unitário), agrupado por categoria de estoque. Somente leitura.
-2. **`/obras/[id]/financeiro`** (DRE por obra):
+2. **`/obras/[id]/financeiro`** (DRE por obra), componente `ObraPagamentos`:
    - Resumo: Contrato total, Faturado, Custo real (estoque + materiais + mão de obra pró-rata), Margem bruta % (verde ≥20%, âmbar 0–20%, vermelho negativo).
-   - Aba **Medições**: plano de faturamento por etapas percentuais do contrato.
-   - Aba **Centro de Custos**: detalhamento de custos da obra.
-3. **`/admin`** (financeiro administrativo agregado — ver seção 9).
+   - **Ordens de Compra (OCs)**: seção principal de medições hoje. Uma obra pode ter **várias OCs** (de serviço, material ou outro tipo), cada uma com seu próprio valor total e sua própria sequência independente de medições — reflete a realidade de que o cliente pode emitir OCs separadas para serviço e para material, ou juntar tudo numa só. Botão **Nova OC** (número, tipo, valor total). Dentro de cada OC: botão "Adicionar medição a esta OC" (mesmo fluxo de sempre — nome, percentual, previsão — só que calculado sobre o valor daquela OC), faturado e saldo calculados automaticamente por OC.
+   - **Valor base do contrato** (legado): campo antigo de valor único por obra, mantido só por compatibilidade com obras já cadastradas antes das OCs existirem. Para obras novas, o recomendado é usar OCs.
+   - **Aditivos de Contrato**: conceito separado das OCs (um aditivo é uma alteração de escopo/valor do contrato original), continua funcionando exatamente como antes — cada aditivo tem suas próprias medições.
+   - **Nota Fiscal de Material**: gera uma medição a partir de materiais lançados na aba Materiais da obra (agrupados pela OC vinculada a cada material — ver seção 3). O sistema bloqueia gerar uma NF de material misturando itens de OCs diferentes.
+   - Botão **Gerar acesso do cliente**: cria/renova o acesso do Portal do Cliente para esta obra — ver seção 12.
+   - Aba **Centro de Custos**: detalhamento de custos da obra (componente `ObraCentroCustos`).
+3. **`/admin`** (financeiro administrativo agregado — ver seção 10).
 
-## 7. Manutenções
+## 8. Manutenções
 
 Módulo de contratos de manutenção preventiva (ar-condicionado).
 
@@ -152,7 +192,7 @@ Cards de contratos com empresa, número, valor mensal, data de início, status. 
 - Campos técnicos dinâmicos (criados livremente pelo usuário e reaproveitados entre equipamentos).
 - Histórico de manutenções por competência: preventiva realizada (checkbox), corretiva com descrição e custo adicional.
 
-## 8. Outras páginas
+## 9. Outras páginas
 
 - **`/clientes`**: abas Pessoas (nome, e-mail, telefone, tipo Gestor/Comprador, vínculo a empresa) e Empresas (razão social, CNPJ, endereço, contato). Excluir cliente desvincula obras; excluir empresa desvincula pessoas.
 - **`/documentos`**: página informativa — os documentos reais ficam na aba "Documentos" de cada obra.
@@ -162,51 +202,74 @@ Cards de contratos com empresa, número, valor mensal, data de início, status. 
 - **`/configuracoes`**: hub com Meu Perfil, Dados da Empresa, Tributação Simples Nacional (alíquota efetiva, usada no Centro de Custos), Adicionais de Mão de Obra (% customizáveis), Frota de Veículos (usados no Quadro de Alocação), Segurança (troca de senha, logout), Modelos de Email (usados no botão "Enviar Email" da obra), e informações sobre uso de leitor de código de barras.
 - **`/perfil`**: resumo do usuário logado (nome, e-mail, cargo, nível de acesso).
 
-## 9. Admin e permissões
+## 10. Admin e permissões
 
 Rotas sob `/admin/*` são protegidas — exigem `role = admin` e `active = true`, senão redirecionam para `/obras`.
 
 - **`/admin`**: financeiro administrativo agregado — soma de todas as medições de todas as obras (Planejado/Faturado/Recebido/Em aberto), lista de obras com progresso de faturamento, etapas vencidas sem recebimento.
 - **`/admin/usuarios`**: lista de todos os perfis (`app_profiles`). Por usuário: trocar perfil (usuário/admin), marcar permissão "Financeiro e medições", ativar/bloquear acesso. Criação de novo usuário (nome, e-mail, senha inicial ≥8 caracteres, perfil, permissão) via `POST /api/admin/users`.
+- **`/admin/manual`**: este manual, renderizado dentro do app a partir do `MANUAL.md` do repositório.
 
-## 10. APIs internas
+## 11. APIs internas
 
 | Rota | Método | Função |
 |---|---|---|
 | `/api/admin/users` | POST | Cria usuário (Supabase Admin API + `app_profiles`), só admin ativo pode chamar. Faz rollback se falhar. |
 | `/api/parse-nfe` | POST | Recebe PDF de nota fiscal, envia para IA (Gemini) e retorna JSON estruturado (emitente, número, data, valor, produtos). Usado em Materiais da obra e Registro de estoque. |
-| `/api/send-email` | POST | Envia e-mail via Resend, detecta HTML vs. texto puro. Usado no botão "Enviar Email" da obra. |
+| `/api/send-email` | POST | Envia e-mail via Resend, detecta HTML vs. texto puro. Usado no botão "Enviar Email" da obra e no envio de acesso do Portal do Cliente. |
+| `/api/portal/gerar-acesso` | POST | Autenticado (exige permissão `financeiro`). Gera token + PIN de 6 dígitos para o Portal do Cliente de uma obra, desativa o acesso anterior, hasheia o PIN (bcrypt) antes de salvar. |
+| `/api/portal/[token]/verify` | POST | Público. Recebe o PIN digitado, compara com o hash salvo, cria uma sessão e devolve um cookie `httpOnly` válido por 30 dias. |
 
-## 11. Páginas públicas e impressão
+## 12. Portal do Cliente
+
+Página externa (`/portal/[token]`) onde o cliente acompanha as OCs e medições de uma obra em tempo real, substituindo o processo manual de montar e enviar tabelas por e-mail.
+
+- **Acesso**: link com um token longo e imprevisível na URL + um PIN de 6 dígitos que o cliente digita uma vez (fica lembrado no navegador por 30 dias via cookie). O link é **permanente por obra** — gerar um novo acesso (botão "Gerar acesso do cliente" na aba Financeiro da obra) invalida o anterior automaticamente.
+- **Geração do acesso**: dentro do Financeiro da obra, botão "Gerar acesso do cliente" mostra o link e o PIN (com botões de copiar) e permite enviar por e-mail direto para o gestor/comprador da obra. **O PIN não fica salvo em texto — só o hash. Se perdido, é preciso gerar um novo acesso.**
+- **Conteúdo (somente leitura na v1)**: para cada OC ativa da obra, mostra número, tipo, valor total, e uma tabela com todas as medições (nome, %, valor, NF/data, status) e o **saldo em destaque** ao final — mesmo formato conceitual das planilhas que eram enviadas por e-mail, gerado direto do banco.
+- **Segurança**: o portal nunca lê dados via RLS/chave anônima. Todas as consultas passam por rotas de API que usam um client Supabase **service-role** (`lib/supabase/service.ts`), com a validação de token+PIN acontecendo antes de qualquer leitura. Nenhuma tabela do portal (`obra_ocs`, `obra_acessos_cliente`, `obra_portal_sessoes`) tem política de acesso público (`anon`).
+- **Fora de escopo nesta versão**: o cliente não aprova nada diretamente na página — isso continua acontecendo por e-mail/WhatsApp como hoje.
+
+## 13. Páginas públicas e impressão
 
 Acessíveis sem login (liberadas no middleware):
 
-- **`/pub/equipamento/[equipId]`**: ficha técnica pública de um equipamento — foto, dados técnicos, histórico de manutenção (12 meses). Acessada via QR code.
+- **`/pub/equipamento/[equipId]`**: ficha técnica pública de um equipamento de manutenção — foto, dados técnicos, histórico de manutenção (12 meses). Acessada via QR code.
 - **`/pub/etiqueta/[equipId]`**: etiqueta imprimível 80×50mm com logo, tipo/nome do equipamento, modelo/nº série e QR code apontando para a ficha pública.
+- **`/pub/ferramenta/[id]`**: ficha pública de uma ferramenta/mala (ver seção 5) — status/custódia, histórico de defeitos, botão "Entrar para gerenciar".
+- **`/pub/etiqueta-ferramenta/[id]`**: etiqueta imprimível 80×50mm de uma ferramenta, com QR apontando para a ficha acima.
 - **`/print/rdo/[rdoId]`**: layout de impressão do RDO, customizado conforme o modelo ativo da obra (logos e seções habilitadas).
+- **`/print/emprestimo/[emprestimoId]`**: contrato de empréstimo de ferramentas, pronto para impressão e assinatura física.
+- **`/print/mala/[malaId]`**: termo de responsabilidade de uma mala de ferramentas (responsável atual + conteúdo completo), sempre reflete o estado atual (não guarda versões antigas).
+- **`/portal/[token]`**: Portal do Cliente — ver seção 12 (protegido por PIN, mas fora do fluxo de login normal).
 
-## 12. Camada de dados e schema
+## 14. Camada de dados e schema
 
-- **Acesso ao banco**: quase todo o app lê/escreve diretamente no Supabase (`supabase.from(tabela).select/insert/update/delete`) a partir dos componentes de página — não há uma camada de API própria além das 3 rotas da seção 10.
-- **Clientes Supabase**: `lib/supabase/client.ts` (browser) e `lib/supabase/server.ts` (server components/middleware/APIs, via cookies).
+- **Acesso ao banco**: quase todo o app lê/escreve diretamente no Supabase (`supabase.from(tabela).select/insert/update/delete`) a partir dos componentes de página — a camada de API própria (seção 11) é usada só onde é preciso lógica privilegiada (criação de usuário, envio de e-mail, geração/validação de acesso do portal).
+- **Clientes Supabase**:
+  - `lib/supabase/client.ts` (browser, chave anônima).
+  - `lib/supabase/server.ts` (server components/middleware/APIs autenticadas, via cookies, chave anônima).
+  - `lib/supabase/service.ts` (**service-role**, ignora RLS — uso exclusivo dentro das rotas de API do Portal do Cliente, nunca importado em código de cliente).
 - **Autenticação**: Supabase Auth (e-mail/senha); perfis espelhados em `app_profiles` via trigger `handle_new_app_user`.
 
 ### Principais tabelas por módulo
 
 - **Perfis/permissões**: `app_profiles`.
-- **Financeiro**: `obra_medicoes`, `obra_financeiro`.
+- **Financeiro**: `obra_medicoes` (ganhou `oc_id`, além do `aditivo_id` já existente), `obra_financeiro` (legado), `obra_aditivos`, `obra_ocs` (novo).
+- **Portal do Cliente**: `obra_acessos_cliente` (token + PIN hasheado), `obra_portal_sessoes` (sessão pós-PIN).
 - **Estoque (atual)**: `estoques`, `estoque_campos`, `estoque_produtos`, `estoque_registros`, `estoque_registro_valores`, `estoque_logs`.
 - **Estoque (legado)**: `estoque_categorias`, `estoque_itens`, `estoque_movimentacoes`, `estoque_alertas`.
+- **Ferramentas**: `ferramentas` (`eh_mala`, `mala_id`, `responsavel_atual_id`, `codigo_interno`), `ferramenta_emprestimos`, `ferramenta_emprestimo_itens`, `ferramenta_defeitos`.
 - **Documentos**: `doc_pastas`, `documentos`.
 - **RDO**: `rdos`, `rdo_clima`, `rdo_mao_obra`, `rdo_equipamentos`, `rdo_atividades`, `rdo_ocorrencias`, `rdo_comentarios`, `rdo_fotos`, `rdo_assinaturas`, `rdo_modelos`.
 - **Manutenções**: `contratos_manutencao`, `manutencao_aditivos`, `manutencao_nfs`, `manutencao_funcionarios`, `equipamentos`, `grupos_equipamentos`, `campos_tecnicos`, `equipamento_dados`, `manutencao_historico`.
 - **Funcionários**: `funcionarios`, `funcionario_alocacoes`, `veiculos`.
-- **Obras/Clientes**: `obras`, `clientes`, `empresas`, `cronograma_etapas`, `obra_materiais`.
+- **Obras/Clientes**: `obras`, `clientes`, `empresas`, `cronograma_etapas`, `obra_materiais` (ganhou `oc_id`), `obra_notas_material` (ganhou `oc_id`).
 - **Administrativo**: `categorias_administrativas`, `custos_administrativos`, `configuracoes_empresa`, `email_templates`.
 
-> Algumas tabelas acima (`obras`, `rdo_modelos`, `campos_tecnicos`, `equipamento_dados`, `grupos_equipamentos` etc.) não foram encontradas nos arquivos `.sql` versionados no repositório — provavelmente foram criadas via migrations do Supabase não incluídas aqui ou diretamente no Supabase Studio. Para o schema definitivo e completo, rode `list_tables`/`generate_typescript_types` direto no projeto Supabase.
+> Algumas tabelas acima (`obras`, `rdo_modelos`, `campos_tecnicos`, `equipamento_dados`, `grupos_equipamentos`, `obra_materiais`, `obra_notas_material` etc.) não têm migração rastreada no repositório — foram criadas via Supabase Studio ou migrations não versionadas. As tabelas novas descritas neste manual (`ferramentas*`, `obra_ocs`, `obra_acessos_cliente`, `obra_portal_sessoes`, e as colunas `oc_id` adicionadas) **estão** rastreadas em `supabase/migrations/*.sql`. Para o schema definitivo e completo, rode `list_tables`/`generate_typescript_types` direto no projeto Supabase.
 
-## 13. Componentes reutilizáveis
+## 15. Componentes reutilizáveis
 
 | Componente | Uso |
 |---|---|
@@ -216,16 +279,20 @@ Acessíveis sem login (liberadas no middleware):
 | `NotasFlutuante` | Widget flutuante de notas, presente em todo o app |
 | `NotasPanel` | Painel completo de notas |
 | `ObraCentroCustos` | Aba Centro de Custos do financeiro da obra |
-| `ObraPagamentos` | Aba Medições do financeiro da obra (plano de faturamento) |
+| `ObraPagamentos` | Aba Medições/OCs do financeiro da obra (plano de faturamento, aditivos, NF de material, acesso do portal) |
 | `RichTextEditor` | Editor de texto rico (Modelos de Email) |
 | `Sidebar` | Menu lateral de navegação |
 | `StatusChip` | Badge de status colorido |
 | `Topbar` | Barra superior com busca/ações |
 
-## 14. Observações e pontos de atenção
+Componentes locais (não exportados, vivem dentro de arquivos maiores): `FerramentasPanel`, `FerramentaDetalheModal`, `ModalNovaFerramenta`, `ModalEditarFerramenta`, `ModalNovoEmprestimo`, `ModalDevolverItem`, `ModalDefeito`, `ModalAtribuirMala`, `ModalEmprestimos` (todos em `app/(app)/estoque/[estoqueId]/ferramentas/`); `SeletorOC` (dentro de `app/(app)/obras/[id]/page.tsx`); `ModalOC`, `ModalAcessoCliente` (dentro de `components/ObraPagamentos.tsx`).
+
+## 16. Observações e pontos de atenção
 
 - **Dois módulos de estoque coexistindo** (`/estoque` vs. `/estoque/itens`+`/estoque/movimentacao`) — considerar unificar ou descontinuar o legado para evitar confusão dos usuários.
 - **Caso hardcoded**: a ficha de funcionário mostra uma aba extra "Gestão PJ" apenas se o nome contiver "João Victor" — isso é uma regra fixa no código, não uma configuração, e deve ser generalizada se outros PJs precisarem do mesmo recurso.
 - **Dados da Empresa em Configurações**: parece não persistir de forma clara (fica em estado local) — vale revisar.
 - **Sistema de permissões é raso**: hoje só existe a permissão granular `financeiro`; tudo mais é admin-ou-não.
-- **Ambiente de verificação**: este manual foi escrito por revisão estática do código — não foi possível rodar `npm run build`/dev server neste ambiente (Node/npm indisponíveis) para validação funcional real. Recomenda-se testar manualmente os fluxos críticos (RDO, estoque, financeiro) antes de considerar release.
+- **Duas noções de "valor base" convivendo no Financeiro da obra**: o campo legado `obra_financeiro.valor_contrato` (um valor único por obra) e as novas OCs (múltiplos valores, um por OC). Obras antigas foram migradas automaticamente para uma "OC padrão" na hora da migração, mas o campo antigo continua editável na tela — pode gerar confusão se alguém usar os dois ao mesmo tempo sem entender a relação.
+- **PIN do Portal do Cliente não é recuperável**: se o cliente perder o PIN e você não guardou uma cópia, a única saída é gerar um novo acesso (o que invalida o link anterior).
+- **Ambiente de verificação**: este manual foi escrito por revisão estática do código — não foi possível rodar `npm run build`/dev server neste ambiente (Node/npm indisponíveis) para validação funcional real. Recomenda-se testar manualmente os fluxos críticos (RDO, estoque, ferramentas, financeiro, portal do cliente) antes de considerar release.
