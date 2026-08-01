@@ -8,13 +8,23 @@ function fmtDate(d?: string | null) {
 }
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 
-const STATUS_LABEL: Record<string, string> = {
-  planejada: 'Planejada', faturada: 'Faturada', recebida: 'Recebida', atrasada: 'Atrasada', cancelada: 'Cancelada',
-}
-const STATUS_COLOR: Record<string, string> = {
-  planejada: '#64748B', faturada: '#2563EB', recebida: '#059669', atrasada: '#D97706', cancelada: '#DC2626',
-}
 const TIPO_LABEL: Record<string, string> = { servico: 'Serviço', material: 'Material', outro: 'Outro' }
+
+// Visão do cliente: os status internos (planejada/solicitada/faturada/recebida/
+// atrasada/cancelada) viram só 3 grupos — o cliente não precisa saber a
+// granularidade interna de controle da MARV.
+const GRUPO_LABEL: Record<'emitido' | 'solicitado' | 'restante', string> = {
+  emitido: 'Emitido', solicitado: 'Solicitado', restante: 'A faturar',
+}
+const GRUPO_COLOR: Record<'emitido' | 'solicitado' | 'restante', string> = {
+  emitido: '#059669', solicitado: '#7C3AED', restante: '#64748B',
+}
+function grupoDe(status: string): 'emitido' | 'solicitado' | 'restante' | null {
+  if (status === 'faturada' || status === 'recebida') return 'emitido'
+  if (status === 'solicitada') return 'solicitado'
+  if (status === 'cancelada') return null
+  return 'restante'
+}
 
 async function getSessaoObraId(token: string) {
   const cookieStore = await cookies()
@@ -94,39 +104,39 @@ export default async function PortalPage({ params }: { params: { token: string }
                 </div>
               </div>
 
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: '#F8FAFC' }}>
-                      <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748B', fontWeight: 600 }}>Medição</th>
-                      <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748B', fontWeight: 600 }}>%</th>
-                      <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748B', fontWeight: 600 }}>Valor</th>
-                      <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748B', fontWeight: 600 }}>NF / Data</th>
-                      <th style={{ textAlign: 'left', padding: '8px 12px', color: '#64748B', fontWeight: 600 }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {meds.length === 0 ? (
-                      <tr><td colSpan={5} style={{ padding: '12px', color: '#94A3B8', textAlign: 'center' }}>Nenhuma medição cadastrada ainda.</td></tr>
-                    ) : meds.map((m: any) => (
-                      <tr key={m.id} style={{ borderTop: '1px solid #F1F5F9' }}>
-                        <td style={{ padding: '8px 12px', color: '#0F172A', fontWeight: 500 }}>{m.nome}</td>
-                        <td style={{ padding: '8px 12px', color: '#374151' }}>{Number(m.percentual).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</td>
-                        <td style={{ padding: '8px 12px', color: '#374151' }}>{fmt(Number(m.valor_previsto))}</td>
-                        <td style={{ padding: '8px 12px', color: '#374151' }}>{m.numero_nf ? `${m.numero_nf} — ${fmtDate(m.data_emissao)}` : '—'}</td>
-                        <td style={{ padding: '8px 12px' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: (STATUS_COLOR[m.status] ?? '#64748B') + '20', color: STATUS_COLOR[m.status] ?? '#64748B' }}>
-                            {STATUS_LABEL[m.status] ?? m.status}
+              {(['emitido', 'solicitado', 'restante'] as const).map(grupo => {
+                const itens = meds.filter((m: any) => grupoDe(m.status) === grupo)
+                if (itens.length === 0) return null
+                const totalGrupo = itens.reduce((s: number, m: any) => s + Number(grupo === 'emitido' ? (m.valor_faturado || m.valor_previsto) : m.valor_previsto), 0)
+                return (
+                  <div key={grupo} style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5,
+                        padding: '2px 8px', borderRadius: 999, background: GRUPO_COLOR[grupo] + '1A', color: GRUPO_COLOR[grupo],
+                      }}>{GRUPO_LABEL[grupo]}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{fmt(totalGrupo)}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {itens.map((m: any) => (
+                        <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12 }}>
+                          <span style={{ color: '#374151' }}>
+                            {m.nome}
+                            {grupo === 'emitido' && m.numero_nf && <span style={{ color: '#94A3B8' }}> · NF {m.numero_nf} · {fmtDate(m.data_emissao)}</span>}
                           </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          <span style={{ color: '#374151', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmt(Number(grupo === 'emitido' ? (m.valor_faturado || m.valor_previsto) : m.valor_previsto))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+              {meds.length === 0 && (
+                <p style={{ padding: '16px 20px', color: '#94A3B8', fontSize: 13, textAlign: 'center', margin: 0 }}>Nenhuma medição cadastrada ainda.</p>
+              )}
 
-              <div style={{ padding: '14px 20px', background: '#FFFBEB', borderTop: '1px solid #FDE68A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600 }}>Faturado até agora: {fmt(faturado)}</span>
+              <div style={{ padding: '14px 20px', background: '#FFFBEB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600 }}>Emitido até agora: {fmt(faturado)}</span>
                 <span style={{ fontSize: 15, color: '#92400E', fontWeight: 800 }}>Saldo: {fmt(saldo)}</span>
               </div>
             </div>

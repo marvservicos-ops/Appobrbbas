@@ -135,7 +135,7 @@ export interface ObraMedicao {
   nome: string
   percentual: number
   valor_previsto: number
-  status: 'planejada' | 'faturada' | 'recebida' | 'atrasada' | 'cancelada'
+  status: 'planejada' | 'solicitada' | 'faturada' | 'recebida' | 'atrasada' | 'cancelada'
   data_prevista?: string
   data_emissao?: string
   data_vencimento?: string

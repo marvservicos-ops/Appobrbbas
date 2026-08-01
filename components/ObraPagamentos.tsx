@@ -46,11 +46,12 @@ const dataBR = (v?: string) => v ? new Date(v + 'T00:00:00').toLocaleDateString(
 const pct = (v: number) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
 
 const STATUS = {
-  planejada: { label: 'Planejada', cls: 'bg-slate-100 text-slate-700' },
-  faturada:  { label: 'Faturada',  cls: 'bg-blue-50 text-blue-700' },
-  recebida:  { label: 'Recebida',  cls: 'bg-emerald-50 text-emerald-700' },
-  atrasada:  { label: 'Atrasada',  cls: 'bg-amber-50 text-amber-700' },
-  cancelada: { label: 'Cancelada', cls: 'bg-red-50 text-red-600' },
+  planejada:  { label: 'Planejada',  cls: 'bg-slate-100 text-slate-700' },
+  solicitada: { label: 'Solicitada', cls: 'bg-purple-50 text-purple-700' },
+  faturada:   { label: 'Faturada',   cls: 'bg-blue-50 text-blue-700' },
+  recebida:   { label: 'Recebida',   cls: 'bg-emerald-50 text-emerald-700' },
+  atrasada:   { label: 'Atrasada',   cls: 'bg-amber-50 text-amber-700' },
+  cancelada:  { label: 'Cancelada',  cls: 'bg-red-50 text-red-600' },
 } as const
 
 // ─── Modal editar medição (nome / percentual / previsão) ──────────────────────
