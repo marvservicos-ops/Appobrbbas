@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, ChevronRight, X, Loader2 } from 'lucide-react'
+import { Plus, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, ChevronRight, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque } from '@/lib/types'
 import Link from 'next/link'
@@ -13,6 +13,7 @@ const ICONE_MAP: Record<string, React.ReactNode> = {
   shirt: <Shirt size={22} />,
   droplets: <Droplets size={22} />,
   package: <Package size={22} />,
+  wrench: <Wrench size={22} />,
 }
 
 export default function EstoquePage() {
@@ -99,7 +100,7 @@ export default function EstoquePage() {
   )
 }
 
-const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets']
+const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets', 'wrench']
 const CORES = ['#4F7CFF', '#F59E0B', '#2DD4BF', '#8B5CF6', '#06B6D4', '#EF4444', '#10B981', '#F97316']
 
 function ModalNovoEstoque({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {

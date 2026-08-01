@@ -339,3 +339,59 @@ export interface EstoqueMovimentacao {
   data_devolucao?: string
   created_at: string
 }
+
+// ── Ferramentas (patrimônio/ativos rastreáveis) ────────
+export type FerramentaStatus = 'disponivel' | 'emprestada' | 'em_manutencao' | 'baixada'
+
+export interface Ferramenta {
+  id: string
+  estoque_id: string
+  nome: string
+  categoria?: string | null
+  marca?: string | null
+  modelo?: string | null
+  numero_serie?: string | null
+  valor_aquisicao?: number | null
+  data_aquisicao?: string | null
+  foto_url?: string | null
+  status: FerramentaStatus
+  observacoes?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FerramentaEmprestimo {
+  id: string
+  funcionario_id: string
+  funcionario?: { id: string; nome: string }
+  obra_id?: string | null
+  obra?: { id: string; titulo: string }
+  data_emprestimo: string
+  data_prevista_devolucao?: string | null
+  observacoes?: string | null
+  responsavel?: string | null
+  created_at: string
+}
+
+export interface FerramentaEmprestimoItem {
+  id: string
+  emprestimo_id: string
+  emprestimo?: FerramentaEmprestimo
+  ferramenta_id: string
+  ferramenta?: Ferramenta
+  data_devolucao?: string | null
+  observacoes_devolucao?: string | null
+  created_at: string
+}
+
+export interface FerramentaDefeito {
+  id: string
+  ferramenta_id: string
+  descricao: string
+  custo?: number | null
+  data: string
+  resolvido: boolean
+  data_resolucao?: string | null
+  created_at: string
+}
+// ──────────────────────────────────────────────────────
