@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Wrench, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText } from 'lucide-react'
+import { Plus, Wrench, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText, Briefcase } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem } from '@/lib/types'
 import ModalNovaFerramenta from './ModalNovaFerramenta'
@@ -39,10 +39,10 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
     const supabase = createClient()
     const { data: ferrs } = await supabase
       .from('ferramentas')
-      .select('*')
+      .select('*, responsavel_atual:funcionarios(id, nome)')
       .eq('estoque_id', estoqueId)
       .order('nome')
-    setFerramentas(ferrs ?? [])
+    setFerramentas((ferrs ?? []) as unknown as Ferramenta[])
 
     const emprestadas = (ferrs ?? []).filter(f => f.status === 'emprestada').map(f => f.id)
     if (emprestadas.length > 0) {
@@ -62,8 +62,10 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
 
   useEffect(() => { load() }, [estoqueId])
 
+  const topLevel = useMemo(() => ferramentas.filter(f => !f.mala_id), [ferramentas])
+
   const filtradas = useMemo(() => {
-    return ferramentas.filter(f => {
+    return topLevel.filter(f => {
       if (filtroStatus !== 'todos' && f.status !== filtroStatus) return false
       if (busca.trim()) {
         const q = busca.toLowerCase()
@@ -75,7 +77,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
       }
       return true
     })
-  }, [ferramentas, filtroStatus, busca])
+  }, [topLevel, filtroStatus, busca])
 
   const valorTotal = ferramentas.filter(f => f.status !== 'baixada').reduce((s, f) => s + (f.valor_aquisicao ?? 0), 0)
   const contagem = {
@@ -165,6 +167,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtradas.map(f => {
             const custodia = custodiaAtual[f.id]
+            const qtdItens = f.eh_mala ? ferramentas.filter(x => x.mala_id === f.id).length : 0
             return (
               <button key={f.id} onClick={() => setDetalheId(f.id)}
                 className="card text-left hover:shadow-md hover:-translate-y-0.5 transition-all">
@@ -172,24 +175,33 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
                   <div className="flex items-center gap-3">
                     {f.foto_url
                       ? <img src={f.foto_url} alt="" className="w-11 h-11 rounded-xl object-cover border border-[#E2E8F0]" />
-                      : <div className="w-11 h-11 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]"><Wrench size={18} /></div>}
+                      : <div className="w-11 h-11 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]">
+                          {f.eh_mala ? <Briefcase size={18} /> : <Wrench size={18} />}
+                        </div>}
                     <div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <h3 className="font-syne font-semibold text-[#0F172A] leading-tight">{f.nome}</h3>
                         {f.codigo_interno && <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B]">{f.codigo_interno}</span>}
+                        {f.eh_mala && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#EEF2FF] text-[#4F7CFF]">Mala · {qtdItens} {qtdItens === 1 ? 'item' : 'itens'}</span>}
                       </div>
                       {(f.marca || f.modelo) && <p className="text-xs text-[#64748B] mt-0.5">{[f.marca, f.modelo].filter(Boolean).join(' · ')}</p>}
                     </div>
                   </div>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_COLOR[f.status]}`}>
-                    {STATUS_LABEL[f.status]}
-                  </span>
+                  {!f.eh_mala && (
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_COLOR[f.status]}`}>
+                      {STATUS_LABEL[f.status]}
+                    </span>
+                  )}
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-xs">
                   <span className="text-[#64748B]">{f.valor_aquisicao ? moeda(f.valor_aquisicao) : 'Sem valor cadastrado'}</span>
-                  {custodia?.emprestimo?.funcionario && (
-                    <span className="text-amber-700 font-medium">com {custodia.emprestimo.funcionario.nome}</span>
-                  )}
+                  {f.eh_mala
+                    ? (f.responsavel_atual
+                        ? <span className="text-[#4F7CFF] font-medium">com {f.responsavel_atual.nome}</span>
+                        : <span className="text-[#94A3B8]">sem responsável</span>)
+                    : (custodia?.emprestimo?.funcionario && (
+                        <span className="text-amber-700 font-medium">com {custodia.emprestimo.funcionario.nome}</span>
+                      ))}
                 </div>
               </button>
             )
@@ -198,7 +210,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
       )}
 
       {showNova && <ModalNovaFerramenta estoqueId={estoqueId} onClose={() => setShowNova(false)} onCreated={() => { setShowNova(false); load() }} />}
-      {showEmprestimo && <ModalNovoEmprestimo ferramentasDisponiveis={ferramentas.filter(f => f.status === 'disponivel')} onClose={() => setShowEmprestimo(false)} onCreated={() => { setShowEmprestimo(false); load() }} />}
+      {showEmprestimo && <ModalNovoEmprestimo ferramentasDisponiveis={ferramentas.filter(f => f.status === 'disponivel' && !f.eh_mala && !f.mala_id)} onClose={() => setShowEmprestimo(false)} onCreated={() => { setShowEmprestimo(false); load() }} />}
       {detalheId && (
         <FerramentaDetalheModal
           ferramentaId={detalheId}

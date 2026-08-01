@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil } from 'lucide-react'
+import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
 import ModalDefeito from './ModalDefeito'
 import ModalEditarFerramenta from './ModalEditarFerramenta'
+import ModalAtribuirMala from './ModalAtribuirMala'
+import ModalNovaFerramenta from './ModalNovaFerramenta'
 
 const STATUS_LABEL: Record<string, string> = {
   disponivel: 'Disponível', emprestada: 'Emprestada', em_manutencao: 'Em manutenção', baixada: 'Baixada',
@@ -21,7 +23,10 @@ const fmtData = (d?: string | null) => d ? new Date(d + 'T12:00:00').toLocaleDat
 export default function FerramentaDetalheModal({ ferramentaId, onClose, onChanged }: {
   ferramentaId: string; onClose: () => void; onChanged: () => void
 }) {
+  const [currentId, setCurrentId] = useState(ferramentaId)
+  const [voltarPara, setVoltarPara] = useState<string | null>(null)
   const [ferramenta, setFerramenta] = useState<Ferramenta | null>(null)
+  const [conteudoMala, setConteudoMala] = useState<Ferramenta[]>([])
   const [historicoEmprestimos, setHistoricoEmprestimos] = useState<FerramentaEmprestimoItem[]>([])
   const [defeitos, setDefeitos] = useState<FerramentaDefeito[]>([])
   const [loading, setLoading] = useState(true)
@@ -29,22 +34,40 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
   const [showDevolver, setShowDevolver] = useState(false)
   const [showDefeito, setShowDefeito] = useState(false)
   const [showEditar, setShowEditar] = useState(false)
+  const [showAtribuir, setShowAtribuir] = useState(false)
+  const [showNovoItemMala, setShowNovoItemMala] = useState(false)
   const [processando, setProcessando] = useState(false)
 
   async function load() {
+    setLoading(true)
     const supabase = createClient()
     const [{ data: f }, { data: hist }, { data: defs }] = await Promise.all([
-      supabase.from('ferramentas').select('*').eq('id', ferramentaId).single(),
-      supabase.from('ferramenta_emprestimo_itens').select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))').eq('ferramenta_id', ferramentaId).order('created_at', { ascending: false }),
-      supabase.from('ferramenta_defeitos').select('*').eq('ferramenta_id', ferramentaId).order('data', { ascending: false }),
+      supabase.from('ferramentas').select('*, mala:mala_id(id, nome, codigo_interno), responsavel_atual:funcionarios(id, nome)').eq('id', currentId).single(),
+      supabase.from('ferramenta_emprestimo_itens').select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))').eq('ferramenta_id', currentId).order('created_at', { ascending: false }),
+      supabase.from('ferramenta_defeitos').select('*').eq('ferramenta_id', currentId).order('data', { ascending: false }),
     ])
-    setFerramenta(f)
+    setFerramenta(f as unknown as Ferramenta)
     setHistoricoEmprestimos((hist ?? []) as unknown as FerramentaEmprestimoItem[])
     setDefeitos(defs ?? [])
+
+    if ((f as any)?.eh_mala) {
+      const { data: itens } = await supabase.from('ferramentas').select('*').eq('mala_id', currentId).order('nome')
+      setConteudoMala(itens ?? [])
+    } else {
+      setConteudoMala([])
+    }
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [ferramentaId])
+  useEffect(() => { load() }, [currentId])
+
+  function abrirFilho(id: string) {
+    setVoltarPara(currentId)
+    setCurrentId(id)
+  }
+  function voltar() {
+    if (voltarPara) { setCurrentId(voltarPara); setVoltarPara(null) }
+  }
 
   const itemAberto = historicoEmprestimos.find(h => !h.data_devolucao)
 
@@ -85,6 +108,11 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
           <>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
+                {voltarPara && (
+                  <button onClick={voltar} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors" title="Voltar para a mala">
+                    <ChevronLeft size={16} />
+                  </button>
+                )}
                 <h2 className="font-syne font-semibold text-[#0F172A]">{ferramenta.nome}</h2>
                 {ferramenta.codigo_interno && <span className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B]">{ferramenta.codigo_interno}</span>}
                 <button onClick={() => setShowEditar(true)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors" title="Editar ferramenta">
@@ -95,16 +123,33 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
             </div>
 
             <div className="p-4 md:p-6 space-y-5">
+              {ferramenta.mala_id && ferramenta.mala && (
+                <button onClick={() => abrirFilho(ferramenta.mala!.id)}
+                  className="w-full text-left flex items-center gap-2 text-xs text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg hover:bg-[#E0E7FF] transition-colors">
+                  <Briefcase size={13} /> Faz parte da mala <strong>{ferramenta.mala.nome}</strong>{ferramenta.mala.codigo_interno ? ` (${ferramenta.mala.codigo_interno})` : ''}
+                </button>
+              )}
+
               <div className="flex items-center gap-4">
                 {ferramenta.foto_url
                   ? <img src={ferramenta.foto_url} alt="" className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0]" />
-                  : <div className="w-16 h-16 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]"><Wrench size={22} /></div>}
+                  : <div className="w-16 h-16 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]">
+                      {ferramenta.eh_mala ? <Briefcase size={22} /> : <Wrench size={22} />}
+                    </div>}
                 <div>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLOR[ferramenta.status]}`}>
-                    {STATUS_LABEL[ferramenta.status]}
-                  </span>
-                  {itemAberto?.emprestimo?.funcionario && (
-                    <p className="text-xs text-amber-700 font-medium mt-1">com {itemAberto.emprestimo.funcionario.nome} desde {fmtData(itemAberto.emprestimo.data_emprestimo)}</p>
+                  {ferramenta.eh_mala ? (
+                    ferramenta.responsavel_atual
+                      ? <p className="text-sm font-medium text-[#4F7CFF]">Com {ferramenta.responsavel_atual.nome}</p>
+                      : <p className="text-sm text-[#94A3B8]">Sem responsável definido</p>
+                  ) : (
+                    <>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLOR[ferramenta.status]}`}>
+                        {STATUS_LABEL[ferramenta.status]}
+                      </span>
+                      {itemAberto?.emprestimo?.funcionario && (
+                        <p className="text-xs text-amber-700 font-medium mt-1">com {itemAberto.emprestimo.funcionario.nome} desde {fmtData(itemAberto.emprestimo.data_emprestimo)}</p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -123,25 +168,31 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
                   className="flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] px-3 py-1.5 rounded-xl hover:bg-[#F8FAFC] transition-colors">
                   <QrCode size={13} /> QR Code
                 </button>
-                {ferramenta.status === 'emprestada' && itemAberto && (
+                {ferramenta.eh_mala && (
+                  <button onClick={() => setShowAtribuir(true)}
+                    className="flex items-center gap-1.5 text-xs text-[#4F7CFF] border border-[#C7D2FE] px-3 py-1.5 rounded-xl hover:bg-[#EEF2FF] transition-colors">
+                    <UserCheck size={13} /> {ferramenta.responsavel_atual ? 'Trocar responsável' : 'Atribuir responsável'}
+                  </button>
+                )}
+                {!ferramenta.eh_mala && !ferramenta.mala_id && ferramenta.status === 'emprestada' && itemAberto && (
                   <button onClick={() => setShowDevolver(true)}
                     className="flex items-center gap-1.5 text-xs text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl hover:bg-amber-50 transition-colors">
                     <Undo2 size={13} /> Devolver
                   </button>
                 )}
-                {ferramenta.status !== 'emprestada' && ferramenta.status !== 'baixada' && ferramenta.status !== 'em_manutencao' && (
+                {!ferramenta.eh_mala && ferramenta.status !== 'emprestada' && ferramenta.status !== 'baixada' && ferramenta.status !== 'em_manutencao' && (
                   <button onClick={() => setShowDefeito(true)}
                     className="flex items-center gap-1.5 text-xs text-red-700 border border-red-200 px-3 py-1.5 rounded-xl hover:bg-red-50 transition-colors">
                     <Hammer size={13} /> Registrar defeito
                   </button>
                 )}
-                {ferramenta.status === 'em_manutencao' && (
+                {!ferramenta.eh_mala && ferramenta.status === 'em_manutencao' && (
                   <button onClick={concluirManutencao} disabled={processando}
                     className="flex items-center gap-1.5 text-xs text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors">
                     <CheckCircle2 size={13} /> Concluir manutenção
                   </button>
                 )}
-                {(ferramenta.status === 'disponivel' || ferramenta.status === 'em_manutencao') && (
+                {!ferramenta.eh_mala && (ferramenta.status === 'disponivel' || ferramenta.status === 'em_manutencao') && (
                   <button onClick={darBaixa} disabled={processando}
                     className="flex items-center gap-1.5 text-xs text-[#64748B] border border-[#E2E8F0] px-3 py-1.5 rounded-xl hover:bg-[#F1F5F9] transition-colors ml-auto">
                     <Ban size={13} /> Dar baixa
@@ -149,22 +200,49 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
                 )}
               </div>
 
-              {/* Histórico de empréstimos */}
-              <div>
-                <h3 className="text-sm font-semibold text-[#374151] mb-2">Histórico de empréstimos</h3>
-                {historicoEmprestimos.length === 0 ? (
-                  <p className="text-xs text-[#94A3B8]">Nenhum empréstimo registrado.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {historicoEmprestimos.map(h => (
-                      <div key={h.id} className="flex items-center justify-between text-xs bg-[#F8FAFC] rounded-lg px-3 py-2">
-                        <span className="text-[#374151]">{h.emprestimo?.funcionario?.nome ?? '—'}</span>
-                        <span className="text-[#94A3B8]">{fmtData(h.emprestimo?.data_emprestimo)} → {h.data_devolucao ? fmtData(h.data_devolucao) : 'em aberto'}</span>
-                      </div>
-                    ))}
+              {/* Conteúdo da mala */}
+              {ferramenta.eh_mala && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-semibold text-[#374151]">Conteúdo da mala</h3>
+                    <button onClick={() => setShowNovoItemMala(true)} className="flex items-center gap-1 text-xs font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-2 py-1 rounded-lg transition-colors">
+                      <Plus size={12} /> Adicionar item
+                    </button>
                   </div>
-                )}
-              </div>
+                  {conteudoMala.length === 0 ? (
+                    <p className="text-xs text-[#94A3B8]">Nenhuma ferramenta cadastrada nesta mala ainda.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {conteudoMala.map(item => (
+                        <button key={item.id} onClick={() => abrirFilho(item.id)}
+                          className="w-full flex items-center justify-between text-xs bg-[#F8FAFC] hover:bg-[#F1F5F9] rounded-lg px-3 py-2 transition-colors text-left">
+                          <span className="text-[#374151] font-medium">{item.nome}{item.codigo_interno ? ` · ${item.codigo_interno}` : ''}</span>
+                          <span className={`px-1.5 py-0.5 rounded-full font-semibold ${STATUS_COLOR[item.status]}`}>{STATUS_LABEL[item.status]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Histórico de empréstimos */}
+              {!ferramenta.eh_mala && !ferramenta.mala_id && (
+                <div>
+                  <h3 className="text-sm font-semibold text-[#374151] mb-2">Histórico de empréstimos</h3>
+                  {historicoEmprestimos.length === 0 ? (
+                    <p className="text-xs text-[#94A3B8]">Nenhum empréstimo registrado.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {historicoEmprestimos.map(h => (
+                        <div key={h.id} className="flex items-center justify-between text-xs bg-[#F8FAFC] rounded-lg px-3 py-2">
+                          <span className="text-[#374151]">{h.emprestimo?.funcionario?.nome ?? '—'}</span>
+                          <span className="text-[#94A3B8]">{fmtData(h.emprestimo?.data_emprestimo)} → {h.data_devolucao ? fmtData(h.data_devolucao) : 'em aberto'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Histórico de defeitos */}
               <div>
@@ -219,6 +297,12 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
       )}
       {showEditar && ferramenta && (
         <ModalEditarFerramenta ferramenta={ferramenta} onClose={() => setShowEditar(false)} onSaved={() => { setShowEditar(false); load(); onChanged() }} />
+      )}
+      {showAtribuir && ferramenta && (
+        <ModalAtribuirMala ferramentaId={ferramenta.id} responsavelAtualId={ferramenta.responsavel_atual_id} onClose={() => setShowAtribuir(false)} onSaved={() => { setShowAtribuir(false); load(); onChanged() }} />
+      )}
+      {showNovoItemMala && ferramenta && (
+        <ModalNovaFerramenta estoqueId={ferramenta.estoque_id} malaIdPadrao={ferramenta.id} onClose={() => setShowNovoItemMala(false)} onCreated={() => { setShowNovoItemMala(false); load(); onChanged() }} />
       )}
     </div>
   )

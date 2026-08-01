@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Loader2, Upload, Wrench } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta } from '@/lib/types'
@@ -10,6 +10,9 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
 }) {
   const [nome, setNome] = useState(ferramenta.nome)
   const [codigoInterno, setCodigoInterno] = useState(ferramenta.codigo_interno ?? '')
+  const [ehMala, setEhMala] = useState(ferramenta.eh_mala)
+  const [malaId, setMalaId] = useState(ferramenta.mala_id ?? '')
+  const [malas, setMalas] = useState<{ id: string; nome: string; codigo_interno: string | null }[]>([])
   const [categoria, setCategoria] = useState(ferramenta.categoria ?? '')
   const [marca, setMarca] = useState(ferramenta.marca ?? '')
   const [modelo, setModelo] = useState(ferramenta.modelo ?? '')
@@ -21,6 +24,16 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    async function carregarMalas() {
+      const supabase = createClient()
+      const { data } = await supabase.from('ferramentas').select('id, nome, codigo_interno')
+        .eq('estoque_id', ferramenta.estoque_id).eq('eh_mala', true).neq('id', ferramenta.id).order('nome')
+      setMalas(data ?? [])
+    }
+    carregarMalas()
+  }, [ferramenta.estoque_id, ferramenta.id])
 
   async function uploadFoto(file: File) {
     setUploadingFoto(true)
@@ -52,6 +65,8 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
       data_aquisicao: dataAquisicao || null,
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
+      eh_mala: ehMala,
+      mala_id: !ehMala && malaId ? malaId : null,
       updated_at: new Date().toISOString(),
     }).eq('id', ferramenta.id)
     if (err) {
@@ -112,6 +127,21 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Observações</label>
             <input className="field" value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Opcional" />
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer px-3 py-2.5 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+            <input type="checkbox" checked={ehMala} onChange={e => { setEhMala(e.target.checked); if (e.target.checked) setMalaId('') }} className="rounded" />
+            É uma mala de ferramentas (kit com responsável fixo)
+          </label>
+          {!ehMala && malas.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Pertence a uma mala?</label>
+              <select className="field" value={malaId} onChange={e => setMalaId(e.target.value)}>
+                <option value="">Nenhuma (ferramenta avulsa)</option>
+                {malas.map(m => <option key={m.id} value={m.id}>{m.nome}{m.codigo_interno ? ` (${m.codigo_interno})` : ''}</option>)}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto</label>
             <div className="flex items-center gap-3">

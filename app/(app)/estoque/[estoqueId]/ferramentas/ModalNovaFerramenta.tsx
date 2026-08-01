@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { X, Loader2, Upload, Wrench } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
-  estoqueId: string; onClose: () => void; onCreated: () => void
+export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, onClose, onCreated }: {
+  estoqueId: string; malaIdPadrao?: string; onClose: () => void; onCreated: () => void
 }) {
   const [nome, setNome] = useState('')
   const [codigoInterno, setCodigoInterno] = useState('')
@@ -20,6 +20,9 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [ehMala, setEhMala] = useState(false)
+  const [malaId, setMalaId] = useState(malaIdPadrao ?? '')
+  const [malas, setMalas] = useState<{ id: string; nome: string; codigo_interno: string | null }[]>([])
 
   useEffect(() => {
     async function sugerirCodigo() {
@@ -27,8 +30,14 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
       const { count } = await supabase.from('ferramentas').select('id', { count: 'exact', head: true }).eq('estoque_id', estoqueId)
       setCodigoInterno(`FER-${String((count ?? 0) + 1).padStart(4, '0')}`)
     }
+    async function carregarMalas() {
+      const supabase = createClient()
+      const { data } = await supabase.from('ferramentas').select('id, nome, codigo_interno').eq('estoque_id', estoqueId).eq('eh_mala', true).order('nome')
+      setMalas(data ?? [])
+    }
     sugerirCodigo()
-  }, [estoqueId])
+    if (!malaIdPadrao) carregarMalas()
+  }, [estoqueId, malaIdPadrao])
 
   async function uploadFoto(file: File) {
     setUploadingFoto(true)
@@ -61,6 +70,8 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
       data_aquisicao: dataAquisicao || null,
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
+      eh_mala: ehMala,
+      mala_id: !ehMala && malaId ? malaId : null,
     })
     if (err) {
       setError(err.code === '23505' ? 'Já existe uma ferramenta com esse código interno nesta categoria.' : err.message)
@@ -121,6 +132,25 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Observações</label>
             <input className="field" value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Opcional" />
           </div>
+
+          {!malaIdPadrao && (
+            <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer px-3 py-2.5 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+              <input type="checkbox" checked={ehMala} onChange={e => { setEhMala(e.target.checked); if (e.target.checked) setMalaId('') }} className="rounded" />
+              É uma mala de ferramentas (kit com responsável fixo)
+            </label>
+          )}
+          {!ehMala && !malaIdPadrao && malas.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Pertence a uma mala?</label>
+              <select className="field" value={malaId} onChange={e => setMalaId(e.target.value)}>
+                <option value="">Nenhuma (ferramenta avulsa)</option>
+                {malas.map(m => <option key={m.id} value={m.id}>{m.nome}{m.codigo_interno ? ` (${m.codigo_interno})` : ''}</option>)}
+              </select>
+            </div>
+          )}
+          {malaIdPadrao && (
+            <p className="text-xs text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg">Esta ferramenta será adicionada ao conteúdo da mala.</p>
+          )}
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto</label>
             <div className="flex items-center gap-3">
