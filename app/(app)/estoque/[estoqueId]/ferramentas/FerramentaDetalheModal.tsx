@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft } from 'lucide-react'
+import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
@@ -174,6 +174,12 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
                     <UserCheck size={13} /> {ferramenta.responsavel_atual ? 'Trocar responsável' : 'Atribuir responsável'}
                   </button>
                 )}
+                {ferramenta.eh_mala && (
+                  <a href={`/print/mala/${ferramenta.id}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] px-3 py-1.5 rounded-xl hover:bg-[#F8FAFC] transition-colors">
+                    <Printer size={13} /> Imprimir contrato
+                  </a>
+                )}
                 {!ferramenta.eh_mala && !ferramenta.mala_id && ferramenta.status === 'emprestada' && itemAberto && (
                   <button onClick={() => setShowDevolver(true)}
                     className="flex items-center gap-1.5 text-xs text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl hover:bg-amber-50 transition-colors">
@@ -299,10 +305,14 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
         <ModalEditarFerramenta ferramenta={ferramenta} onClose={() => setShowEditar(false)} onSaved={() => { setShowEditar(false); load(); onChanged() }} />
       )}
       {showAtribuir && ferramenta && (
-        <ModalAtribuirMala ferramentaId={ferramenta.id} responsavelAtualId={ferramenta.responsavel_atual_id} onClose={() => setShowAtribuir(false)} onSaved={() => { setShowAtribuir(false); load(); onChanged() }} />
+        <ModalAtribuirMala ferramentaId={ferramenta.id} responsavelAtualId={ferramenta.responsavel_atual_id}
+          onClose={() => setShowAtribuir(false)}
+          onSaved={() => { setShowAtribuir(false); load(); onChanged(); window.open(`/print/mala/${ferramenta.id}`, '_blank') }} />
       )}
       {showNovoItemMala && ferramenta && (
-        <ModalNovaFerramenta estoqueId={ferramenta.estoque_id} malaIdPadrao={ferramenta.id} onClose={() => setShowNovoItemMala(false)} onCreated={() => { setShowNovoItemMala(false); load(); onChanged() }} />
+        <ModalNovaFerramenta estoqueId={ferramenta.estoque_id} malaIdPadrao={ferramenta.id}
+          onClose={() => setShowNovoItemMala(false)}
+          onCreated={() => { setShowNovoItemMala(false); load(); onChanged(); window.open(`/print/mala/${ferramenta.id}`, '_blank') }} />
       )}
     </div>
   )
