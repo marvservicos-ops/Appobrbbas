@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, Building2, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardList, Copy, FileText, KeyRound, Loader2, Pencil, Plus, ReceiptText, Save, ShoppingCart, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, ClipboardList, Copy, FileText, KeyRound, Loader2, Pencil, Plus, ReceiptText, Save, ShoppingCart, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Obra, ObraMedicao, ObraOC, TipoOC, Empresa } from '@/lib/types'
 
@@ -447,6 +447,7 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
   onAnexarNF: (file: File) => void; onAbrirNF: () => void; onRemoverNF: () => void
   onEmitirNF: () => void
 }) {
+  const [aberto, setAberto] = useState(false)
   const status = STATUS[m.status]
   const borderColor = isAditivo ? 'border-l-4 border-l-amber-400' : ocNome ? 'border-l-4 border-l-[#4F7CFF]' : ''
   const badgeAditivo = isAditivo ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Aditivo{aditivoNome ? `: ${aditivoNome}` : ''}</span> : null
@@ -454,7 +455,7 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
 
   return (
     <article className={`card ${borderColor}`}>
-      <div className="flex items-start justify-between gap-3 mb-4">
+      <button type="button" onClick={() => setAberto(a => !a)} className={`w-full flex items-start justify-between gap-3 text-left ${aberto ? 'mb-4' : ''}`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs font-bold ${isAditivo ? 'text-amber-600' : 'text-[#4F7CFF]'}`}>ETAPA {m.ordem}</span>
@@ -466,11 +467,13 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
           <p className="text-sm text-[#64748B] mt-0.5">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · previsão {dataBR(m.data_prevista)}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <button onClick={onEmitirNF} title="Emitir Nota Fiscal" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-emerald-600"><ClipboardList size={14} /></button>
-          <button onClick={onEditar} className={`w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] ${isAditivo ? 'text-amber-500' : 'text-[#4F7CFF]'}`}><Pencil size={14} /></button>
-          <button onClick={onExcluir} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+          <span onClick={e => { e.stopPropagation(); onEmitirNF() }} title="Emitir Nota Fiscal" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-emerald-600 cursor-pointer"><ClipboardList size={14} /></span>
+          <span onClick={e => { e.stopPropagation(); onEditar() }} className={`w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] cursor-pointer ${isAditivo ? 'text-amber-500' : 'text-[#4F7CFF]'}`}><Pencil size={14} /></span>
+          <span onClick={e => { e.stopPropagation(); onExcluir() }} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 cursor-pointer"><Trash2 size={14} /></span>
+          <span className="w-9 h-9 flex items-center justify-center rounded-lg text-[#94A3B8]">{aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
         </div>
-      </div>
+      </button>
+      {aberto && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <label className="text-xs text-[#64748B]">Situação
           <select className="field mt-1" value={m.status} onChange={e => onAtualizar({ status: e.target.value as ObraMedicao['status'] })}>
@@ -518,6 +521,7 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
           </div>
         </div>
       </div>
+      )}
     </article>
   )
 }
@@ -534,6 +538,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   const [novaMedicaoOC, setNovaMedicaoOC] = useState<ObraOC | null>(null)
   const [showNovaMedicaoOC, setShowNovaMedicaoOC] = useState(false)
   const [showAcessoCliente, setShowAcessoCliente] = useState(false)
+  const [showLegado, setShowLegado] = useState(false)
   const [valorContrato, setValorContrato] = useState(0)
   const [contratoInput, setContratoInput] = useState('')
   const [drafts, setDrafts] = useState<EtapaDraft[]>([
@@ -826,8 +831,20 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         )}
       </section>
 
-      {/* Valor do contrato (legado) */}
-      <section className="card mb-4">
+      {/* Legado: valor único de contrato + aditivos — opcional, minimizado por padrão */}
+      <section className="card mb-6">
+        <button type="button" onClick={() => setShowLegado(v => !v)} className="w-full flex items-center justify-between gap-3 text-left">
+          <div>
+            <h2 className="font-syne font-semibold text-[#0F172A] text-sm">Configurações legadas (opcional)</h2>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Valor único de contrato e aditivos — útil só se a obra não tiver OC do cliente (ex: contrato sem OC).</p>
+          </div>
+          {showLegado ? <ChevronUp size={16} className="text-[#94A3B8] shrink-0" /> : <ChevronDown size={16} className="text-[#94A3B8] shrink-0" />}
+        </button>
+
+        {showLegado && (
+        <div className="mt-4 space-y-4">
+        {/* Valor do contrato (legado) */}
+        <div className="border-t border-[#F1F5F9] pt-4">
         <p className="text-xs text-[#94A3B8] mb-2">Modelo antigo, mantido por compatibilidade — para obras novas, prefira cadastrar OCs acima.</p>
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <label className="text-sm font-medium text-[#374151] flex-1">
@@ -844,10 +861,10 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
           </p>
         )}
         {error && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-3">{error}</p>}
-      </section>
+        </div>
 
-      {/* Aditivos */}
-      <section className="card mb-6">
+        {/* Aditivos */}
+        <div className="border-t border-[#F1F5F9] pt-4">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="font-syne font-semibold text-[#0F172A] text-sm">Aditivos de Contrato</h2>
@@ -909,6 +926,9 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
               )
             })}
           </div>
+        )}
+        </div>
+        </div>
         )}
       </section>
 
