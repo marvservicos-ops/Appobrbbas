@@ -1383,10 +1383,12 @@ function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
 }
 
 function buildGrupos(itens: OcInterna[]): GrupoOc[] {
-  // Chave de agrupamento: prioriza a OC real (oc_id); cai para nota_fiscal_url
-  // (comportamento antigo) e depois para "avulso" quando o item não tem OC
-  // vinculada — preserva a exibição de dados legados sem oc_id.
-  const chaveDe = (m: OcInterna) => m.oc_id ? `oc-${m.oc_id}` : m.nota_fiscal_url ? m.nota_fiscal_url : `avulso-${m.id}`
+  // Chave de agrupamento: prioriza o orçamento (nota_fiscal_url) — é isso que
+  // mantém cada orçamento separado visualmente, mesmo quando vários orçamentos
+  // pertencem à mesma OC. Só usa oc_id como agrupador para itens "avulsos"
+  // (sem orçamento anexado) que compartilham a mesma OC; sem OC nem orçamento,
+  // cada item vira seu próprio grupo (comportamento antigo).
+  const chaveDe = (m: OcInterna) => m.nota_fiscal_url ? m.nota_fiscal_url : m.oc_id ? `oc-${m.oc_id}` : `avulso-${m.id}`
 
   const mapa = new Map<string, OcInterna[]>()
   for (const m of itens) {
