@@ -439,6 +439,23 @@ function ModalAcessoCliente({ obraId, obraTitulo, emailDestino, onClose }: {
   )
 }
 
+// ─── Campo com estado local: só grava (onCommit) ao sair do campo, evitando
+// gravar no banco a cada tecla (o que embaralhava o valor digitado e podia
+// causar corrida entre requisições) ────────────────────────────────────────
+function CampoLocal({ label, valor, tipo = 'text', onCommit, ...rest }: {
+  label: string; valor: string; tipo?: string; onCommit: (v: string) => void
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur' | 'type'>) {
+  const [texto, setTexto] = useState(valor)
+  useEffect(() => { setTexto(valor) }, [valor])
+  return (
+    <label className="text-xs text-[#64748B]">{label}
+      <input {...rest} type={tipo} className="field mt-1" value={texto}
+        onChange={e => setTexto(e.target.value)}
+        onBlur={() => { if (texto !== valor) onCommit(texto) }} />
+    </label>
+  )
+}
+
 // ─── Card de medição ──────────────────────────────────────────────────────────
 function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, onExcluir, onAtualizar, onAnexarNF, onAbrirNF, onRemoverNF, onEmitirNF }: {
   m: ObraMedicao; isAditivo: boolean; aditivoNome?: string; ocNome?: string; uploading: string | null
@@ -489,21 +506,14 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
         <label className="text-xs text-[#64748B]">Data do pagamento
           <input type="date" className="field mt-1" value={m.data_pagamento ?? ''} onChange={e => onAtualizar({ data_pagamento: e.target.value || undefined })} />
         </label>
-        <label className="text-xs text-[#64748B]">Valor faturado
-          <input type="number" step="0.01" className="field mt-1" value={m.valor_faturado ?? ''}
-            onBlur={e => onAtualizar({ valor_faturado: Number(e.target.value) || undefined })}
-            onChange={e => onAtualizar({ valor_faturado: Number(e.target.value) })} />
-        </label>
-        <label className="text-xs text-[#64748B]">Valor recebido
-          <input type="number" step="0.01" className="field mt-1" value={m.valor_recebido ?? ''}
-            onBlur={e => onAtualizar({ valor_recebido: Number(e.target.value) || undefined })}
-            onChange={e => onAtualizar({ valor_recebido: Number(e.target.value) })} />
-        </label>
-        <label className="text-xs text-[#64748B]">Número da NF
-          <input className="field mt-1" value={m.numero_nf ?? ''}
-            onBlur={e => onAtualizar({ numero_nf: e.target.value || undefined })}
-            onChange={e => onAtualizar({ numero_nf: e.target.value })} />
-        </label>
+        <CampoLocal label="Valor faturado" tipo="number" valor={m.valor_faturado != null ? String(m.valor_faturado) : ''}
+          step="0.01"
+          onCommit={v => onAtualizar({ valor_faturado: v === '' ? undefined : Number(v) })} />
+        <CampoLocal label="Valor recebido" tipo="number" valor={m.valor_recebido != null ? String(m.valor_recebido) : ''}
+          step="0.01"
+          onCommit={v => onAtualizar({ valor_recebido: v === '' ? undefined : Number(v) })} />
+        <CampoLocal label="Número da NF" valor={m.numero_nf ?? ''}
+          onCommit={v => onAtualizar({ numero_nf: v || undefined })} />
         <div className="min-w-0 text-xs text-[#64748B]">
           Nota fiscal
           <div className="mt-1 flex min-w-0 gap-2">
