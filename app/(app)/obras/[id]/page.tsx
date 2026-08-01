@@ -66,6 +66,7 @@ interface ObraMaterial {
   preco_venda_unitario?: number
   valor_venda_total?: number
   numero_oc?: string
+  oc_id?: string | null
   status: 'pendente' | 'orcado' | 'comprado' | 'em_transito' | 'recebido' | 'instalado'
   nota_fiscal_url?: string
   nota_fiscal_path?: string
@@ -2539,6 +2540,80 @@ function F({ label, children, className }: { label: string; children: React.Reac
   return <div className={className}><label className="block text-xs font-medium text-[#64748B] mb-1">{label}</label>{children}</div>
 }
 
+// ── SeletorOC: escolhe uma OC existente da obra ou cria uma nova na hora ──
+interface OCOption { id: string; numero_oc: string; tipo: string; valor_total: number }
+
+function SeletorOC({ obraId, ocId, onChange }: {
+  obraId: string; ocId: string; onChange: (ocId: string, numeroOc: string) => void
+}) {
+  const [ocs, setOcs] = useState<OCOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showNova, setShowNova] = useState(false)
+  const [novoNumero, setNovoNumero] = useState('')
+  const [novoTipo, setNovoTipo] = useState<'servico' | 'material' | 'outro'>('material')
+  const [novoValor, setNovoValor] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function load() {
+    const supabase = createClient()
+    const { data } = await supabase.from('obra_ocs').select('id, numero_oc, tipo, valor_total').eq('obra_id', obraId).order('numero_oc')
+    setOcs((data ?? []) as OCOption[])
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [obraId])
+
+  async function criarOC() {
+    if (!novoNumero.trim() || !novoValor) return
+    setSaving(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.from('obra_ocs')
+      .insert({ obra_id: obraId, numero_oc: novoNumero.trim(), tipo: novoTipo, valor_total: Number(novoValor) })
+      .select('id, numero_oc').single()
+    setSaving(false)
+    if (error) { alert(error.message); return }
+    setShowNova(false); setNovoNumero(''); setNovoValor('')
+    await load()
+    onChange(data.id, data.numero_oc)
+  }
+
+  if (showNova) {
+    return (
+      <div className="border border-[#C7D2FE] bg-[#EEF2FF]/50 rounded-xl p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-[#4F7CFF]">Nova OC</p>
+          <button type="button" onClick={() => setShowNova(false)} className="text-[#94A3B8] hover:text-[#374151]"><X size={14} /></button>
+        </div>
+        <input className="field text-sm" placeholder="Número da OC" value={novoNumero} onChange={e => setNovoNumero(e.target.value)} />
+        <div className="grid grid-cols-2 gap-2">
+          <select className="field text-sm" value={novoTipo} onChange={e => setNovoTipo(e.target.value as typeof novoTipo)}>
+            <option value="servico">Serviço</option>
+            <option value="material">Material</option>
+            <option value="outro">Outro</option>
+          </select>
+          <input type="number" step="0.01" min="0" className="field text-sm" placeholder="Valor total (R$)" value={novoValor} onChange={e => setNovoValor(e.target.value)} />
+        </div>
+        <button type="button" onClick={criarOC} disabled={saving || !novoNumero.trim() || !novoValor}
+          className="btn-primary text-xs w-full justify-center disabled:opacity-50">
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Criar e usar esta OC
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <select className="field" value={ocId} disabled={loading}
+      onChange={e => {
+        if (e.target.value === '__nova__') { setShowNova(true); return }
+        const oc = ocs.find(o => o.id === e.target.value)
+        onChange(e.target.value, oc?.numero_oc ?? '')
+      }}>
+      <option value="">Selecione a OC...</option>
+      {ocs.map(oc => <option key={oc.id} value={oc.id}>{oc.numero_oc}</option>)}
+      <option value="__nova__">+ Nova OC...</option>
+    </select>
+  )
+}
+
 // ── ModalMaterial ─────────────────────────────────────
 function ModalMaterial({ obraId, material, onClose, onSaved }: {
   obraId: string; material: ObraMaterial | null; onClose: () => void; onSaved: () => void
@@ -2559,6 +2634,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
   const [precoVendaUnitario, setPrecoVendaUnitario] = useState(material?.preco_venda_unitario != null ? String(material.preco_venda_unitario) : '')
   const [valorVendaTotal, setValorVendaTotal] = useState(material?.valor_venda_total != null ? String(material.valor_venda_total) : '')
   const [numeroOC, setNumeroOC] = useState(material?.numero_oc ?? '')
+  const [ocId, setOcId] = useState(material?.oc_id ?? '')
   const [status, setStatus] = useState<ObraMaterial['status']>(material?.status ?? 'pendente')
   const [observacoes, setObservacoes] = useState(material?.observacoes ?? '')
   const [nfUrl, setNfUrl] = useState(material?.nota_fiscal_url ?? '')
@@ -2640,6 +2716,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
       preco_venda_unitario: precoVendaUnitario ? parseFloat(precoVendaUnitario) : null,
       valor_venda_total: valorVendaTotal ? parseFloat(valorVendaTotal) : null,
       numero_oc: numeroOC.trim() || null,
+      oc_id: tipCompra === 'interna' ? (ocId || null) : null,
       status,
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
@@ -2756,7 +2833,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
             <div className="border border-purple-100 bg-purple-50/50 rounded-xl p-4 space-y-3">
               <p className="text-xs font-semibold text-purple-700">Preço de Venda — OC do Cliente</p>
               <F label="Nº da OC">
-                <input className="field" value={numeroOC} onChange={e => setNumeroOC(e.target.value)} placeholder="Ex: OC-2024-0042" />
+                <SeletorOC obraId={obraId} ocId={ocId} onChange={(id, numero) => { setOcId(id); setNumeroOC(numero) }} />
               </F>
               <div className="grid grid-cols-2 gap-3">
                 <F label="Preço venda unitário (R$)">
@@ -3010,6 +3087,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
   const [comprador, setComprador] = useState(ref.comprador ?? '')
   const [dataCompra, setDataCompra] = useState(ref.data_compra ?? '')
   const [numeroOC, setNumeroOC] = useState(ref.numero_oc ?? '')
+  const [ocId, setOcId] = useState(ref.oc_id ?? '')
   const [nfNumero, setNfNumero] = useState(orcNumero)
   const [observacoes, setObservacoes] = useState(obsExtra)
   const [nfUrl, setNfUrl] = useState(ref.nota_fiscal_url ?? '')
@@ -3061,6 +3139,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
       comprador: comprador.trim() || null,
       data_compra: dataCompra || null,
       numero_oc: tipCompra === 'interna' && numeroOC.trim() ? numeroOC.trim() : null,
+      oc_id: tipCompra === 'interna' ? (ocId || null) : null,
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
       nf_pagamento_url: nfPagamentoUrl || null,
@@ -3112,7 +3191,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
 
           {tipCompra === 'interna' && (
             <F label="Nº OC (Ordem de Compra do cliente)">
-              <input className="field" value={numeroOC} onChange={e => setNumeroOC(e.target.value)} placeholder="Ex: OC-2024-001" />
+              <SeletorOC obraId={obraId} ocId={ocId} onChange={(id, numero) => { setOcId(id); setNumeroOC(numero) }} />
             </F>
           )}
 
@@ -3230,6 +3309,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
   const [localChegada, setLocalChegada] = useState('')
   const [destino, setDestino] = useState('')
   const [numeroOC, setNumeroOC] = useState('')
+  const [ocId, setOcId] = useState('')
   const [nfUrl, setNfUrl] = useState('')
   const [nfPath, setNfPath] = useState('')
   const [uploadingNf, setUploadingNf] = useState(false)
@@ -3300,6 +3380,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
       preco_venda_unitario: parseFloat(it.precoVendaUnitario) || null,
       valor_venda_total: parseFloat(it.valorVendaTotal) || null,
       numero_oc: tipCompra === 'interna' && numeroOC.trim() ? numeroOC.trim() : null,
+      oc_id: tipCompra === 'interna' ? (ocId || null) : null,
       status: statusPadrao,
       nota_fiscal_url: nfUrl || null,
       nota_fiscal_path: nfPath || null,
@@ -3360,7 +3441,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
 
           {tipCompra === 'interna' && (
             <F label="Nº da OC do cliente">
-              <input className="field" value={numeroOC} onChange={e => setNumeroOC(e.target.value)} placeholder="Ex: OC-2024-0042" />
+              <SeletorOC obraId={obraId} ocId={ocId} onChange={(id, numero) => { setOcId(id); setNumeroOC(numero) }} />
             </F>
           )}
 

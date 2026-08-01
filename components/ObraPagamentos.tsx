@@ -19,7 +19,7 @@ interface NotaMaterial {
 }
 
 interface OcInterna {
-  id: string; descricao: string; numero_oc?: string | null; fornecedor?: string | null
+  id: string; descricao: string; numero_oc?: string | null; oc_id?: string | null; fornecedor?: string | null
   comprador?: string | null; data_compra?: string | null
   valor_total?: number | null; valor_venda_total?: number | null
   custos_extras?: { descricao: string; valor: number }[] | null
@@ -27,7 +27,8 @@ interface OcInterna {
 }
 
 interface GrupoOc {
-  key: string           // nota_fiscal_url ou 'avulso-{id}'
+  key: string           // oc_id, ou nota_fiscal_url, ou 'avulso-{id}' (fallback p/ dados legados)
+  ocId?: string | null
   orcNumero?: string    // número extraído de observacoes
   fornecedor?: string
   comprador?: string
@@ -1343,12 +1344,14 @@ function ModalEmitirNF({ medicao, obra, tomador, prestador, onClose }: {
 }
 
 function buildGrupos(itens: OcInterna[]): GrupoOc[] {
-  const comUrl = itens.filter(m => m.nota_fiscal_url)
-  const semUrl = itens.filter(m => !m.nota_fiscal_url)
+  // Chave de agrupamento: prioriza a OC real (oc_id); cai para nota_fiscal_url
+  // (comportamento antigo) e depois para "avulso" quando o item não tem OC
+  // vinculada — preserva a exibição de dados legados sem oc_id.
+  const chaveDe = (m: OcInterna) => m.oc_id ? `oc-${m.oc_id}` : m.nota_fiscal_url ? m.nota_fiscal_url : `avulso-${m.id}`
 
   const mapa = new Map<string, OcInterna[]>()
-  for (const m of comUrl) {
-    const k = m.nota_fiscal_url!
+  for (const m of itens) {
+    const k = chaveDe(m)
     if (!mapa.has(k)) mapa.set(k, [])
     mapa.get(k)!.push(m)
   }
@@ -1364,23 +1367,12 @@ function buildGrupos(itens: OcInterna[]): GrupoOc[] {
     const orcNumero = ref.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
     grupos.push({
       key, orcNumero, itens: grpItens,
+      ocId: ref.oc_id ?? null,
       fornecedor: ref.fornecedor ?? undefined,
       comprador: ref.comprador ?? undefined,
       data_compra: ref.data_compra ?? undefined,
       numero_oc: ref.numero_oc ?? undefined,
       totalItens, totalExtras, totalOrc: totalItens + totalExtras, totalVenda,
-    })
-  }
-
-  // Avulsos (sem URL de orçamento) — cada um vira seu próprio "grupo"
-  for (const m of semUrl) {
-    const totalItens = m.valor_total ?? 0
-    const totalVenda = m.valor_venda_total ?? 0
-    grupos.push({
-      key: `avulso-${m.id}`, itens: [m],
-      fornecedor: m.fornecedor ?? undefined,
-      numero_oc: m.numero_oc ?? undefined,
-      totalItens, totalExtras: 0, totalOrc: totalItens, totalVenda,
     })
   }
 
@@ -1403,7 +1395,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
   useEffect(() => {
     createClient()
       .from('obra_materiais')
-      .select('id, descricao, numero_oc, fornecedor, comprador, data_compra, valor_total, valor_venda_total, custos_extras, observacoes, nota_fiscal_url, status')
+      .select('id, descricao, numero_oc, oc_id, fornecedor, comprador, data_compra, valor_total, valor_venda_total, custos_extras, observacoes, nota_fiscal_url, status')
       .eq('obra_id', obraId)
       .eq('tipo_compra', 'interna')
       .order('created_at')
@@ -1446,9 +1438,20 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
 
   const percentualAuto = valorContrato > 0 ? (valorSelecionado / valorContrato) * 100 : 0
 
+  // OC dos itens selecionados — precisa ser única (ou todos sem OC, caso legado)
+  const ocsSelecionadas = useMemo(() => {
+    const ids = new Set<string>()
+    for (const g of grupos) {
+      if (g.itens.some(i => selecionados.has(i.id)) && g.ocId) ids.add(g.ocId)
+    }
+    return Array.from(ids)
+  }, [grupos, selecionados])
+
   async function save() {
     if (valorSelecionado <= 0) { setErro('Selecione ao menos um item.'); return }
+    if (ocsSelecionadas.length > 1) { setErro('Selecione itens de uma única OC — os itens selecionados pertencem a OCs diferentes.'); return }
     setSaving(true); setErro('')
+    const ocId = ocsSelecionadas[0] ?? null
 
     const valor = Math.round(valorSelecionado * 100) / 100
 
@@ -1477,6 +1480,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
       data_emissao: dataEmissao,
       numero_nf: numeroNf || null,
       observacoes: 'medicao_material',
+      oc_id: ocId,
     }).select('id').single()
     if (errMedicao) { setErro(errMedicao.message); setSaving(false); return }
 
@@ -1490,6 +1494,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
       material_id: selecionados.size === 1 ? Array.from(selecionados)[0] : null,
       itens_ids: Array.from(selecionados),
       medicao_id: medicaoData?.id ?? null,
+      oc_id: ocId,
     })
 
     setSaving(false)
@@ -1579,10 +1584,13 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
               <input type="text" value={numeroNf} onChange={e => setNumeroNf(e.target.value)} placeholder="001234" className="input-field w-full" />
             </div>
           </div>
+          {ocsSelecionadas.length > 1 && (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">Os itens selecionados pertencem a OCs diferentes — selecione itens de uma única OC.</p>
+          )}
           {erro && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{erro}</p>}
           <div className="flex gap-3">
             <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
-            <button onClick={save} disabled={saving || valorSelecionado <= 0} className="btn-primary flex-1 disabled:opacity-50">
+            <button onClick={save} disabled={saving || valorSelecionado <= 0 || ocsSelecionadas.length > 1} className="btn-primary flex-1 disabled:opacity-50">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               Registrar {valorSelecionado > 0 && moeda(valorSelecionado)}
             </button>

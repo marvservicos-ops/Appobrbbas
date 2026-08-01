@@ -39,6 +39,8 @@ interface MaterialObra {
   nota_fiscal_url?: string | null
   status: string
   numero_oc?: string | null
+  oc_id?: string | null
+  oc?: { numero_oc: string } | null
   obra_id: string
 }
 
@@ -87,7 +89,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
       const supabase = createClient()
       const [regRes, matRes, eqRes, finRes, tribRes] = await Promise.all([
         supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false }),
-        supabase.from('obra_materiais').select('*').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
+        supabase.from('obra_materiais').select('*, oc:obra_ocs(numero_oc)').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
         supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(nome, cargo)').eq('obra_id', obraId),
         supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
         supabase.from('configuracoes_empresa').select('valor').eq('chave', 'aliquota_simples').maybeSingle(),
@@ -282,7 +284,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                 const totalExtras = extras.reduce((s, c) => s + c.valor, 0)
                 const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
                 const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
-                const orcNum = itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 10)
+                const orcNum = itens[0].oc?.numero_oc ?? itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 10)
                 return (
                   <div key={`mgrp-${url}`}>
                     <div className="px-4 py-2 bg-[#F0F4FF]">
@@ -349,7 +351,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                     const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
                     const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
                     const mg = vendaGrupo - custoGrupo
-                    const orcNum = itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 12)
+                    const orcNum = itens[0].oc?.numero_oc ?? itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 12)
                     return (
                       <>
                         <tr key={`grupo-${url}`} className="bg-[#F0F4FF] border-b border-[#E2E8F0]">
