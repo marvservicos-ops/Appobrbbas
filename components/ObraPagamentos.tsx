@@ -734,6 +734,17 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         </button>
       </div>
 
+      {/* Cards de resumo */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        {cards.map(({ label, value, icon: Icon, tone }) => (
+          <div key={label} className="card p-4">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tone}`}><Icon size={17} /></div>
+            <p className="text-xs text-[#64748B] mt-3">{label}</p>
+            <p className="font-syne text-base md:text-xl font-bold text-[#0F172A] mt-0.5">{moeda(value)}</p>
+          </div>
+        ))}
+      </div>
+
       {/* Ordens de Compra (OCs) */}
       <section className="card mb-6">
         <div className="flex items-center justify-between mb-3">
@@ -754,6 +765,11 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
               const medicoesDaOC = medicoesPorOC(oc.id)
               const faturadoOC = medicoesDaOC.filter(m => m.status !== 'cancelada').reduce((s, m) => s + Number(m.valor_faturado || 0), 0)
               const saldoOC = Math.max(0, Number(oc.valor_total) - faturadoOC)
+              const temMaterial = medicoesDaOC.some(m => m.observacoes === 'medicao_material')
+              const temServico = medicoesDaOC.some(m => m.observacoes !== 'medicao_material')
+              const badgesTipo = temMaterial || temServico
+                ? [temServico && 'Serviço', temMaterial && 'Material'].filter(Boolean) as string[]
+                : [TIPOS_OC.find(t => t.id === oc.tipo)?.label ?? oc.tipo]
               return (
                 <div key={oc.id} className="border border-[#C7D2FE] bg-[#EEF2FF]/40 rounded-xl p-3">
                   <div className="flex items-start justify-between gap-3 group">
@@ -761,7 +777,9 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <ShoppingCart size={13} className="text-[#4F7CFF] shrink-0" />
                         <p className="font-semibold text-[#0F172A] text-sm">{oc.numero_oc}</p>
-                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-white text-[#4F7CFF] border border-[#C7D2FE]">{TIPOS_OC.find(t => t.id === oc.tipo)?.label}</span>
+                        {badgesTipo.map(label => (
+                          <span key={label} className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-white text-[#4F7CFF] border border-[#C7D2FE]">{label}</span>
+                        ))}
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap text-xs">
                         <span className="font-bold text-[#4F7CFF]">{moeda(Number(oc.valor_total))}</span>
@@ -784,7 +802,10 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                             <p className="text-sm font-medium text-[#0F172A]">{m.nome}</p>
                             <p className="text-xs text-[#64748B]">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · <span className={`font-semibold ${STATUS[m.status].cls.split(' ')[1]}`}>{STATUS[m.status].label}</span></p>
                           </div>
-                          <button onClick={() => setEditandoMedicao(m)} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#4F7CFF]"><Pencil size={12} /></button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => setEditandoMedicao(m)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#4F7CFF]"><Pencil size={12} /></button>
+                            <button onClick={() => excluir(m)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={12} /></button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -828,6 +849,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="font-syne font-semibold text-[#0F172A] text-sm">Aditivos de Contrato</h2>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Legado — um aditivo também é uma OC. Para novos casos, prefira cadastrar como OC (use o nome pra dizer do que se trata).</p>
             {aditivos.length > 0 && <p className="text-xs text-[#64748B] mt-0.5">Total: <strong className="text-amber-600">{moeda(totalAditivos)}</strong></p>}
           </div>
           <button onClick={() => { setEditandoAditivo(null); setShowModalAditivo(true) }} className="btn-secondary text-xs px-3 py-1.5">
@@ -959,80 +981,75 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         )
       })()}
 
-      {/* Cards de resumo */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {cards.map(({ label, value, icon: Icon, tone }) => (
-          <div key={label} className="card p-4">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tone}`}><Icon size={17} /></div>
-            <p className="text-xs text-[#64748B] mt-3">{label}</p>
-            <p className="font-syne text-base md:text-xl font-bold text-[#0F172A] mt-0.5">{moeda(value)}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Medições */}
-      {!medicoes.length ? (
-        <section className="card">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
-            <div><h2 className="font-syne font-semibold text-[#0F172A]">Defina as etapas</h2><p className="text-sm text-[#64748B] mt-1">A soma dos percentuais deve fechar em 100%.</p></div>
-            <div className={`text-sm font-bold px-3 py-2 rounded-lg ${Math.abs(totalPercentual - 100) < .001 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{totalPercentual.toLocaleString('pt-BR')}%</div>
-          </div>
-          <div className="space-y-3">
-            {drafts.map((d, i) => (
-              <div key={i} className="grid grid-cols-1 sm:grid-cols-[48px_1fr_130px_160px_44px] items-end gap-3 p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                <div className="hidden sm:flex h-11 items-center justify-center rounded-lg bg-white border border-[#E2E8F0] text-sm font-bold text-[#64748B]">{i + 1}</div>
-                <label className="text-xs text-[#64748B]">Nome da etapa<input className="field mt-1" value={d.nome} onChange={e => setDrafts(list => list.map((x, j) => j === i ? { ...x, nome: e.target.value } : x))} /></label>
-                <label className="text-xs text-[#64748B]">Percentual<input type="number" min="0.001" max="100" step="0.001" className="field mt-1" value={d.percentual} onChange={e => setDrafts(list => list.map((x, j) => j === i ? { ...x, percentual: Number(e.target.value) } : x))} /></label>
-                <label className="text-xs text-[#64748B]">Previsão<input type="date" className="field mt-1" value={d.data_prevista} onChange={e => setDrafts(list => list.map((x, j) => j === i ? { ...x, data_prevista: e.target.value } : x))} /></label>
-                <button disabled={drafts.length === 1} onClick={() => setDrafts(list => list.filter((_, j) => j !== i))} className="w-11 h-11 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-30"><Trash2 size={16} /></button>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 mt-5">
-            <button onClick={() => setDrafts(list => [...list, { nome: `${list.length + 1}ª medição`, percentual: 0, data_prevista: '' }])} className="btn-secondary"><Plus size={15} /> Adicionar etapa</button>
-            <button onClick={criarPlano} disabled={saving} className="btn-primary sm:ml-auto">{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Salvar plano</button>
-          </div>
-        </section>
-      ) : (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="font-syne font-semibold text-[#0F172A]">Etapas da medição</h2>
-              <p className="text-xs text-[#64748B] mt-0.5">{pct(resumo.percentualFaturado)} do contrato faturado · soma total: <strong className={percentualDesequilibrado ? 'text-red-500' : 'text-emerald-600'}>{pct(resumo.somaPercentuais)}</strong></p>
+      {/* Medições base (legado) — só aparece se a obra ainda não usa OCs, ou já tem medições base */}
+      {(ocs.length === 0 || medicoesBase.length > 0) && (
+        !medicoes.length ? (
+          <section className="card">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
+              <div><h2 className="font-syne font-semibold text-[#0F172A]">Defina as etapas</h2><p className="text-sm text-[#64748B] mt-1">A soma dos percentuais deve fechar em 100%.</p></div>
+              <div className={`text-sm font-bold px-3 py-2 rounded-lg ${Math.abs(totalPercentual - 100) < .001 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{totalPercentual.toLocaleString('pt-BR')}%</div>
             </div>
-            <button onClick={() => { setNovaMedicaoAditivo(null); setShowNovaMedicao(true) }} className="btn-secondary text-xs px-3 py-1.5 shrink-0">
-              <Plus size={13} /> Nova medição
-            </button>
-          </div>
-
-          {/* Aviso percentual desequilibrado */}
-          {percentualDesequilibrado && (
-            <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-              <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-3">
+              {drafts.map((d, i) => (
+                <div key={i} className="grid grid-cols-1 sm:grid-cols-[48px_1fr_130px_160px_44px] items-end gap-3 p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                  <div className="hidden sm:flex h-11 items-center justify-center rounded-lg bg-white border border-[#E2E8F0] text-sm font-bold text-[#64748B]">{i + 1}</div>
+                  <label className="text-xs text-[#64748B]">Nome da etapa<input className="field mt-1" value={d.nome} onChange={e => setDrafts(list => list.map((x, j) => j === i ? { ...x, nome: e.target.value } : x))} /></label>
+                  <label className="text-xs text-[#64748B]">Percentual<input type="number" min="0.001" max="100" step="0.001" className="field mt-1" value={d.percentual} onChange={e => setDrafts(list => list.map((x, j) => j === i ? { ...x, percentual: Number(e.target.value) } : x))} /></label>
+                  <label className="text-xs text-[#64748B]">Previsão<input type="date" className="field mt-1" value={d.data_prevista} onChange={e => setDrafts(list => list.map((x, j) => j === i ? { ...x, data_prevista: e.target.value } : x))} /></label>
+                  <button disabled={drafts.length === 1} onClick={() => setDrafts(list => list.filter((_, j) => j !== i))} className="w-11 h-11 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-30"><Trash2 size={16} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 mt-5">
+              <button onClick={() => setDrafts(list => [...list, { nome: `${list.length + 1}ª medição`, percentual: 0, data_prevista: '' }])} className="btn-secondary"><Plus size={15} /> Adicionar etapa</button>
+              <button onClick={criarPlano} disabled={saving} className="btn-primary sm:ml-auto">{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Salvar plano</button>
+            </div>
+          </section>
+        ) : (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-amber-800">Percentuais não somam 100%</p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  A soma atual é <strong>{pct(resumo.somaPercentuais)}</strong>. Ajuste as medições planejadas ou adicione uma nova medição para cobrir o restante ({pct(100 - resumo.somaPercentuais)}).
-                </p>
+                <h2 className="font-syne font-semibold text-[#0F172A]">Etapas da medição</h2>
+                <p className="text-xs text-[#64748B] mt-0.5">{pct(resumo.percentualFaturado)} do contrato faturado · soma total: <strong className={percentualDesequilibrado ? 'text-red-500' : 'text-emerald-600'}>{pct(resumo.somaPercentuais)}</strong></p>
               </div>
+              <button onClick={() => { setNovaMedicaoAditivo(null); setShowNovaMedicao(true) }} className="btn-secondary text-xs px-3 py-1.5 shrink-0">
+                <Plus size={13} /> Nova medição
+              </button>
             </div>
-          )}
 
-          {/* Medições base */}
-          {medicoesBase.map(m => (
-            <CardMedicao key={m.id} m={m} isAditivo={false}
-              uploading={uploading}
-              onEditar={() => setEditandoMedicao(m)}
-              onExcluir={() => excluir(m)}
-              onAtualizar={changes => atualizar(m, changes)}
-              onAnexarNF={file => anexarNF(m, file)}
-              onAbrirNF={() => abrirNF(m)}
-              onRemoverNF={() => removerNF(m)}
-              onEmitirNF={() => setEmitindoNF(m)}
-            />
-          ))}
+            {/* Aviso percentual desequilibrado */}
+            {percentualDesequilibrado && (
+              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Percentuais não somam 100%</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    A soma atual é <strong>{pct(resumo.somaPercentuais)}</strong>. Ajuste as medições planejadas ou adicione uma nova medição para cobrir o restante ({pct(100 - resumo.somaPercentuais)}).
+                  </p>
+                </div>
+              </div>
+            )}
 
-          {/* Medições de aditivo (agrupadas abaixo) */}
+            {/* Medições base */}
+            {medicoesBase.map(m => (
+              <CardMedicao key={m.id} m={m} isAditivo={false}
+                uploading={uploading}
+                onEditar={() => setEditandoMedicao(m)}
+                onExcluir={() => excluir(m)}
+                onAtualizar={changes => atualizar(m, changes)}
+                onAnexarNF={file => anexarNF(m, file)}
+                onAbrirNF={() => abrirNF(m)}
+                onRemoverNF={() => removerNF(m)}
+                onEmitirNF={() => setEmitindoNF(m)}
+              />
+            ))}
+          </section>
+        )
+      )}
+
+      {/* Medições de aditivo — sempre aparecem se existirem, independente de OCs */}
+      {aditivos.some(a => medicoesPorAditivo(a.id).length > 0) && (
+        <section className="space-y-3 mt-3">
           {aditivos.map(a => {
             const meds = medicoesPorAditivo(a.id)
             return meds.map(m => (
