@@ -332,14 +332,23 @@ function ModalAcessoCliente({ obraId, obraTitulo, emailDestino, onClose }: {
   obraId: string; obraTitulo: string; emailDestino?: string | null; onClose: () => void
 }) {
   const [gerando, setGerando] = useState(false)
+  const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
   const [acesso, setAcesso] = useState<{ token: string; pin: string } | null>(null)
+  const [tokenExistente, setTokenExistente] = useState<string | null>(null)
   const [copiedLink, setCopiedLink] = useState(false)
   const [copiedPin, setCopiedPin] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
 
-  const link = acesso ? `${window.location.origin}/portal/${acesso.token}` : ''
+  const link = acesso
+    ? `${window.location.origin}/portal/${acesso.token}`
+    : tokenExistente ? `${window.location.origin}/portal/${tokenExistente}` : ''
+
+  useEffect(() => {
+    createClient().from('obra_acessos_cliente').select('token').eq('obra_id', obraId).eq('ativo', true).maybeSingle()
+      .then(({ data }) => { setTokenExistente(data?.token ?? null); setCarregando(false) })
+  }, [obraId])
 
   async function gerar() {
     setGerando(true); setErro('')
@@ -387,11 +396,32 @@ function ModalAcessoCliente({ obraId, obraTitulo, emailDestino, onClose }: {
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]"><X size={15} className="text-[#64748B]" /></button>
         </div>
         <div className="p-5 space-y-4">
-          {!acesso ? (
+          {carregando ? (
+            <div className="flex items-center justify-center py-6"><Loader2 size={20} className="animate-spin text-[#4F7CFF]" /></div>
+          ) : !acesso && tokenExistente ? (
+            <>
+              <p className="text-sm text-[#64748B]">Já existe um acesso ativo para esta obra.</p>
+              <div>
+                <label className="block text-xs font-medium text-[#64748B] mb-1">Link do portal</label>
+                <div className="flex gap-2">
+                  <input readOnly className="field flex-1 text-xs" value={link} />
+                  <button onClick={() => { navigator.clipboard.writeText(link); setCopiedLink(true); setTimeout(() => setCopiedLink(false), 1500) }}
+                    className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]">
+                    <Copy size={15} />
+                  </button>
+                </div>
+                {copiedLink && <p className="text-xs text-emerald-600 mt-1">Link copiado!</p>}
+              </div>
+              <p className="text-xs text-[#94A3B8]">O PIN não fica salvo em texto no sistema — não é possível recuperá-lo, só gerar um novo (o que invalida este link e o PIN atual).</p>
+              {erro && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{erro}</p>}
+              <button onClick={gerar} disabled={gerando} className="btn-secondary w-full justify-center">
+                {gerando ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />} Gerar novo acesso (PIN esquecido)
+              </button>
+            </>
+          ) : !acesso ? (
             <>
               <p className="text-sm text-[#64748B]">
                 Gera um link permanente + PIN para o cliente acompanhar as OCs e medições desta obra, sem precisar de e-mail toda vez.
-                Gerar um novo acesso <strong>invalida o link anterior</strong>.
               </p>
               {erro && <p className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{erro}</p>}
               <button onClick={gerar} disabled={gerando} className="btn-primary w-full justify-center">
