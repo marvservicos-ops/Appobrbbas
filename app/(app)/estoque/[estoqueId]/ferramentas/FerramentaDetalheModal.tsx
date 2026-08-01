@@ -312,7 +312,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
       {showNovoItemMala && ferramenta && (
         <ModalNovaFerramenta estoqueId={ferramenta.estoque_id} malaIdPadrao={ferramenta.id}
           onClose={() => setShowNovoItemMala(false)}
-          onCreated={() => { setShowNovoItemMala(false); load(); onChanged(); window.open(`/print/mala/${ferramenta.id}`, '_blank') }} />
+          onCreated={() => { setShowNovoItemMala(false); load(); onChanged() }} />
       )}
     </div>
   )
