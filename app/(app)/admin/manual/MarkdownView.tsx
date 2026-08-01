@@ -1,9 +1,11 @@
 'use client'
 
+const DIACRITICS_RE = new RegExp('[\\u0300-\\u036f]', 'g')
+
 function slugify(text: string) {
   return text
     .toLowerCase()
-    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .normalize('NFD').replace(DIACRITICS_RE, '')
     .replace(/[^a-z0-9\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-')
