@@ -440,16 +440,17 @@ function ModalAcessoCliente({ obraId, obraTitulo, emailDestino, onClose }: {
 }
 
 // ─── Card de medição ──────────────────────────────────────────────────────────
-function CardMedicao({ m, isAditivo, aditivoNome, uploading, onEditar, onExcluir, onAtualizar, onAnexarNF, onAbrirNF, onRemoverNF, onEmitirNF }: {
-  m: ObraMedicao; isAditivo: boolean; aditivoNome?: string; uploading: string | null
+function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, onExcluir, onAtualizar, onAnexarNF, onAbrirNF, onRemoverNF, onEmitirNF }: {
+  m: ObraMedicao; isAditivo: boolean; aditivoNome?: string; ocNome?: string; uploading: string | null
   onEditar: () => void; onExcluir: () => void
   onAtualizar: (changes: Partial<ObraMedicao>) => void
   onAnexarNF: (file: File) => void; onAbrirNF: () => void; onRemoverNF: () => void
   onEmitirNF: () => void
 }) {
   const status = STATUS[m.status]
-  const borderColor = isAditivo ? 'border-l-4 border-l-amber-400' : ''
+  const borderColor = isAditivo ? 'border-l-4 border-l-amber-400' : ocNome ? 'border-l-4 border-l-[#4F7CFF]' : ''
   const badgeAditivo = isAditivo ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Aditivo{aditivoNome ? `: ${aditivoNome}` : ''}</span> : null
+  const badgeOC = ocNome ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#EEF2FF] text-[#4F7CFF]">OC: {ocNome}</span> : null
 
   return (
     <article className={`card ${borderColor}`}>
@@ -459,6 +460,7 @@ function CardMedicao({ m, isAditivo, aditivoNome, uploading, onEditar, onExcluir
             <span className={`text-xs font-bold ${isAditivo ? 'text-amber-600' : 'text-[#4F7CFF]'}`}>ETAPA {m.ordem}</span>
             <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
             {badgeAditivo}
+            {badgeOC}
           </div>
           <h3 className="font-syne font-semibold text-[#0F172A] mt-1">{m.nome}</h3>
           <p className="text-sm text-[#64748B] mt-0.5">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · previsão {dataBR(m.data_prevista)}</p>
@@ -795,18 +797,18 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                   </div>
 
                   {medicoesDaOC.length > 0 && (
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-3 space-y-3">
                       {medicoesDaOC.map(m => (
-                        <div key={m.id} className="bg-white border border-[#C7D2FE] rounded-lg p-2.5 flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-medium text-[#0F172A]">{m.nome}</p>
-                            <p className="text-xs text-[#64748B]">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · <span className={`font-semibold ${STATUS[m.status].cls.split(' ')[1]}`}>{STATUS[m.status].label}</span></p>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button onClick={() => setEditandoMedicao(m)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#4F7CFF]"><Pencil size={12} /></button>
-                            <button onClick={() => excluir(m)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={12} /></button>
-                          </div>
-                        </div>
+                        <CardMedicao key={m.id} m={m} isAditivo={false} ocNome={oc.numero_oc}
+                          uploading={uploading}
+                          onEditar={() => setEditandoMedicao(m)}
+                          onExcluir={() => excluir(m)}
+                          onAtualizar={changes => atualizar(m, changes)}
+                          onAnexarNF={file => anexarNF(m, file)}
+                          onAbrirNF={() => abrirNF(m)}
+                          onRemoverNF={() => removerNF(m)}
+                          onEmitirNF={() => setEmitindoNF(m)}
+                        />
                       ))}
                     </div>
                   )}
