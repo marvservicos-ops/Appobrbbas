@@ -12,6 +12,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400 mr-2">Admin</span>
         <Link href="/admin" className="whitespace-nowrap text-sm px-3 py-2 rounded-lg hover:bg-white/10">Financeiro</Link>
         <Link href="/admin/usuarios" className="whitespace-nowrap text-sm px-3 py-2 rounded-lg hover:bg-white/10">Usuários e permissões</Link>
+        <Link href="/admin/manual" className="whitespace-nowrap text-sm px-3 py-2 rounded-lg hover:bg-white/10">Manual do sistema</Link>
       </div>
       {children}
     </div>

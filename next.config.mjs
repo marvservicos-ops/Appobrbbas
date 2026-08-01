@@ -15,6 +15,9 @@ const nextConfig = {
   },
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse'],
+    outputFileTracingIncludes: {
+      '/admin/manual': ['./MANUAL.md'],
+    },
   },
 };
 
