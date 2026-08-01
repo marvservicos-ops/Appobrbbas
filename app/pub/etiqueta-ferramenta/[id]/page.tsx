@@ -89,10 +89,16 @@ export default async function EtiquetaFerramentaPage({ params }: { params: { id:
             <div className="logo">MARV<span>.</span></div>
             <div className="logo-sub">Mechanical Engineering</div>
           </div>
-          {f.categoria && <div className="tipo-badge">{f.categoria}</div>}
+          {f.codigo_interno && <div className="tipo-badge">{f.codigo_interno}</div>}
           <div className="equip-nome">{f.nome}</div>
           <div className="divider" />
           <div className="fields">
+            {f.categoria && (
+              <div>
+                <div className="field-label">Categoria</div>
+                <div className="field-value">{f.categoria}</div>
+              </div>
+            )}
             {f.modelo && (
               <div>
                 <div className="field-label">Modelo</div>

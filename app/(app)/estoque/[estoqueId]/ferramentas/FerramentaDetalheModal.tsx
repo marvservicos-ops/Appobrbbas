@@ -86,6 +86,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2">
                 <h2 className="font-syne font-semibold text-[#0F172A]">{ferramenta.nome}</h2>
+                {ferramenta.codigo_interno && <span className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B]">{ferramenta.codigo_interno}</span>}
                 <button onClick={() => setShowEditar(true)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors" title="Editar ferramenta">
                   <Pencil size={14} />
                 </button>
@@ -109,6 +110,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-[#94A3B8]">Código interno</p><p className="text-[#374151] font-mono">{ferramenta.codigo_interno || '—'}</p></div>
                 <div><p className="text-xs text-[#94A3B8]">Categoria</p><p className="text-[#374151]">{ferramenta.categoria || '—'}</p></div>
                 <div><p className="text-xs text-[#94A3B8]">Marca / Modelo</p><p className="text-[#374151]">{[ferramenta.marca, ferramenta.modelo].filter(Boolean).join(' · ') || '—'}</p></div>
                 <div><p className="text-xs text-[#94A3B8]">Nº de série</p><p className="text-[#374151]">{ferramenta.numero_serie || '—'}</p></div>

@@ -37,12 +37,17 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
           <p style={{ fontSize: 11, color: '#94A3B8', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 1 }}>
             MARV Gestão · Ferramentas
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{
               fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
               background: cor + '20', color: cor,
             }}>{STATUS_LABEL[f.status] ?? f.status}</span>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0F172A' }}>{f.nome}</h1>
+            {f.codigo_interno && (
+              <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#64748B', background: '#F1F5F9', padding: '2px 8px', borderRadius: 6 }}>
+                {f.codigo_interno}
+              </span>
+            )}
           </div>
         </div>
       </div>

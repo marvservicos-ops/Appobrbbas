@@ -347,6 +347,7 @@ export interface Ferramenta {
   id: string
   estoque_id: string
   nome: string
+  codigo_interno?: string | null
   categoria?: string | null
   marca?: string | null
   modelo?: string | null

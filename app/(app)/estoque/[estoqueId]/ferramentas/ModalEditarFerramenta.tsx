@@ -9,6 +9,7 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
   ferramenta: Ferramenta; onClose: () => void; onSaved: () => void
 }) {
   const [nome, setNome] = useState(ferramenta.nome)
+  const [codigoInterno, setCodigoInterno] = useState(ferramenta.codigo_interno ?? '')
   const [categoria, setCategoria] = useState(ferramenta.categoria ?? '')
   const [marca, setMarca] = useState(ferramenta.marca ?? '')
   const [modelo, setModelo] = useState(ferramenta.modelo ?? '')
@@ -36,11 +37,13 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) return
+    if (!codigoInterno.trim()) { setError('Informe o código interno/patrimônio.'); return }
     setLoading(true)
     setError('')
     const supabase = createClient()
     const { error: err } = await supabase.from('ferramentas').update({
       nome: nome.trim(),
+      codigo_interno: codigoInterno.trim(),
       categoria: categoria.trim() || null,
       marca: marca.trim() || null,
       modelo: modelo.trim() || null,
@@ -51,7 +54,11 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
       foto_url: fotoUrl || null,
       updated_at: new Date().toISOString(),
     }).eq('id', ferramenta.id)
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) {
+      setError(err.code === '23505' ? 'Já existe uma ferramenta com esse código interno nesta categoria.' : err.message)
+      setLoading(false)
+      return
+    }
     onSaved()
   }
 
@@ -66,6 +73,10 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
             <input required autoFocus className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Furadeira de Impacto" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Código interno / Patrimônio *</label>
+            <input required className="field font-mono" value={codigoInterno} onChange={e => setCodigoInterno(e.target.value)} placeholder="Ex: FER-0001" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

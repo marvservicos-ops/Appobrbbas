@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Loader2, Upload, Wrench } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -8,6 +8,7 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
   estoqueId: string; onClose: () => void; onCreated: () => void
 }) {
   const [nome, setNome] = useState('')
+  const [codigoInterno, setCodigoInterno] = useState('')
   const [categoria, setCategoria] = useState('')
   const [marca, setMarca] = useState('')
   const [modelo, setModelo] = useState('')
@@ -19,6 +20,15 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    async function sugerirCodigo() {
+      const supabase = createClient()
+      const { count } = await supabase.from('ferramentas').select('id', { count: 'exact', head: true }).eq('estoque_id', estoqueId)
+      setCodigoInterno(`FER-${String((count ?? 0) + 1).padStart(4, '0')}`)
+    }
+    sugerirCodigo()
+  }, [estoqueId])
 
   async function uploadFoto(file: File) {
     setUploadingFoto(true)
@@ -35,12 +45,14 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) return
+    if (!codigoInterno.trim()) { setError('Informe o código interno/patrimônio.'); return }
     setLoading(true)
     setError('')
     const supabase = createClient()
     const { error: err } = await supabase.from('ferramentas').insert({
       estoque_id: estoqueId,
       nome: nome.trim(),
+      codigo_interno: codigoInterno.trim(),
       categoria: categoria.trim() || null,
       marca: marca.trim() || null,
       modelo: modelo.trim() || null,
@@ -50,7 +62,11 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
     })
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) {
+      setError(err.code === '23505' ? 'Já existe uma ferramenta com esse código interno nesta categoria.' : err.message)
+      setLoading(false)
+      return
+    }
     onCreated()
   }
 
@@ -65,6 +81,11 @@ export default function ModalNovaFerramenta({ estoqueId, onClose, onCreated }: {
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
             <input required autoFocus className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Furadeira de Impacto" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Código interno / Patrimônio *</label>
+            <input required className="field font-mono" value={codigoInterno} onChange={e => setCodigoInterno(e.target.value)} placeholder="Ex: FER-0001" />
+            <p className="text-xs text-[#94A3B8] mt-1">Identificação única para distinguir ferramentas iguais. Sugerido automaticamente, mas pode editar.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

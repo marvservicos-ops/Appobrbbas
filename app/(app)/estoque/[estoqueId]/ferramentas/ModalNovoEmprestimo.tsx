@@ -118,7 +118,10 @@ export default function ModalNovoEmprestimo({ ferramentasDisponiveis, onClose, o
                       ? <img src={f.foto_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-[#E2E8F0]" />
                       : <div className="w-8 h-8 rounded-lg bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]"><Wrench size={14} /></div>}
                     <div>
-                      <p className="text-sm font-medium text-[#0F172A]">{f.nome}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium text-[#0F172A]">{f.nome}</p>
+                        {f.codigo_interno && <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B]">{f.codigo_interno}</span>}
+                      </div>
                       {(f.marca || f.modelo) && <p className="text-xs text-[#64748B]">{[f.marca, f.modelo].filter(Boolean).join(' · ')}</p>}
                     </div>
                   </button>

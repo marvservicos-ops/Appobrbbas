@@ -113,6 +113,7 @@ export default function EmprestimoPrintPage() {
         <table style={s.table}>
           <thead>
             <tr>
+              <th style={s.th}>Código</th>
               <th style={s.th}>Ferramenta</th>
               <th style={s.th}>Marca / Modelo</th>
               <th style={s.th}>Nº de série</th>
@@ -121,6 +122,7 @@ export default function EmprestimoPrintPage() {
           <tbody>
             {itens.map(it => (
               <tr key={it.id}>
+                <td style={{ ...s.td, fontFamily: 'monospace', fontWeight: 700 }}>{it.ferramenta?.codigo_interno ?? '—'}</td>
                 <td style={s.td}>{it.ferramenta?.nome ?? '—'}</td>
                 <td style={s.td}>{[it.ferramenta?.marca, it.ferramenta?.modelo].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={s.td}>{it.ferramenta?.numero_serie ?? '—'}</td>

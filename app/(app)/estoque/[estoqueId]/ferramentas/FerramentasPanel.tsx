@@ -68,6 +68,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
       if (busca.trim()) {
         const q = busca.toLowerCase()
         if (!f.nome.toLowerCase().includes(q)
+          && !(f.codigo_interno ?? '').toLowerCase().includes(q)
           && !(f.marca ?? '').toLowerCase().includes(q)
           && !(f.modelo ?? '').toLowerCase().includes(q)
           && !(f.numero_serie ?? '').toLowerCase().includes(q)) return false
@@ -128,7 +129,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-          <input className="field pl-9 text-sm" placeholder="Buscar por nome, marca, modelo ou nº série..."
+          <input className="field pl-9 text-sm" placeholder="Buscar por código, nome, marca, modelo ou nº série..."
             value={busca} onChange={e => setBusca(e.target.value)} />
         </div>
         <select className="field text-sm w-auto py-2" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
@@ -173,7 +174,10 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
                       ? <img src={f.foto_url} alt="" className="w-11 h-11 rounded-xl object-cover border border-[#E2E8F0]" />
                       : <div className="w-11 h-11 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]"><Wrench size={18} /></div>}
                     <div>
-                      <h3 className="font-syne font-semibold text-[#0F172A] leading-tight">{f.nome}</h3>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-syne font-semibold text-[#0F172A] leading-tight">{f.nome}</h3>
+                        {f.codigo_interno && <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B]">{f.codigo_interno}</span>}
+                      </div>
                       {(f.marca || f.modelo) && <p className="text-xs text-[#64748B] mt-0.5">{[f.marca, f.modelo].filter(Boolean).join(' · ')}</p>}
                     </div>
                   </div>
