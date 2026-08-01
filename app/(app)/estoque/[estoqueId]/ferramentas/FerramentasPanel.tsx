@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Wrench, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer } from 'lucide-react'
+import { Plus, Wrench, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem } from '@/lib/types'
 import ModalNovaFerramenta from './ModalNovaFerramenta'
 import ModalNovoEmprestimo from './ModalNovoEmprestimo'
 import FerramentaDetalheModal from './FerramentaDetalheModal'
+import ModalEmprestimos from './ModalEmprestimos'
 
 const STATUS_LABEL: Record<string, string> = {
   disponivel: 'Disponível',
@@ -31,6 +32,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
   const [filtroStatus, setFiltroStatus] = useState<string>('todos')
   const [showNova, setShowNova] = useState(false)
   const [showEmprestimo, setShowEmprestimo] = useState(false)
+  const [showEmprestimos, setShowEmprestimos] = useState(false)
   const [detalheId, setDetalheId] = useState<string | null>(null)
 
   async function load() {
@@ -136,6 +138,10 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
           <option value="em_manutencao">Em manutenção</option>
           <option value="baixada">Baixada</option>
         </select>
+        <button onClick={() => setShowEmprestimos(true)}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
+          <FileText size={14} /> Ver Empréstimos
+        </button>
         <button onClick={() => setShowEmprestimo(true)}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#4F7CFF] border border-[#4F7CFF] rounded-lg hover:bg-[#EEF2FF] transition-colors">
           <HandCoins size={14} /> Novo Empréstimo
@@ -196,6 +202,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
           onChanged={() => { load() }}
         />
       )}
+      {showEmprestimos && <ModalEmprestimos estoqueId={estoqueId} onClose={() => setShowEmprestimos(false)} />}
     </div>
   )
 }
