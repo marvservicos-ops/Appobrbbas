@@ -213,6 +213,28 @@ export default function RegistrarPage() {
       await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produtoId)
     }
 
+    // Saída de material de limpeza para uso interno vira gasto administrativo do mês
+    if (tipo === 'saida' && estoque?.icone === 'sparkles' && destinoTipo === 'uso_interno' && valor_total > 0) {
+      let { data: categoria } = await supabase.from('categorias_administrativas').select('id').eq('nome', 'Material de Limpeza').maybeSingle()
+      if (!categoria) {
+        const { data: novaCategoria } = await supabase.from('categorias_administrativas')
+          .insert({ nome: 'Material de Limpeza', icone: 'Sparkles', cor: '#2DD4BF' })
+          .select('id').single()
+        categoria = novaCategoria
+      }
+      if (categoria) {
+        await supabase.from('custos_administrativos').insert({
+          descricao: `${produtoNome.trim()} (${qtd} ${unidade})`,
+          categoria_id: categoria.id,
+          valor: valor_total,
+          data,
+          recorrencia: 'unico',
+          ativo: true,
+          observacao: 'Gerado automaticamente a partir de saída de estoque (uso interno).',
+        })
+      }
+    }
+
     router.push(`/estoque/${estoqueId}`)
   }
 
