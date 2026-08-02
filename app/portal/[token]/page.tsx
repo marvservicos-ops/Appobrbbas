@@ -7,6 +7,7 @@ function fmtDate(d?: string | null) {
   return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
 }
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
+function fmtPct(v: number) { return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' }
 
 const TIPO_LABEL: Record<string, string> = { servico: 'Serviço', material: 'Material', outro: 'Outro' }
 
@@ -85,6 +86,10 @@ export default async function PortalPage({ params }: { params: { token: string }
           const meds = medicoesPorOC(oc.id)
           const faturado = meds.filter((m: any) => m.status !== 'cancelada').reduce((s: number, m: any) => s + Number(m.valor_faturado || 0), 0)
           const saldo = Math.max(0, Number(oc.valor_total) - faturado)
+          const ativas = meds.filter((m: any) => m.status !== 'cancelada')
+          const pctEmitido = ativas.filter((m: any) => grupoDe(m.status) === 'emitido').reduce((s: number, m: any) => s + Number(m.percentual), 0)
+          const pctSolicitado = ativas.filter((m: any) => grupoDe(m.status) === 'solicitado').reduce((s: number, m: any) => s + Number(m.percentual), 0)
+          const pctRestante = Math.max(0, 100 - pctEmitido - pctSolicitado)
 
           return (
             <div key={oc.id} style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001' }}>
@@ -104,10 +109,26 @@ export default async function PortalPage({ params }: { params: { token: string }
                 </div>
               </div>
 
+              {/* Resumo rápido: % emitido / solicitado / restante */}
+              {meds.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderBottom: '1px solid #F1F5F9' }}>
+                  {(['emitido', 'solicitado', 'restante'] as const).map((grupo, i) => {
+                    const pct = grupo === 'emitido' ? pctEmitido : grupo === 'solicitado' ? pctSolicitado : pctRestante
+                    return (
+                      <div key={grupo} style={{ padding: '10px 12px', textAlign: 'center', borderLeft: i > 0 ? '1px solid #F1F5F9' : 'none' }}>
+                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: GRUPO_COLOR[grupo] }}>{GRUPO_LABEL[grupo]}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: '#0F172A' }}>{fmtPct(pct)}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               {(['emitido', 'solicitado', 'restante'] as const).map(grupo => {
                 const itens = meds.filter((m: any) => grupoDe(m.status) === grupo)
                 if (itens.length === 0) return null
                 const totalGrupo = itens.reduce((s: number, m: any) => s + Number(grupo === 'emitido' ? (m.valor_faturado || m.valor_previsto) : m.valor_previsto), 0)
+                const pctGrupo = itens.reduce((s: number, m: any) => s + Number(m.percentual), 0)
                 return (
                   <div key={grupo} style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -115,7 +136,7 @@ export default async function PortalPage({ params }: { params: { token: string }
                         fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5,
                         padding: '2px 8px', borderRadius: 999, background: GRUPO_COLOR[grupo] + '1A', color: GRUPO_COLOR[grupo],
                       }}>{GRUPO_LABEL[grupo]}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{fmt(totalGrupo)}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{fmtPct(pctGrupo)} · {fmt(totalGrupo)}</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {itens.map((m: any) => (
@@ -136,8 +157,8 @@ export default async function PortalPage({ params }: { params: { token: string }
               )}
 
               <div style={{ padding: '14px 20px', background: '#FFFBEB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600 }}>Emitido até agora: {fmt(faturado)}</span>
-                <span style={{ fontSize: 15, color: '#92400E', fontWeight: 800 }}>Saldo: {fmt(saldo)}</span>
+                <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600 }}>Emitido até agora: {fmtPct(pctEmitido)} · {fmt(faturado)}</span>
+                <span style={{ fontSize: 15, color: '#92400E', fontWeight: 800 }}>Saldo: {fmtPct(pctRestante + pctSolicitado)} · {fmt(saldo)}</span>
               </div>
             </div>
           )
