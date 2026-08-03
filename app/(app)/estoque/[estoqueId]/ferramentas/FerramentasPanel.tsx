@@ -30,6 +30,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
   const [loading, setLoading] = useState(true)
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState<string>('todos')
+  const [ordenarPor, setOrdenarPor] = useState<'nome' | 'codigo_interno'>('nome')
   const [showNova, setShowNova] = useState(false)
   const [showEmprestimo, setShowEmprestimo] = useState(false)
   const [showEmprestimos, setShowEmprestimos] = useState(false)
@@ -76,8 +77,16 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
           && !(f.numero_serie ?? '').toLowerCase().includes(q)) return false
       }
       return true
+    }).sort((a, b) => {
+      if (ordenarPor === 'codigo_interno') {
+        if (!a.codigo_interno && !b.codigo_interno) return a.nome.localeCompare(b.nome)
+        if (!a.codigo_interno) return 1
+        if (!b.codigo_interno) return -1
+        return a.codigo_interno.localeCompare(b.codigo_interno, undefined, { numeric: true })
+      }
+      return a.nome.localeCompare(b.nome)
     })
-  }, [topLevel, filtroStatus, busca])
+  }, [topLevel, filtroStatus, busca, ordenarPor])
 
   const valorTotal = ferramentas.filter(f => f.status !== 'baixada').reduce((s, f) => s + (f.valor_aquisicao ?? 0), 0)
   const contagem = {
@@ -140,6 +149,10 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
           <option value="emprestada">Emprestada</option>
           <option value="em_manutencao">Em manutenção</option>
           <option value="baixada">Baixada</option>
+        </select>
+        <select className="field text-sm w-auto py-2" value={ordenarPor} onChange={e => setOrdenarPor(e.target.value as 'nome' | 'codigo_interno')}>
+          <option value="nome">Ordenar por nome</option>
+          <option value="codigo_interno">Ordenar por código</option>
         </select>
         <button onClick={() => setShowEmprestimos(true)}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
