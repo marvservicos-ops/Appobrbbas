@@ -5,19 +5,96 @@ import { createClient } from '@/lib/supabase/client'
 import {
   EsgCombustivel, EsgInvestimento, EsgInvestimentoCategoria, EsgDestinacaoMaterial, EsgReciclagemGas,
 } from '@/lib/types'
-import { Leaf, Fuel, Hammer, Recycle, Wind, Plus, Pencil, Trash2, X } from 'lucide-react'
+import { Leaf, Fuel, Hammer, Recycle, Wind, Plus, Pencil, Trash2, X, BarChart3 } from 'lucide-react'
 
-type Tab = 'combustivel' | 'investimentos' | 'destinacao' | 'gas'
+type Tab = 'combustivel' | 'investimentos' | 'destinacao' | 'gas' | 'relatorios'
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function fmtDate(d?: string | null) { return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—' }
 function fmtNum(v: number) { return v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) }
+function mesLabel(ym: string) {
+  const [ano, mes] = ym.split('-')
+  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+  return `${meses[parseInt(mes) - 1]}/${ano.slice(2)}`
+}
 
 const CATEGORIA_COLOR: Record<EsgInvestimentoCategoria, string> = {
   Ambiental: 'bg-[#D1FAE5] text-[#059669]',
   Social: 'bg-[#EEF2FF] text-[#4F7CFF]',
   Ferramental: 'bg-[#FEF3C7] text-[#D97706]',
   SST: 'bg-[#FCE7F3] text-[#DB2777]',
+}
+
+// ── Componentes de gráfico (sem libs externas) ─────────
+const PALETTE = ['#4F7CFF', '#10B981', '#F59E0B', '#DB2777', '#7C3AED', '#06B6D4', '#EF4444', '#94A3B8', '#84CC16', '#F472B6']
+
+function ReportBarList({ items, format }: { items: { label: string; value: number }[]; format: (v: number) => string }) {
+  const max = Math.max(...items.map(i => i.value), 1)
+  return (
+    <div className="space-y-3">
+      {items.map((it, i) => (
+        <div key={it.label}>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-[#374151] font-medium truncate">{it.label}</span>
+            <span className="text-[#0F172A] font-semibold shrink-0 ml-2">{format(it.value)}</span>
+          </div>
+          <div className="h-2 rounded-full bg-[#F1F5F9] overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${(it.value / max) * 100}%`, backgroundColor: PALETTE[i % PALETTE.length] }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ReportDonut({ items, format }: { items: { label: string; value: number }[]; format: (v: number) => string }) {
+  const total = items.reduce((s, i) => s + i.value, 0) || 1
+  let acc = 0
+  const stops = items.map((it, i) => {
+    const start = (acc / total) * 100
+    acc += it.value
+    const end = (acc / total) * 100
+    return `${PALETTE[i % PALETTE.length]} ${start}% ${end}%`
+  })
+  return (
+    <div className="flex items-center gap-6 flex-wrap">
+      <div className="w-36 h-36 rounded-full shrink-0" style={{ background: `conic-gradient(${stops.join(', ')})` }}>
+        <div className="w-full h-full rounded-full flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full bg-white flex flex-col items-center justify-center">
+            <span className="text-[10px] text-[#94A3B8]">Total</span>
+            <span className="text-xs font-bold text-[#0F172A]">{format(total)}</span>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-1.5 min-w-0">
+        {items.map((it, i) => (
+          <div key={it.label} className="flex items-center gap-2 text-xs">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: PALETTE[i % PALETTE.length] }} />
+            <span className="text-[#374151] truncate">{it.label}</span>
+            <span className="text-[#94A3B8] shrink-0">{((it.value / total) * 100).toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ReportCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="card">
+      <h3 className="font-syne font-semibold text-[#0F172A] mb-4 text-sm">{title}</h3>
+      {children}
+    </div>
+  )
+}
+
+function agruparPorMes<T>(items: T[], getData: (i: T) => string, getValor: (i: T) => number) {
+  const map = new Map<string, number>()
+  for (const it of items) {
+    const ym = getData(it).slice(0, 7)
+    map.set(ym, (map.get(ym) ?? 0) + getValor(it))
+  }
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([ym, v]) => ({ label: mesLabel(ym), value: v }))
 }
 
 // ── Aba Combustível ────────────────────────────────────
@@ -748,6 +825,228 @@ function AbaReciclagemGas() {
   )
 }
 
+// ── Relatórios ──────────────────────────────────────────
+const FATORES_CO2: Record<string, number> = { gasolina: 2.212, diesel: 2.603, etanol: 1.500, gnv: 2.050 }
+function fatorCo2(combustivel: string) {
+  return FATORES_CO2[combustivel.trim().toLowerCase()] ?? 2.3
+}
+
+function RelatorioCo2() {
+  const [registros, setRegistros] = useState<EsgCombustivel[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    createClient().from('esg_combustivel').select('*, veiculo:veiculos(id, nome, placa)').order('data')
+      .then(({ data }) => { setRegistros((data ?? []) as EsgCombustivel[]); setLoading(false) })
+  }, [])
+
+  if (loading) return <p className="text-sm text-[#94A3B8] text-center py-10">Carregando...</p>
+  if (registros.length === 0) return <p className="text-sm text-[#94A3B8] text-center py-10">Sem abastecimentos registrados ainda.</p>
+
+  const comCo2 = registros.map(r => ({ ...r, co2: r.litros * fatorCo2(r.combustivel) }))
+  const totalCo2 = comCo2.reduce((s, r) => s + r.co2, 0)
+  const totalLitros = registros.reduce((s, r) => s + r.litros, 0)
+  const totalValor = registros.reduce((s, r) => s + r.valor, 0)
+
+  const meses = new Set(registros.map(r => r.data.slice(0, 7))).size || 1
+  const mediaMensal = totalCo2 / meses
+
+  const porCombustivel = [...new Set(registros.map(r => r.combustivel))].map(c => ({
+    label: c, value: comCo2.filter(r => r.combustivel === c).reduce((s, r) => s + r.litros, 0),
+  })).sort((a, b) => b.value - a.value)
+
+  const co2PorCombustivel = [...new Set(registros.map(r => r.combustivel))].map(c => ({
+    label: c, value: comCo2.filter(r => r.combustivel === c).reduce((s, r) => s + r.co2, 0),
+  })).sort((a, b) => b.value - a.value)
+
+  const porVeiculo = [...new Map(registros.map(r => [r.veiculo?.id ?? r.id, r.veiculo?.nome ?? '—'])).entries()]
+    .map(([id, nome]) => ({ label: nome, value: registros.filter(r => (r.veiculo?.id ?? r.id) === id).reduce((s, r) => s + r.litros, 0) }))
+    .sort((a, b) => b.value - a.value)
+
+  const evolucaoMensal = agruparPorMes(comCo2, r => r.data, r => r.co2)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Emissão total de CO2</p>
+          <p className="text-lg font-syne font-bold text-[#0F172A] mt-1">{fmtNum(totalCo2)} kg</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Média mensal</p>
+          <p className="text-lg font-syne font-bold text-[#0F172A] mt-1">{fmtNum(mediaMensal)} kg</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Total de litros</p>
+          <p className="text-lg font-syne font-bold text-[#4F7CFF] mt-1">{fmtNum(totalLitros)} L</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Total gasto</p>
+          <p className="text-lg font-syne font-bold text-[#10B981] mt-1">{fmt(totalValor)}</p>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <ReportCard title="Litros por combustível">
+          <ReportBarList items={porCombustivel} format={v => `${fmtNum(v)} L`} />
+        </ReportCard>
+        <ReportCard title="Emissão de CO2 por combustível">
+          <ReportDonut items={co2PorCombustivel} format={v => `${fmtNum(v)} kg`} />
+        </ReportCard>
+        <ReportCard title="Consumo de litros por veículo">
+          <ReportBarList items={porVeiculo} format={v => `${fmtNum(v)} L`} />
+        </ReportCard>
+        <ReportCard title="Evolução mensal de emissão de CO2">
+          <ReportBarList items={evolucaoMensal} format={v => `${fmtNum(v)} kg`} />
+        </ReportCard>
+      </div>
+
+      <p className="text-xs text-[#94A3B8] px-1">
+        Fatores de emissão estimados (GHG Protocol Brasil): Gasolina 2,212 kgCO2/L · Diesel 2,603 kgCO2/L · Etanol 1,500 kgCO2/L · GNV 2,050 kgCO2/L.
+      </p>
+    </div>
+  )
+}
+
+function RelatorioDestinacao() {
+  const [registros, setRegistros] = useState<EsgDestinacaoMaterial[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    createClient().from('esg_destinacao_materiais').select('*').order('data')
+      .then(({ data }) => { setRegistros((data ?? []) as EsgDestinacaoMaterial[]); setLoading(false) })
+  }, [])
+
+  if (loading) return <p className="text-sm text-[#94A3B8] text-center py-10">Carregando...</p>
+  if (registros.length === 0) return <p className="text-sm text-[#94A3B8] text-center py-10">Sem destinações registradas ainda.</p>
+
+  const totalKg = registros.reduce((s, r) => s + r.quantidade, 0)
+  const totalValor = registros.reduce((s, r) => s + (r.valor || 0), 0)
+
+  const porMaterial = [...new Set(registros.map(r => r.material))].map(m => ({
+    label: m, value: registros.filter(r => r.material === m).reduce((s, r) => s + r.quantidade, 0),
+  })).sort((a, b) => b.value - a.value)
+
+  const materialPredominante = porMaterial[0]?.label ?? '—'
+  const evolucaoMensal = agruparPorMes(registros, r => r.data, r => r.quantidade)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Total destinado</p>
+          <p className="text-lg font-syne font-bold text-[#0F172A] mt-1">{fmtNum(totalKg)} kg</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Valor recebido</p>
+          <p className="text-lg font-syne font-bold text-[#10B981] mt-1">{fmt(totalValor)}</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Material predominante</p>
+          <p className="text-lg font-syne font-bold text-[#0F172A] mt-1">{materialPredominante}</p>
+        </div>
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Registros</p>
+          <p className="text-lg font-syne font-bold text-[#0F172A] mt-1">{registros.length}</p>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <ReportCard title="Quantidade por tipo de material">
+          <ReportBarList items={porMaterial} format={v => `${fmtNum(v)} kg`} />
+        </ReportCard>
+        <ReportCard title="Distribuição por material">
+          <ReportDonut items={porMaterial} format={v => `${fmtNum(v)} kg`} />
+        </ReportCard>
+        <ReportCard title="Evolução mensal de destinação">
+          <ReportBarList items={evolucaoMensal} format={v => `${fmtNum(v)} kg`} />
+        </ReportCard>
+      </div>
+    </div>
+  )
+}
+
+function RelatorioInvestimentos() {
+  const [registros, setRegistros] = useState<EsgInvestimento[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    createClient().from('esg_investimentos').select('*').order('data')
+      .then(({ data }) => { setRegistros((data ?? []) as EsgInvestimento[]); setLoading(false) })
+  }, [])
+
+  if (loading) return <p className="text-sm text-[#94A3B8] text-center py-10">Carregando...</p>
+  if (registros.length === 0) return <p className="text-sm text-[#94A3B8] text-center py-10">Sem investimentos registrados ainda.</p>
+
+  const totalGeral = registros.reduce((s, r) => s + r.valor, 0)
+  const porCategoria = (['Ambiental', 'Social', 'Ferramental', 'SST'] as const).map(cat => ({
+    label: cat, value: registros.filter(r => r.categoria === cat).reduce((s, r) => s + r.valor, 0),
+  })).sort((a, b) => b.value - a.value)
+
+  const evolucaoMensal = agruparPorMes(registros, r => r.data, r => r.valor)
+
+  const top5 = [...registros].sort((a, b) => b.valor - a.valor).slice(0, 5).map(r => ({ label: r.item, value: r.valor }))
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="card py-4">
+          <p className="text-xs text-[#94A3B8]">Total investido</p>
+          <p className="text-lg font-syne font-bold text-[#0F172A] mt-1">{fmt(totalGeral)}</p>
+        </div>
+        {porCategoria.map(c => (
+          <div key={c.label} className="card py-4">
+            <p className="text-xs text-[#94A3B8]">{c.label}</p>
+            <p className="text-lg font-syne font-bold text-[#0F172A] mt-1">{fmt(c.value)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <ReportCard title="Investimento por pilar ESG">
+          <ReportBarList items={porCategoria} format={fmt} />
+        </ReportCard>
+        <ReportCard title="Distribuição por pilar ESG">
+          <ReportDonut items={porCategoria} format={fmt} />
+        </ReportCard>
+        <ReportCard title="Evolução mensal de investimentos">
+          <ReportBarList items={evolucaoMensal} format={fmt} />
+        </ReportCard>
+        <ReportCard title="Top 5 maiores investimentos">
+          <ReportBarList items={top5} format={fmt} />
+        </ReportCard>
+      </div>
+    </div>
+  )
+}
+
+function AbaRelatorios() {
+  const [sub, setSub] = useState<'co2' | 'destinacao' | 'investimentos'>('co2')
+
+  const subTabs = [
+    { key: 'co2' as const, label: 'Emissão de CO2' },
+    { key: 'destinacao' as const, label: 'Destinação de Materiais' },
+    { key: 'investimentos' as const, label: 'Investimentos' },
+  ]
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 overflow-x-auto">
+        {subTabs.map(t => (
+          <button key={t.key} onClick={() => setSub(t.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap
+              ${sub === t.key ? 'bg-[#0F172A] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9]'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {sub === 'co2' && <RelatorioCo2 />}
+      {sub === 'destinacao' && <RelatorioDestinacao />}
+      {sub === 'investimentos' && <RelatorioInvestimentos />}
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────
 export default function EsgPage() {
   const [tab, setTab] = useState<Tab>('combustivel')
@@ -757,6 +1056,7 @@ export default function EsgPage() {
     { key: 'investimentos', label: 'Investimentos', icon: <Hammer size={15} /> },
     { key: 'destinacao', label: 'Destinação de Materiais', icon: <Recycle size={15} /> },
     { key: 'gas', label: 'Reciclagem de Gás', icon: <Wind size={15} /> },
+    { key: 'relatorios', label: 'Relatórios', icon: <BarChart3 size={15} /> },
   ]
 
   return (
@@ -790,6 +1090,7 @@ export default function EsgPage() {
         {tab === 'investimentos' && <AbaInvestimentos />}
         {tab === 'destinacao' && <AbaDestinacaoMateriais />}
         {tab === 'gas' && <AbaReciclagemGas />}
+        {tab === 'relatorios' && <AbaRelatorios />}
       </main>
     </div>
   )
