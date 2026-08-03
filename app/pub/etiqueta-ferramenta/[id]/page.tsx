@@ -29,7 +29,6 @@ export default async function EtiquetaFerramentaPage({ params }: { params: { id:
           border: 0.4mm dashed #94A3B8;
         }
         .logo-img { height: 9mm; width: auto; object-fit: contain; display: block; margin: 0 auto; }
-        .logo-sub { font-size: 6.5px; letter-spacing: 1.4px; color: #94A3B8; text-transform: uppercase; margin-top: 1mm; text-align: center; }
         .ativo-nome {
           font-size: 13px;
           font-weight: 700;
@@ -42,7 +41,7 @@ export default async function EtiquetaFerramentaPage({ params }: { params: { id:
           -webkit-box-orient: vertical;
         }
         .qr img { width: 46mm; height: 46mm; object-fit: contain; display: block; }
-        .scan-text { font-size: 6.5px; color: #94A3B8; text-align: center; line-height: 1.4; }
+        .scan-text { font-size: 6.5px; font-weight: 700; color: #0F172A; text-align: center; line-height: 1.4; }
         @media screen {
           body { background: #F1F5F9; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 24px; }
           .label { background: white; box-shadow: 0 4px 24px #0002; border-radius: 4px; transform: scale(1.6); transform-origin: center center; margin: 70px 0; }
@@ -57,10 +56,7 @@ export default async function EtiquetaFerramentaPage({ params }: { params: { id:
       `}</style>
 
       <div className="label">
-        <div>
-          <img src="/marv-logo.png" alt="MARV" className="logo-img" />
-          <div className="logo-sub">Mechanical Engineering</div>
-        </div>
+        <img src="/marv-logo.png" alt="MARV" className="logo-img" />
         <div className="ativo-nome">{f.nome}</div>
         <div className="qr">
           <img src={qrUrl} alt="QR Code" />

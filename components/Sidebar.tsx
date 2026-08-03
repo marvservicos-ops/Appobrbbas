@@ -69,7 +69,6 @@ export default function Sidebar() {
         <div className="px-6 py-5 border-b border-[#E2E8F0]">
           <div className="flex flex-col gap-1">
             <img src="/marv-logo.png" alt="MARV" className="h-8 w-auto object-contain" />
-            <div className="text-[10px] text-[#64748B] uppercase tracking-wide">Mechanical Engineering</div>
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
@@ -100,7 +99,6 @@ export default function Sidebar() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
               <div className="flex flex-col gap-1">
                 <img src="/marv-logo.png" alt="MARV" className="h-8 w-auto object-contain" />
-                <div className="text-[10px] text-[#64748B] uppercase tracking-wide">Mechanical Engineering</div>
               </div>
               <button type="button" aria-label="Fechar menu" autoFocus onClick={() => setMobileOpen(false)} className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
                 <X size={18} className="text-[#64748B]" />

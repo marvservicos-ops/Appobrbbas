@@ -101,8 +101,7 @@ export default function LoginPage() {
 
   const logo = (
     <div className="flex flex-col items-center mb-8">
-      <img src="/marv-logo.png" alt="MARV Gestão" className="h-16 w-auto object-contain mb-3" />
-      <p className="text-sm text-[#64748B]">Mechanical Engineering</p>
+      <img src="/marv-logo.png" alt="MARV Gestão" className="h-16 w-auto object-contain" />
     </div>
   )
 
