@@ -31,6 +31,7 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
           padding: 2.5mm;
           gap: 2mm;
           overflow: hidden;
+          border: 0.3mm dashed #94A3B8;
         }
         .left {
           display: flex;

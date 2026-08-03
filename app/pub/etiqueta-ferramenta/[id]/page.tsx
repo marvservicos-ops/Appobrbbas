@@ -28,6 +28,7 @@ export default async function EtiquetaFerramentaPage({ params }: { params: { id:
           padding: 2.5mm;
           gap: 2mm;
           overflow: hidden;
+          border: 0.3mm dashed #94A3B8;
         }
         .left {
           display: flex;
