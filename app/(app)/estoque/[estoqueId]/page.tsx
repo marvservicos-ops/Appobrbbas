@@ -173,7 +173,7 @@ export default function EstoqueDetalhe() {
       </div>
 
       {ICONES_ATIVO.includes(estoque.icone) ? (
-        <FerramentasPanel estoqueId={estoqueId} />
+        <FerramentasPanel estoqueId={estoqueId} modoPatrimonio={estoque.icone === 'building2'} />
       ) : (
       <>
       {/* Tabs */}

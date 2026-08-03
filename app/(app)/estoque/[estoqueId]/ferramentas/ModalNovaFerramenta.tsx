@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Upload, Wrench } from 'lucide-react'
+import { X, Loader2, Upload, Wrench, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, onClose, onCreated }: {
-  estoqueId: string; malaIdPadrao?: string; onClose: () => void; onCreated: () => void
+export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatrimonio = false, onClose, onCreated }: {
+  estoqueId: string; malaIdPadrao?: string; modoPatrimonio?: boolean; onClose: () => void; onCreated: () => void
 }) {
   const [nome, setNome] = useState('')
   const [codigoInterno, setCodigoInterno] = useState('')
@@ -28,7 +28,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, onClose, 
     async function sugerirCodigo() {
       const supabase = createClient()
       const { count } = await supabase.from('ferramentas').select('id', { count: 'exact', head: true }).eq('estoque_id', estoqueId)
-      setCodigoInterno(`FER-${String((count ?? 0) + 1).padStart(4, '0')}`)
+      setCodigoInterno(`${modoPatrimonio ? 'PAT' : 'FER'}-${String((count ?? 0) + 1).padStart(4, '0')}`)
     }
     async function carregarMalas() {
       const supabase = createClient()
@@ -36,8 +36,8 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, onClose, 
       setMalas(data ?? [])
     }
     sugerirCodigo()
-    if (!malaIdPadrao) carregarMalas()
-  }, [estoqueId, malaIdPadrao])
+    if (!malaIdPadrao && !modoPatrimonio) carregarMalas()
+  }, [estoqueId, malaIdPadrao, modoPatrimonio])
 
   async function uploadFoto(file: File) {
     setUploadingFoto(true)
@@ -85,17 +85,17 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, onClose, 
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100dvh-env(safe-area-inset-top))] overflow-y-auto mt-auto sm:mt-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
-          <h2 className="font-syne font-semibold text-[#0F172A]">Nova Ferramenta</h2>
+          <h2 className="font-syne font-semibold text-[#0F172A]">{modoPatrimonio ? 'Novo Item de Patrimônio' : 'Nova Ferramenta'}</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
-            <input required autoFocus className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Furadeira de Impacto" />
+            <input required autoFocus className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder={modoPatrimonio ? 'Ex: Ar-condicionado Sala 2' : 'Ex: Furadeira de Impacto'} />
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Código interno / Patrimônio *</label>
-            <input required className="field font-mono" value={codigoInterno} onChange={e => setCodigoInterno(e.target.value)} placeholder="Ex: FER-0001" />
+            <input required className="field font-mono" value={codigoInterno} onChange={e => setCodigoInterno(e.target.value)} placeholder={modoPatrimonio ? 'Ex: PAT-0001' : 'Ex: FER-0001'} />
             <p className="text-xs text-[#94A3B8] mt-1">Identificação única para distinguir ferramentas iguais. Sugerido automaticamente, mas pode editar.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -133,13 +133,13 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, onClose, 
             <input className="field" value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Opcional" />
           </div>
 
-          {!malaIdPadrao && (
+          {!malaIdPadrao && !modoPatrimonio && (
             <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer px-3 py-2.5 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
               <input type="checkbox" checked={ehMala} onChange={e => { setEhMala(e.target.checked); if (e.target.checked) setMalaId('') }} className="rounded" />
               É uma mala de ferramentas (kit com responsável fixo)
             </label>
           )}
-          {!ehMala && !malaIdPadrao && malas.length > 0 && (
+          {!ehMala && !malaIdPadrao && !modoPatrimonio && malas.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Pertence a uma mala?</label>
               <select className="field" value={malaId} onChange={e => setMalaId(e.target.value)}>
@@ -157,7 +157,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, onClose, 
               {fotoUrl
                 ? <img src={fotoUrl} alt="foto" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
                 : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
-                    <Wrench size={20} className="text-[#94A3B8]" />
+                    {modoPatrimonio ? <Building2 size={20} className="text-[#94A3B8]" /> : <Wrench size={20} className="text-[#94A3B8]" />}
                   </div>}
               <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                 {uploadingFoto ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}

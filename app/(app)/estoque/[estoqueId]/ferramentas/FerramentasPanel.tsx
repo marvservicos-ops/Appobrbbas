@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Wrench, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText, Briefcase } from 'lucide-react'
+import { Plus, Wrench, Building2, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText, Briefcase } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem } from '@/lib/types'
 import ModalNovaFerramenta from './ModalNovaFerramenta'
@@ -24,7 +24,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
+export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: { estoqueId: string; modoPatrimonio?: boolean }) {
   const [ferramentas, setFerramentas] = useState<Ferramenta[]>([])
   const [custodiaAtual, setCustodiaAtual] = useState<Record<string, FerramentaEmprestimoItem>>({})
   const [loading, setLoading] = useState(true)
@@ -105,7 +105,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
   return (
     <div className="space-y-5">
       {/* Cards de resumo */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${modoPatrimonio ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
         <div className="card flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#EEF2FF] flex items-center justify-center text-[#4F7CFF]"><DollarSign size={18} /></div>
           <div>
@@ -120,13 +120,15 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
             <p className="font-syne font-bold text-[#0F172A]">{contagem.disponivel}</p>
           </div>
         </div>
-        <div className="card flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600"><HandCoins size={18} /></div>
-          <div>
-            <p className="text-xs text-[#64748B]">Emprestadas</p>
-            <p className="font-syne font-bold text-[#0F172A]">{contagem.emprestada}</p>
+        {!modoPatrimonio && (
+          <div className="card flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600"><HandCoins size={18} /></div>
+            <div>
+              <p className="text-xs text-[#64748B]">Emprestadas</p>
+              <p className="font-syne font-bold text-[#0F172A]">{contagem.emprestada}</p>
+            </div>
           </div>
-        </div>
+        )}
         <div className="card flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600"><Hammer size={18} /></div>
           <div>
@@ -154,16 +156,20 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
           <option value="nome">Ordenar por nome</option>
           <option value="codigo_interno">Ordenar por código</option>
         </select>
-        <button onClick={() => setShowEmprestimos(true)}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
-          <FileText size={14} /> Ver Empréstimos
-        </button>
-        <button onClick={() => setShowEmprestimo(true)}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#4F7CFF] border border-[#4F7CFF] rounded-lg hover:bg-[#EEF2FF] transition-colors">
-          <HandCoins size={14} /> Novo Empréstimo
-        </button>
+        {!modoPatrimonio && (
+          <>
+            <button onClick={() => setShowEmprestimos(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
+              <FileText size={14} /> Ver Empréstimos
+            </button>
+            <button onClick={() => setShowEmprestimo(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#4F7CFF] border border-[#4F7CFF] rounded-lg hover:bg-[#EEF2FF] transition-colors">
+              <HandCoins size={14} /> Novo Empréstimo
+            </button>
+          </>
+        )}
         <button onClick={() => setShowNova(true)} className="btn-primary flex items-center gap-1.5 text-sm px-3 py-2">
-          <Plus size={14} /> Nova Ferramenta
+          <Plus size={14} /> {modoPatrimonio ? 'Novo Item' : 'Nova Ferramenta'}
         </button>
       </div>
 
@@ -171,10 +177,10 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
       {filtradas.length === 0 ? (
         <div className="card flex flex-col items-center justify-center py-16 gap-3">
           <div className="w-14 h-14 rounded-2xl bg-[#F1F5F9] flex items-center justify-center">
-            <Wrench size={24} className="text-[#94A3B8]" />
+            {modoPatrimonio ? <Building2 size={24} className="text-[#94A3B8]" /> : <Wrench size={24} className="text-[#94A3B8]" />}
           </div>
-          <p className="font-medium text-[#374151]">Nenhuma ferramenta encontrada</p>
-          <p className="text-sm text-[#94A3B8]">Clique em &quot;Nova Ferramenta&quot; para cadastrar o patrimônio</p>
+          <p className="font-medium text-[#374151]">{modoPatrimonio ? 'Nenhum item cadastrado' : 'Nenhuma ferramenta encontrada'}</p>
+          <p className="text-sm text-[#94A3B8]">Clique em &quot;{modoPatrimonio ? 'Novo Item' : 'Nova Ferramenta'}&quot; para cadastrar o patrimônio</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -189,7 +195,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
                     {f.foto_url
                       ? <img src={f.foto_url} alt="" className="w-11 h-11 rounded-xl object-cover border border-[#E2E8F0]" />
                       : <div className="w-11 h-11 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]">
-                          {f.eh_mala ? <Briefcase size={18} /> : <Wrench size={18} />}
+                          {f.eh_mala ? <Briefcase size={18} /> : modoPatrimonio ? <Building2 size={18} /> : <Wrench size={18} />}
                         </div>}
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -222,7 +228,7 @@ export default function FerramentasPanel({ estoqueId }: { estoqueId: string }) {
         </div>
       )}
 
-      {showNova && <ModalNovaFerramenta estoqueId={estoqueId} onClose={() => setShowNova(false)} onCreated={() => { setShowNova(false); load() }} />}
+      {showNova && <ModalNovaFerramenta estoqueId={estoqueId} modoPatrimonio={modoPatrimonio} onClose={() => setShowNova(false)} onCreated={() => { setShowNova(false); load() }} />}
       {showEmprestimo && <ModalNovoEmprestimo ferramentasDisponiveis={ferramentas.filter(f => f.status === 'disponivel' && !f.eh_mala && !f.mala_id)} onClose={() => setShowEmprestimo(false)} onCreated={() => { setShowEmprestimo(false); load() }} />}
       {detalheId && (
         <FerramentaDetalheModal
