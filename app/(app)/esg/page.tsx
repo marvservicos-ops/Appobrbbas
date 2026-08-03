@@ -94,7 +94,7 @@ function agruparPorMes<T>(items: T[], getData: (i: T) => string, getValor: (i: T
     const ym = getData(it).slice(0, 7)
     map.set(ym, (map.get(ym) ?? 0) + getValor(it))
   }
-  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([ym, v]) => ({ label: mesLabel(ym), value: v }))
+  return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([ym, v]) => ({ label: mesLabel(ym), value: v }))
 }
 
 // ── Aba Combustível ────────────────────────────────────
@@ -851,15 +851,15 @@ function RelatorioCo2() {
   const meses = new Set(registros.map(r => r.data.slice(0, 7))).size || 1
   const mediaMensal = totalCo2 / meses
 
-  const porCombustivel = [...new Set(registros.map(r => r.combustivel))].map(c => ({
+  const porCombustivel = Array.from(new Set(registros.map(r => r.combustivel))).map(c => ({
     label: c, value: comCo2.filter(r => r.combustivel === c).reduce((s, r) => s + r.litros, 0),
   })).sort((a, b) => b.value - a.value)
 
-  const co2PorCombustivel = [...new Set(registros.map(r => r.combustivel))].map(c => ({
+  const co2PorCombustivel = Array.from(new Set(registros.map(r => r.combustivel))).map(c => ({
     label: c, value: comCo2.filter(r => r.combustivel === c).reduce((s, r) => s + r.co2, 0),
   })).sort((a, b) => b.value - a.value)
 
-  const porVeiculo = [...new Map(registros.map(r => [r.veiculo?.id ?? r.id, r.veiculo?.nome ?? '—'])).entries()]
+  const porVeiculo = Array.from(new Map(registros.map(r => [r.veiculo?.id ?? r.id, r.veiculo?.nome ?? '—'])).entries())
     .map(([id, nome]) => ({ label: nome, value: registros.filter(r => (r.veiculo?.id ?? r.id) === id).reduce((s, r) => s + r.litros, 0) }))
     .sort((a, b) => b.value - a.value)
 
@@ -923,7 +923,7 @@ function RelatorioDestinacao() {
   const totalKg = registros.reduce((s, r) => s + r.quantidade, 0)
   const totalValor = registros.reduce((s, r) => s + (r.valor || 0), 0)
 
-  const porMaterial = [...new Set(registros.map(r => r.material))].map(m => ({
+  const porMaterial = Array.from(new Set(registros.map(r => r.material))).map(m => ({
     label: m, value: registros.filter(r => r.material === m).reduce((s, r) => s + r.quantidade, 0),
   })).sort((a, b) => b.value - a.value)
 
