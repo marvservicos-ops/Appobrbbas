@@ -53,7 +53,9 @@ export default function RegistrarPage() {
   const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
   const [funcionarioId, setFuncionarioId] = useState('')
   const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string }[]>([])
-  const [destinoTipo, setDestinoTipo] = useState<'obra' | 'funcionario' | 'uso_interno'>('obra')
+  const [destinoTipo, setDestinoTipo] = useState<'obra' | 'manutencao' | 'uso_interno'>('obra')
+  const [manutencaoId, setManutencaoId] = useState('')
+  const [manutencoes, setManutencoes] = useState<{ id: string; numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string } | null }[]>([])
   const [precoEntrada, setPrecoEntrada] = useState('')
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -63,18 +65,20 @@ export default function RegistrarPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: est }, { data: cam }, { data: prod }, { data: obrasData }, { data: funcsData }] = await Promise.all([
+      const [{ data: est }, { data: cam }, { data: prod }, { data: obrasData }, { data: funcsData }, { data: manutData }] = await Promise.all([
         supabase.from('estoques').select('*').eq('id', estoqueId).single(),
         supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
         supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
         supabase.from('obras').select('id, titulo, status').in('status', ['Em Andamento', 'Aprovada', 'Em Orçamento']).order('titulo'),
         supabase.from('funcionarios').select('id, nome').order('nome'),
+        supabase.from('contratos_manutencao').select('id, numero_contrato, empresa:empresas(razao_social, apelido)').eq('ativo', true),
       ])
       setEstoque(est)
       setCampos(cam ?? [])
       setProdutos(prod ?? [])
       setObras(obrasData ?? [])
       setFuncionarios(funcsData ?? [])
+      setManutencoes((manutData ?? []) as any)
       setLoading(false)
     }
     load()
@@ -153,7 +157,8 @@ export default function RegistrarPage() {
       const isLimpeza = icone === 'sparkles'
       if (needsFuncionario && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
       if (isLimpeza && destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
-      if (isLimpeza && destinoTipo === 'funcionario' && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
+      if (isLimpeza && destinoTipo === 'manutencao' && !manutencaoId) { setError('Selecione o contrato de manutenção de destino.'); return }
+      if (isLimpeza && destinoTipo === 'manutencao' && (!produtoId || produtoId === '__outro__')) { setError('Para destino Manutenção, selecione um produto do catálogo.'); return }
       if (!needsFuncionario && !isLimpeza && !obraId) { setError('Selecione a obra de destino.'); return }
     }
     if (tipo === 'entrada' && !precoEntrada) { setError('Informe o preço unitário desta entrada.'); return }
@@ -185,6 +190,7 @@ export default function RegistrarPage() {
       estoque_id: estoqueId, produto_id: produtoId || null, produto_nome: produtoNome.trim(),
       tipo, quantidade: qtd, unidade, responsavel: responsavel.trim(), assinatura_url, data,
       observacoes: observacoes || null, obra_id: obraId || null, funcionario_id: funcionarioId || null,
+      manutencao_id: tipo === 'saida' && destinoTipo === 'manutencao' ? manutencaoId : null,
       destino_tipo: tipo === 'saida' ? destinoTipo : null,
       preco_unitario_custo: preco_unitario_custo || null, valor_total: valor_total || null,
     }).select().single()
@@ -211,6 +217,21 @@ export default function RegistrarPage() {
         prodUpdate.preco_unitario = novoCMP
       }
       await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produtoId)
+    }
+
+    // Saída de material de limpeza com destino Manutenção repõe o estoque local do contrato
+    if (tipo === 'saida' && estoque?.icone === 'sparkles' && destinoTipo === 'manutencao' && manutencaoId && produtoId) {
+      const { data: existente } = await supabase.from('manutencao_estoque_produtos')
+        .select('id, quantidade_atual').eq('contrato_id', manutencaoId).eq('produto_id', produtoId).maybeSingle()
+      if (existente) {
+        await supabase.from('manutencao_estoque_produtos').update({ quantidade_atual: existente.quantidade_atual + qtd }).eq('id', existente.id)
+      } else {
+        await supabase.from('manutencao_estoque_produtos').insert({ contrato_id: manutencaoId, produto_id: produtoId, quantidade_atual: qtd })
+      }
+      await supabase.from('manutencao_estoque_registros').insert({
+        contrato_id: manutencaoId, produto_id: produtoId, tipo: 'entrada', quantidade: qtd,
+        responsavel: responsavel.trim(), data, origem_estoque_registro_id: reg.id,
+      })
     }
 
     // Saída de material de limpeza para uso interno vira gasto administrativo do mês
@@ -296,7 +317,7 @@ export default function RegistrarPage() {
       {/* ── SAÍDA ── */}
       {tipo === 'saida' && (
         <FormSaida
-          produtos={produtos} campos={campos} obras={obras} funcionarios={funcionarios}
+          produtos={produtos} campos={campos} obras={obras} funcionarios={funcionarios} manutencoes={manutencoes}
           produtoId={produtoId} setProdutoId={setProdutoId}
           produtoNome={produtoNome} setProdutoNome={setProdutoNome}
           quantidade={quantidade} setQuantidade={setQuantidade}
@@ -310,6 +331,7 @@ export default function RegistrarPage() {
           obraId={obraId} setObraId={setObraId}
           funcionarioId={funcionarioId} setFuncionarioId={setFuncionarioId}
           destinoTipo={destinoTipo} setDestinoTipo={setDestinoTipo}
+          manutencaoId={manutencaoId} setManutencaoId={setManutencaoId}
           showScanner={showScanner} setShowScanner={setShowScanner}
           scanMsg={scanMsg} handleScanned={handleScanned}
           saving={saving} error={error}
@@ -413,11 +435,11 @@ export default function RegistrarPage() {
 }
 
 // ── FormSaida ─────────────────────────────────────────
-function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdutoId, produtoNome, setProdutoNome,
+function FormSaida({ produtos, campos, obras, funcionarios, manutencoes, produtoId, setProdutoId, produtoNome, setProdutoNome,
   quantidade, setQuantidade, unidade, setUnidade, responsavel, setResponsavel, data, setData,
   observacoes, setObservacoes, valoresCampos, setValoresCampos, temAssinatura, canvasRef,
   startDraw, draw, stopDraw, limparCanvas, obraId, setObraId, funcionarioId, setFuncionarioId,
-  destinoTipo, setDestinoTipo, showScanner, setShowScanner,
+  destinoTipo, setDestinoTipo, manutencaoId, setManutencaoId, showScanner, setShowScanner,
   scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone, produtoCodigo }: any) {
   const isEpiOuUniforme = estoqueIcone === 'shield' || estoqueIcone === 'shirt'
   const isLimpeza = estoqueIcone === 'sparkles'
@@ -527,11 +549,11 @@ function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdut
         <div className="space-y-3">
           <label className="block text-sm font-medium text-[#374151]">Destino *</label>
           <div className="grid grid-cols-3 gap-2">
-            {(['obra', 'funcionario', 'uso_interno'] as const).map(d => (
+            {(['obra', 'manutencao', 'uso_interno'] as const).map(d => (
               <button key={d} type="button"
                 onClick={() => setDestinoTipo(d)}
                 className={`py-2 rounded-lg text-xs font-medium border-2 transition-all ${destinoTipo === d ? 'border-[#4F7CFF] bg-[#EEF2FF] text-[#4F7CFF]' : 'border-[#E2E8F0] text-[#64748B]'}`}>
-                {d === 'obra' ? 'Obra' : d === 'funcionario' ? 'Funcionário' : 'Uso Interno'}
+                {d === 'obra' ? 'Obra' : d === 'manutencao' ? 'Manutenção' : 'Uso Interno'}
               </button>
             ))}
           </div>
@@ -541,10 +563,14 @@ function FormSaida({ produtos, campos, obras, funcionarios, produtoId, setProdut
               {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
             </select>
           )}
-          {destinoTipo === 'funcionario' && (
-            <select className="field" value={funcionarioId} onChange={e => setFuncionarioId(e.target.value)} required>
-              <option value="">Selecione o funcionário...</option>
-              {funcionarios.map((f: any) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+          {destinoTipo === 'manutencao' && (
+            <select className="field" value={manutencaoId} onChange={e => setManutencaoId(e.target.value)} required>
+              <option value="">Selecione o contrato de manutenção...</option>
+              {manutencoes.map((m: any) => (
+                <option key={m.id} value={m.id}>
+                  {(m.empresa?.apelido || m.empresa?.razao_social || 'Sem empresa')}{m.numero_contrato ? ` · ${m.numero_contrato}` : ''}
+                </option>
+              ))}
             </select>
           )}
         </div>

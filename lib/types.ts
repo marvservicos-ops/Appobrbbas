@@ -204,10 +204,39 @@ export interface EstoqueRegistro {
   data: string
   observacoes?: string
   obra_id?: string | null
+  funcionario_id?: string | null
+  manutencao_id?: string | null
+  destino_tipo?: 'obra' | 'manutencao' | 'uso_interno' | 'funcionario' | null
   preco_unitario_custo?: number | null
   valor_total?: number | null
   created_at: string
   valores?: EstoqueRegistroValor[]
+}
+// ──────────────────────────────────────────────────────
+
+// ── Estoque em cliente de manutenção ───────────────────
+export interface ManutencaoEstoqueProduto {
+  id: string
+  contrato_id: string
+  produto_id: string
+  produto?: EstoqueProduto
+  quantidade_atual: number
+  quantidade_minima: number
+  created_at: string
+}
+
+export interface ManutencaoEstoqueRegistro {
+  id: string
+  contrato_id: string
+  produto_id: string
+  produto?: EstoqueProduto
+  tipo: 'entrada' | 'saida'
+  quantidade: number
+  responsavel?: string | null
+  data: string
+  observacoes?: string | null
+  origem_estoque_registro_id?: string | null
+  created_at: string
 }
 // ──────────────────────────────────────────────────────
 

@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin, Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { ContratoManutencao, ManutencaoAditivo, ManutencaoNF, ManutencaoFuncionario, Equipamento } from '@/lib/types'
+import { ContratoManutencao, ManutencaoAditivo, ManutencaoNF, ManutencaoFuncionario, Equipamento, ManutencaoEstoqueProduto, ManutencaoEstoqueRegistro, EstoqueProduto } from '@/lib/types'
 import Link from 'next/link'
 import { useAccess } from '@/lib/useAccess'
 
-type Tab = 'financeiro' | 'equipe' | 'equipamentos'
+type Tab = 'financeiro' | 'equipe' | 'equipamentos' | 'estoque'
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function fmtDate(d?: string | null) { return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—' }
@@ -728,6 +728,263 @@ function AbaEquipamentos({ contratoId }: { contratoId: string }) {
   )
 }
 
+// ── Aba Estoque (mini-estoque local do cliente) ────────
+function ModalAdicionarProdutoEstoque({ contratoId, jaRastreados, onClose, onSaved }: {
+  contratoId: string; jaRastreados: string[]; onClose: () => void; onSaved: () => void
+}) {
+  const [catalogo, setCatalogo] = useState<EstoqueProduto[]>([])
+  const [produtoId, setProdutoId] = useState('')
+  const [quantidadeMinima, setQuantidadeMinima] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    createClient().from('estoque_produtos').select('*').eq('ativo', true).order('nome')
+      .then(({ data }) => setCatalogo((data ?? []) as EstoqueProduto[]))
+  }, [])
+
+  const disponiveis = catalogo.filter(p => !jaRastreados.includes(p.id))
+
+  async function salvar() {
+    if (!produtoId) return
+    setSaving(true)
+    await createClient().from('manutencao_estoque_produtos').insert({
+      contrato_id: contratoId, produto_id: produtoId, quantidade_minima: parseFloat(quantidadeMinima) || 0,
+    })
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-syne font-semibold text-[#0F172A]">Adicionar produto</h3>
+          <button onClick={onClose}><X size={18} className="text-[#94A3B8]" /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Produto do catálogo *</label>
+            <select className="field text-sm" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
+              <option value="">Selecione...</option>
+              {disponiveis.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Quantidade mínima</label>
+            <input type="number" min="0" step="any" className="field text-sm" value={quantidadeMinima} onChange={e => setQuantidadeMinima(e.target.value)} placeholder="0" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
+          <button onClick={salvar} disabled={!produtoId || saving} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Adicionar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ModalMovimentacaoEstoque({ contratoId, produtos, onClose, onSaved }: {
+  contratoId: string; produtos: ManutencaoEstoqueProduto[]; onClose: () => void; onSaved: () => void
+}) {
+  const [tipo, setTipo] = useState<'entrada' | 'saida'>('saida')
+  const [produtoId, setProdutoId] = useState('')
+  const [quantidade, setQuantidade] = useState('')
+  const [responsavel, setResponsavel] = useState('')
+  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [observacoes, setObservacoes] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const produto = produtos.find(p => p.produto_id === produtoId)
+
+  async function salvar() {
+    setError('')
+    const qtd = parseFloat(quantidade)
+    if (!produtoId) { setError('Selecione o produto.'); return }
+    if (!qtd || qtd <= 0) { setError('Informe a quantidade.'); return }
+    if (!responsavel.trim()) { setError('Informe o responsável.'); return }
+    if (tipo === 'saida' && produto && produto.quantidade_atual - qtd < 0) {
+      setError(`Saldo insuficiente. Disponível: ${produto.quantidade_atual}.`); return
+    }
+    setSaving(true)
+    const sb = createClient()
+    await sb.from('manutencao_estoque_registros').insert({
+      contrato_id: contratoId, produto_id: produtoId, tipo, quantidade: qtd,
+      responsavel: responsavel.trim(), data, observacoes: observacoes || null,
+    })
+    if (produto) {
+      const novaQtd = produto.quantidade_atual + (tipo === 'entrada' ? qtd : -qtd)
+      await sb.from('manutencao_estoque_produtos').update({ quantidade_atual: novaQtd }).eq('id', produto.id)
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-syne font-semibold text-[#0F172A]">Nova movimentação</h3>
+          <button onClick={onClose}><X size={18} className="text-[#94A3B8]" /></button>
+        </div>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            {(['saida', 'entrada'] as const).map(t => (
+              <button key={t} type="button" onClick={() => setTipo(t)}
+                className={`py-2 rounded-lg text-xs font-medium border-2 transition-all ${tipo === t
+                  ? t === 'saida' ? 'border-red-400 bg-red-50 text-red-600' : 'border-green-400 bg-green-50 text-green-600'
+                  : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                {t === 'saida' ? 'Saída' : 'Entrada'}
+              </button>
+            ))}
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Produto *</label>
+            <select className="field text-sm" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
+              <option value="">Selecione...</option>
+              {produtos.map(p => <option key={p.produto_id} value={p.produto_id}>{p.produto?.nome} ({p.quantidade_atual} {p.produto?.unidade})</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-[#64748B] block mb-1">Quantidade *</label>
+              <input type="number" min="0" step="any" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[#64748B] block mb-1">Data</label>
+              <input type="date" className="field text-sm" value={data} onChange={e => setData(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Responsável *</label>
+            <input className="field text-sm" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Observações</label>
+            <input className="field text-sm" value={observacoes} onChange={e => setObservacoes(e.target.value)} />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
+          <button onClick={salvar} disabled={saving} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Salvar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AbaEstoque({ contratoId }: { contratoId: string }) {
+  const [produtos, setProdutos] = useState<ManutencaoEstoqueProduto[]>([])
+  const [registros, setRegistros] = useState<ManutencaoEstoqueRegistro[]>([])
+  const [showAdicionar, setShowAdicionar] = useState(false)
+  const [showMovimentacao, setShowMovimentacao] = useState(false)
+
+  async function load() {
+    const sb = createClient()
+    const [{ data: p }, { data: r }] = await Promise.all([
+      sb.from('manutencao_estoque_produtos').select('*, produto:estoque_produtos(nome, unidade)').eq('contrato_id', contratoId).order('created_at'),
+      sb.from('manutencao_estoque_registros').select('*, produto:estoque_produtos(nome, unidade)').eq('contrato_id', contratoId).order('created_at', { ascending: false }).limit(30),
+    ])
+    setProdutos((p ?? []) as ManutencaoEstoqueProduto[])
+    setRegistros((r ?? []) as ManutencaoEstoqueRegistro[])
+  }
+
+  useEffect(() => { load() }, [contratoId])
+
+  const abaixoMinimo = produtos.filter(p => p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-[#64748B]">{produtos.length} produto{produtos.length !== 1 ? 's' : ''} rastreado{produtos.length !== 1 ? 's' : ''}</p>
+        <div className="flex gap-2">
+          <button onClick={() => setShowAdicionar(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-[#E2E8F0] text-sm text-[#64748B] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            <Plus size={13} /> Adicionar produto
+          </button>
+          <button onClick={() => setShowMovimentacao(true)} disabled={produtos.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4F7CFF] text-white text-sm rounded-xl hover:bg-[#3D68F0] transition-colors disabled:opacity-50">
+            <Plus size={13} /> Nova movimentação
+          </button>
+        </div>
+      </div>
+
+      {abaixoMinimo.length > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">{abaixoMinimo.length} produto{abaixoMinimo.length > 1 ? 's' : ''} abaixo do estoque mínimo</p>
+            <p className="text-xs text-amber-700 mt-0.5">{abaixoMinimo.map(p => p.produto?.nome).join(', ')}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        {produtos.length === 0 ? (
+          <div className="text-center py-10">
+            <Package size={32} className="text-[#E2E8F0] mx-auto mb-2" />
+            <p className="text-sm text-[#94A3B8]">Nenhum produto rastreado neste cliente ainda</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#F1F5F9]">
+            {produtos.map(p => {
+              const negativo = p.quantidade_atual < 0
+              const critico = !negativo && p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0
+              return (
+                <div key={p.id} className={`flex items-center justify-between py-2.5 px-1 ${negativo ? 'bg-red-50' : critico ? 'bg-amber-50' : ''}`}>
+                  <div>
+                    <p className="text-sm font-medium text-[#0F172A]">{p.produto?.nome}</p>
+                    <p className="text-xs text-[#94A3B8]">Mínimo: {p.quantidade_minima} {p.produto?.unidade}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {negativo && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Negativo</span>}
+                    {critico && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Crítico</span>}
+                    <span className="text-sm font-semibold text-[#0F172A]">{p.quantidade_atual} {p.produto?.unidade}</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3 className="font-syne font-semibold text-[#0F172A] mb-3 text-sm">Histórico recente</h3>
+        {registros.length === 0 ? (
+          <p className="text-sm text-[#94A3B8] text-center py-4">Nenhuma movimentação ainda</p>
+        ) : (
+          <div className="space-y-2">
+            {registros.map(r => (
+              <div key={r.id} className="flex items-center gap-3 py-2 px-3 bg-[#F8FAFC] rounded-lg">
+                {r.tipo === 'entrada'
+                  ? <ArrowDownCircle size={16} className="text-green-500 shrink-0" />
+                  : <ArrowUpCircle size={16} className="text-red-500 shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[#0F172A] truncate">{r.produto?.nome}</p>
+                  <p className="text-xs text-[#94A3B8]">{r.responsavel ?? '—'} · {fmtDate(r.data)}</p>
+                </div>
+                <span className={`text-sm font-semibold ${r.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
+                  {r.tipo === 'entrada' ? '+' : '-'}{r.quantidade}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showAdicionar && (
+        <ModalAdicionarProdutoEstoque contratoId={contratoId} jaRastreados={produtos.map(p => p.produto_id)}
+          onClose={() => setShowAdicionar(false)} onSaved={() => { setShowAdicionar(false); load() }} />
+      )}
+      {showMovimentacao && (
+        <ModalMovimentacaoEstoque contratoId={contratoId} produtos={produtos}
+          onClose={() => setShowMovimentacao(false)} onSaved={() => { setShowMovimentacao(false); load() }} />
+      )}
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────
 export default function ManutencaoDetalhe() {
   const { id } = useParams<{ id: string }>()
@@ -736,6 +993,12 @@ export default function ManutencaoDetalhe() {
   const [contrato, setContrato] = useState<ContratoManutencao | null>(null)
   const [tab, setTab] = useState<Tab>('financeiro')
   const [loading, setLoading] = useState(true)
+  const [criticosEstoque, setCriticosEstoque] = useState(0)
+
+  useEffect(() => {
+    createClient().from('manutencao_estoque_produtos').select('quantidade_atual, quantidade_minima').eq('contrato_id', id)
+      .then(({ data }) => setCriticosEstoque((data ?? []).filter((p: any) => p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0).length))
+  }, [id])
 
   useEffect(() => {
     createClient()
@@ -753,6 +1016,7 @@ export default function ManutencaoDetalhe() {
     { key: 'financeiro', label: 'Financeiro', icon: <DollarSign size={15} /> },
     { key: 'equipe', label: 'Equipe', icon: <Users size={15} /> },
     { key: 'equipamentos', label: 'Equipamentos', icon: <Wrench size={15} /> },
+    { key: 'estoque', label: 'Estoque', icon: <Package size={15} /> },
   ]
 
   return (
@@ -792,6 +1056,11 @@ export default function ManutencaoDetalhe() {
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors
                   ${tab === t.key ? 'bg-[#4F7CFF] text-white' : 'text-[#64748B] hover:bg-[#F1F5F9]'}`}>
                 {t.icon} {t.label}
+                {t.key === 'estoque' && criticosEstoque > 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tab === t.key ? 'bg-white/25 text-white' : 'bg-red-100 text-red-600'}`}>
+                    {criticosEstoque}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -803,6 +1072,7 @@ export default function ManutencaoDetalhe() {
         {tab === 'financeiro' && <AbaFinanceiro contratoId={id} valorMensal={contrato.valor_mensal} />}
         {tab === 'equipe' && <AbaEquipe contratoId={id} />}
         {tab === 'equipamentos' && <AbaEquipamentos contratoId={id} />}
+        {tab === 'estoque' && <AbaEstoque contratoId={id} />}
       </main>
     </div>
   )
