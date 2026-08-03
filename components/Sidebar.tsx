@@ -67,14 +67,9 @@ export default function Sidebar() {
       {/* ── Desktop sidebar ─────────────────────────────── */}
       <aside className="hidden md:flex w-[220px] shrink-0 bg-[#F8FAFC] border-r border-[#E2E8F0] flex-col h-dvh sticky top-0">
         <div className="px-6 py-5 border-b border-[#E2E8F0]">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-[#4F7CFF] rounded-lg flex items-center justify-center">
-              <Wrench size={16} className="text-white" />
-            </div>
-            <div>
-              <div className="font-syne font-bold text-[14px] leading-tight text-[#0F172A]">MARV Gestão</div>
-              <div className="text-[10px] text-[#64748B] uppercase tracking-wide">Mechanical Engineering</div>
-            </div>
+          <div className="flex flex-col gap-1">
+            <img src="/marv-logo.png" alt="MARV" className="h-8 w-auto object-contain" />
+            <div className="text-[10px] text-[#64748B] uppercase tracking-wide">Mechanical Engineering</div>
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
@@ -88,10 +83,7 @@ export default function Sidebar() {
       {/* ── Mobile top bar ───────────────────────────────── */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-[#E2E8F0] flex items-end justify-between px-4 pb-2 h-[calc(3.5rem+env(safe-area-inset-top))]">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-[#4F7CFF] rounded-lg flex items-center justify-center">
-            <Wrench size={14} className="text-white" />
-          </div>
-          <span className="font-syne font-bold text-[15px] text-[#0F172A]">MARV Gestão</span>
+          <img src="/marv-logo.png" alt="MARV" className="h-6 w-auto object-contain" />
         </div>
         <button type="button" aria-label="Abrir menu" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
           <Menu size={20} className="text-[#64748B]" />
@@ -106,14 +98,9 @@ export default function Sidebar() {
           {/* Drawer */}
           <aside aria-label="Menu principal" className="relative w-[min(82vw,300px)] bg-white h-dvh flex flex-col shadow-2xl pt-[env(safe-area-inset-top)]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-[#4F7CFF] rounded-lg flex items-center justify-center">
-                  <Wrench size={16} className="text-white" />
-                </div>
-                <div>
-                  <div className="font-syne font-bold text-[14px] leading-tight text-[#0F172A]">MARV Gestão</div>
-                  <div className="text-[10px] text-[#64748B] uppercase tracking-wide">Mechanical Engineering</div>
-                </div>
+              <div className="flex flex-col gap-1">
+                <img src="/marv-logo.png" alt="MARV" className="h-8 w-auto object-contain" />
+                <div className="text-[10px] text-[#64748B] uppercase tracking-wide">Mechanical Engineering</div>
               </div>
               <button type="button" aria-label="Fechar menu" autoFocus onClick={() => setMobileOpen(false)} className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
                 <X size={18} className="text-[#64748B]" />

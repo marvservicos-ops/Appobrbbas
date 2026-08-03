@@ -33,9 +33,7 @@ export default function PinForm({ token }: { token: string }) {
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', background: '#F8FAFC', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: '#fff', borderRadius: 16, padding: '32px 24px', boxShadow: '0 1px 4px #0001', maxWidth: 360, width: '100%' }}>
-        <p style={{ fontSize: 11, color: '#94A3B8', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 1, textAlign: 'center' }}>
-          MARV Gestão
-        </p>
+        <img src="/marv-logo.png" alt="MARV" style={{ height: 26, width: 'auto', display: 'block', margin: '0 auto 8px' }} />
         <h1 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#0F172A', textAlign: 'center' }}>
           Acesso ao Portal
         </h1>

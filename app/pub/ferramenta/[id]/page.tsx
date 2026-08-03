@@ -40,6 +40,7 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
       {/* Header */}
       <div style={{ background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 24px' }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
+          <img src="/marv-logo.png" alt="MARV" style={{ height: 22, width: 'auto', display: 'block', marginBottom: 8 }} />
           <p style={{ fontSize: 11, color: '#94A3B8', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 1 }}>
             MARV Gestão · {modoPatrimonio ? 'Patrimônio' : 'Ferramentas'}
           </p>

@@ -69,6 +69,7 @@ export default async function PortalPage({ params }: { params: { token: string }
     <div style={{ fontFamily: 'system-ui, sans-serif', background: '#F8FAFC', minHeight: '100vh', padding: '0 0 40px' }}>
       <div style={{ background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 24px' }}>
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          <img src="/marv-logo.png" alt="MARV" style={{ height: 22, width: 'auto', display: 'block', marginBottom: 8 }} />
           <p style={{ fontSize: 11, color: '#94A3B8', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 1 }}>
             MARV Gestão · Portal do Cliente
           </p>

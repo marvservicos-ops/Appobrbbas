@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Wrench, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 type Mode = 'login' | 'forgot' | 'reset' | 'reset_ok'
@@ -101,11 +101,8 @@ export default function LoginPage() {
 
   const logo = (
     <div className="flex flex-col items-center mb-8">
-      <div className="w-14 h-14 bg-[#4F7CFF] rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-200">
-        <Wrench size={28} className="text-white" />
-      </div>
-      <h1 className="font-syne text-2xl font-bold text-[#0F172A] tracking-tight">MARV Gestão</h1>
-      <p className="text-sm text-[#64748B] mt-1">Mechanical Engineering</p>
+      <img src="/marv-logo.png" alt="MARV Gestão" className="h-16 w-auto object-contain mb-3" />
+      <p className="text-sm text-[#64748B]">Mechanical Engineering</p>
     </div>
   )
 

@@ -28,8 +28,7 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
           overflow: hidden;
           border: 0.4mm dashed #94A3B8;
         }
-        .logo { font-size: 15px; font-weight: 900; letter-spacing: 1.8px; color: #0F172A; line-height: 1; text-align: center; }
-        .logo span { color: #4F7CFF; }
+        .logo-img { height: 9mm; width: auto; object-fit: contain; display: block; margin: 0 auto; }
         .logo-sub { font-size: 6.5px; letter-spacing: 1.4px; color: #94A3B8; text-transform: uppercase; margin-top: 1mm; text-align: center; }
         .ativo-nome {
           font-size: 13px;
@@ -59,7 +58,7 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
 
       <div className="label">
         <div>
-          <div className="logo">MARV<span>.</span></div>
+          <img src="/marv-logo.png" alt="MARV" className="logo-img" />
           <div className="logo-sub">Mechanical Engineering</div>
         </div>
         <div className="ativo-nome">{e.nome}</div>
