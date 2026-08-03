@@ -93,7 +93,7 @@ Apenas redireciona para `/obras/[id]/financeiro`.
   - **Configurar**: campos customizados por estoque (texto/número/data/unidade, obrigatório ou não).
 - **Importar CSV** (`/estoque/[estoqueId]/importar`): dois modos (Registros ou Produtos), detecção automática de separador, mapeamento de colunas, opção de cadastrar produtos automaticamente.
 - **Novo Registro** (`/estoque/[estoqueId]/registrar`):
-  - **Saída**: seleciona produto, valida saldo, campos customizados, responsável, assinatura; destino varia por tipo de estoque (EPI/Uniforme → funcionário; Limpeza → obra/funcionário/uso interno; outros → obra obrigatória).
+  - **Saída**: seleciona produto, valida saldo, campos customizados, responsável, assinatura; destino varia por tipo de estoque (EPI/Uniforme → funcionário; Limpeza → obra/manutenção/uso interno; outros → obra obrigatória). Em Limpeza, destino "Manutenção" exige produto real do catálogo (não aceita "outro/texto livre") e escolhe um contrato de manutenção — repõe automaticamente o estoque local desse contrato (ver [Manutenções](#8-manutenções)).
   - **Entrada**: três fluxos — Lançar NF manual (multi-item), Importar NF em PDF (via IA), ou Novo Registro simples (item único).
   - Toda entrada recalcula o CMP: `(qtd_atual×cmp_atual + qtd_nova×preço_novo) / qtd_total`.
 - **Categoria "Ferramentas"**: um estoque com ícone `wrench` tem comportamento completamente diferente das demais categorias — ver seção 5.
@@ -186,6 +186,7 @@ Cards de contratos com empresa, número, valor mensal, data de início, status. 
 - **Financeiro**: mensalidade base, aditivos (descrição/valor/data), notas fiscais (competência, valor, número, status pendente/emitida, upload de arquivo).
 - **Equipe**: funcionários alocados ao contrato (fixo ou eventual).
 - **Equipamentos**: organizados em grupos (ex. "1º andar"). CRUD de equipamentos (tipo Split/Cassete/VRF/Janela/Piso-teto/Chiller/Fan Coil/Condensadora/Outro, marca, modelo, capacidade BTU, nº série, localização, data de instalação).
+- **Estoque**: mini-estoque local do cliente, reaproveitando o catálogo de produtos do Estoque central. "+ Adicionar produto" escolhe quais produtos esse contrato rastreia (com quantidade mínima); "+ Nova movimentação" lança entrada/saída direto no local (consumo dos funcionários em campo, ou compra emergencial). Produtos abaixo da quantidade mínima ficam com badge "Crítico" (ou "Negativo" se abaixo de zero), com contador na aba e banner de aviso. Quando uma saída de material de Limpeza no estoque central escolhe "Manutenção" como destino, o item entra automaticamente nesse estoque local do contrato (repondo o que foi levado).
 
 ### Ficha do equipamento (`/manutencoes/[id]/equipamentos/[equipId]`)
 - Botão para gerar **QR Code** que aponta para a ficha pública (`/pub/equipamento/[equipId]`) e link para a etiqueta imprimível (`/pub/etiqueta/[equipId]`).
@@ -262,7 +263,7 @@ Acessíveis sem login (liberadas no middleware):
 - **Ferramentas**: `ferramentas` (`eh_mala`, `mala_id`, `responsavel_atual_id`, `codigo_interno`), `ferramenta_emprestimos`, `ferramenta_emprestimo_itens`, `ferramenta_defeitos`.
 - **Documentos**: `doc_pastas`, `documentos`.
 - **RDO**: `rdos`, `rdo_clima`, `rdo_mao_obra`, `rdo_equipamentos`, `rdo_atividades`, `rdo_ocorrencias`, `rdo_comentarios`, `rdo_fotos`, `rdo_assinaturas`, `rdo_modelos`.
-- **Manutenções**: `contratos_manutencao`, `manutencao_aditivos`, `manutencao_nfs`, `manutencao_funcionarios`, `equipamentos`, `grupos_equipamentos`, `campos_tecnicos`, `equipamento_dados`, `manutencao_historico`.
+- **Manutenções**: `contratos_manutencao`, `manutencao_aditivos`, `manutencao_nfs`, `manutencao_funcionarios`, `equipamentos`, `grupos_equipamentos`, `campos_tecnicos`, `equipamento_dados`, `manutencao_historico`, `manutencao_estoque_produtos`, `manutencao_estoque_registros` (mini-estoque local por contrato; `estoque_registros` ganhou `manutencao_id`).
 - **Funcionários**: `funcionarios`, `funcionario_alocacoes`, `veiculos`.
 - **Obras/Clientes**: `obras`, `clientes`, `empresas`, `cronograma_etapas`, `obra_materiais` (ganhou `oc_id`), `obra_notas_material` (ganhou `oc_id`).
 - **Administrativo**: `categorias_administrativas`, `custos_administrativos`, `configuracoes_empresa`, `email_templates`.
