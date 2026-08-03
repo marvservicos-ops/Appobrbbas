@@ -150,7 +150,7 @@ function exportarRelatorio(
 
 export default function AlocacaoPage() {
   const router = useRouter()
-  const { isAdmin, loading: accessLoading } = useAccess()
+  const { isAdmin } = useAccess()
   const now = new Date()
   const [view, setView] = useState<'mensal' | 'semanal'>('mensal')
   const [mes, setMes] = useState(now.getMonth())
@@ -187,9 +187,6 @@ export default function AlocacaoPage() {
     else setModalDia(dia)
   }
 
-  useEffect(() => {
-    if (!accessLoading && !isAdmin) router.replace('/obras')
-  }, [isAdmin, accessLoading, router])
 
   // Derived days array — works for both views
   const dias: Date[] = view === 'mensal'
@@ -268,7 +265,7 @@ export default function AlocacaoPage() {
 
       {/* Barra superior */}
       <div className="flex items-center gap-3 px-4 md:px-6 py-3 border-b border-[#E2E8F0] bg-white shrink-0">
-        <button onClick={() => router.push('/funcionarios')}
+        <button onClick={() => router.push(isAdmin ? '/funcionarios' : '/obras')}
           className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors">
           <ArrowLeft size={15} className="text-[#64748B]" />
         </button>

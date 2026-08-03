@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, BarChart2, Users, Settings, User, Package, Menu, X, ShieldCheck, DollarSign, StickyNote, LayoutDashboard, Thermometer, Leaf } from 'lucide-react'
+import { Wrench, BarChart2, Users, Settings, User, Package, Menu, X, ShieldCheck, DollarSign, StickyNote, LayoutDashboard, Thermometer, Leaf, CalendarDays } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -15,6 +15,7 @@ const navItemsBase = [
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign, adminOnly: true },
   { href: '/administrativo', label: 'Administrativo', icon: BarChart2, adminOnly: true },
   { href: '/funcionarios', label: 'Funcionários', icon: Users, adminOnly: true },
+  { href: '/funcionarios/alocacao', label: 'Alocação', icon: CalendarDays },
   { href: '/notas', label: 'Notas', icon: StickyNote },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
   { href: '/clientes', label: 'Clientes', icon: Users },
@@ -49,7 +50,7 @@ export default function Sidebar() {
   }, [mobileOpen])
 
   const NavLink = ({ href, label, icon: Icon, onClick }: { href: string; label: string; icon: any; onClick?: () => void }) => {
-    const active = pathname.startsWith(href)
+    const active = pathname === href || (pathname.startsWith(href + '/') && href !== '/funcionarios')
     return (
       <Link href={href} onClick={onClick}
         className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative
