@@ -1,12 +1,17 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import EtiquetaPrintButton from '@/components/EtiquetaPrintButton'
 
 export default async function EtiquetaFerramentaPage({ params }: { params: { id: string } }) {
   const sb = await createClient()
-  const { data: ferramenta } = await sb.from('ferramentas').select('*').eq('id', params.id).single()
+  const [{ data: ferramenta }, { data: dadosTecnicos }] = await Promise.all([
+    sb.from('ferramentas').select('*').eq('id', params.id).single(),
+    sb.from('ferramenta_dados').select('*, campo:campos_tecnicos(nome, unidade)').eq('ferramenta_id', params.id),
+  ])
   if (!ferramenta) notFound()
 
   const f = ferramenta as any
+  const dados = ((dadosTecnicos ?? []) as any[]).filter(d => d.valor)
   const pubUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://marv-gestao.vercel.app'}/pub/ferramenta/${params.id}`
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=6&data=${encodeURIComponent(pubUrl)}`
 
@@ -111,6 +116,12 @@ export default async function EtiquetaFerramentaPage({ params }: { params: { id:
                 <div className="field-value">{f.numero_serie}</div>
               </div>
             )}
+            {dados.map((d: any) => (
+              <div key={d.id}>
+                <div className="field-label">{d.campo?.nome}{d.campo?.unidade ? ` (${d.campo.unidade})` : ''}</div>
+                <div className="field-value">{d.valor}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -120,18 +131,7 @@ export default async function EtiquetaFerramentaPage({ params }: { params: { id:
         </div>
       </div>
 
-      <button className="print-btn" id="print-btn">
-        Imprimir / Salvar PDF
-      </button>
-
-      <script dangerouslySetInnerHTML={{ __html: `
-        document.getElementById('print-btn').addEventListener('click', function() { window.print(); });
-        window.addEventListener('load', function() {
-          if (new URLSearchParams(location.search).get('print') === '1') {
-            setTimeout(() => window.print(), 800);
-          }
-        });
-      `}} />
+      <EtiquetaPrintButton />
     </>
   )
 }
