@@ -7,14 +7,7 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
   const { data: equip } = await sb.from('equipamentos').select('*').eq('id', params.equipId).single()
   if (!equip) notFound()
 
-  const { data: dados } = await sb
-    .from('equipamento_dados')
-    .select('*, campo:campos_tecnicos(nome)')
-    .eq('equipamento_id', params.equipId)
-
   const e = equip as any
-  const numeroSerie = (dados as any[])?.find((d: any) => d.campo?.nome?.toLowerCase().includes('série') || d.campo?.nome?.toLowerCase().includes('serie'))?.valor ?? e.numero_serie ?? null
-  const modelo = (dados as any[])?.find((d: any) => d.campo?.nome?.toLowerCase().includes('modelo'))?.valor ?? e.modelo ?? null
   const pubUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://marv-gestao.vercel.app'}/pub/equipamento/${params.equipId}`
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=6&data=${encodeURIComponent(pubUrl)}`
 
@@ -22,105 +15,58 @@ export default async function EtiquetaPage({ params }: { params: { equipId: stri
     <>
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page { size: 80mm 50mm; margin: 0; }
+        @page { size: 50mm 80mm; margin: 0; }
         html, body { font-family: 'Helvetica Neue', Arial, sans-serif; background: white; }
         .label {
-          width: 80mm;
-          height: 50mm;
-          display: flex;
-          padding: 2.5mm;
-          gap: 2mm;
-          overflow: hidden;
-          border: 0.3mm dashed #94A3B8;
-        }
-        .left {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5mm;
-          flex: 1;
-          min-width: 0;
-          overflow: hidden;
-        }
-        .logo { font-size: 11px; font-weight: 900; letter-spacing: 1.5px; color: #0F172A; line-height: 1; }
-        .logo span { color: #4F7CFF; }
-        .logo-sub { font-size: 4.5px; letter-spacing: 1.2px; color: #94A3B8; text-transform: uppercase; margin-top: 0.5mm; }
-        .tipo-badge {
-          display: inline-block;
-          font-size: 5.5px;
-          font-weight: 700;
-          letter-spacing: 0.5px;
-          text-transform: uppercase;
-          background: #EEF2FF;
-          color: #4F7CFF;
-          padding: 1px 3px;
-          border-radius: 2px;
-        }
-        .equip-nome {
-          font-size: 9px;
-          font-weight: 700;
-          color: #0F172A;
-          line-height: 1.15;
-          overflow: hidden;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-        }
-        .divider { border: none; border-top: 0.4px solid #E2E8F0; }
-        .fields { display: flex; flex-direction: column; gap: 1mm; }
-        .field-label { font-size: 4.5px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: #94A3B8; }
-        .field-value { font-size: 6.5px; font-weight: 600; color: #374151; line-height: 1.2; }
-        .right {
+          width: 50mm;
+          height: 80mm;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 1mm;
-          width: 26mm;
-          flex-shrink: 0;
+          padding: 4mm;
+          gap: 3mm;
+          overflow: hidden;
+          border: 0.3mm dashed #94A3B8;
         }
-        .right img { width: 24mm; height: 24mm; object-fit: contain; display: block; }
-        .scan-text { font-size: 4.5px; color: #94A3B8; text-align: center; line-height: 1.4; }
+        .logo { font-size: 12px; font-weight: 900; letter-spacing: 1.5px; color: #0F172A; line-height: 1; text-align: center; }
+        .logo span { color: #4F7CFF; }
+        .logo-sub { font-size: 5px; letter-spacing: 1.2px; color: #94A3B8; text-transform: uppercase; margin-top: 0.8mm; text-align: center; }
+        .ativo-nome {
+          font-size: 10px;
+          font-weight: 700;
+          color: #0F172A;
+          line-height: 1.25;
+          text-align: center;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+        }
+        .qr img { width: 34mm; height: 34mm; object-fit: contain; display: block; }
+        .scan-text { font-size: 5px; color: #94A3B8; text-align: center; line-height: 1.4; }
         @media screen {
           body { background: #F1F5F9; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 24px; }
-          .label { background: white; box-shadow: 0 4px 24px #0002; border-radius: 4px; transform: scale(2); transform-origin: center center; margin: 60px 0; }
+          .label { background: white; box-shadow: 0 4px 24px #0002; border-radius: 4px; transform: scale(2.2); transform-origin: center center; margin: 90px 0; }
           .print-btn { background: #4F7CFF; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px #4F7CFF66; }
         }
         @media print {
           body { background: white; display: block; margin: 0; padding: 0; }
-          .label { width: 80mm; height: 50mm; }
+          .label { width: 50mm; height: 80mm; }
           .print-btn { display: none; }
         }
       `}</style>
 
       <div className="label">
-        <div className="left">
-          <div>
-            <div className="logo">MARV<span>.</span></div>
-            <div className="logo-sub">Mechanical Engineering</div>
-          </div>
-          <div className="tipo-badge">{e.tipo}</div>
-          <div className="equip-nome">{e.nome}</div>
-          <div className="divider" />
-          <div className="fields">
-            {modelo && (
-              <div>
-                <div className="field-label">Modelo</div>
-                <div className="field-value">{modelo}</div>
-              </div>
-            )}
-            {numeroSerie && (
-              <div>
-                <div className="field-label">Nº de Série</div>
-                <div className="field-value">{numeroSerie}</div>
-              </div>
-            )}
-          </div>
+        <div>
+          <div className="logo">MARV<span>.</span></div>
+          <div className="logo-sub">Mechanical Engineering</div>
         </div>
-
-        <div className="right">
+        <div className="ativo-nome">{e.nome}</div>
+        <div className="qr">
           <img src={qrUrl} alt="QR Code" />
-          <div className="scan-text">Escaneie para<br />ver a ficha técnica</div>
         </div>
+        <div className="scan-text">Escaneie para<br />ver a ficha técnica</div>
       </div>
 
       <EtiquetaPrintButton />
