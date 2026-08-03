@@ -334,6 +334,57 @@ export interface ManutencaoHistorico {
 }
 // ──────────────────────────────────────────────────────
 
+// ── ESG ──────────────────────────────────────────────
+export interface EsgCombustivel {
+  id: string
+  data: string
+  veiculo_id?: string | null
+  veiculo?: { id: string; nome: string; placa: string | null } | null
+  combustivel: string
+  litros: number
+  valor: number
+  observacoes?: string | null
+  created_at: string
+}
+
+export type EsgInvestimentoCategoria = 'Ambiental' | 'Social' | 'Ferramental' | 'SST'
+
+export interface EsgInvestimento {
+  id: string
+  data: string
+  item: string
+  categoria: EsgInvestimentoCategoria
+  quantidade: number
+  valor: number
+  observacoes?: string | null
+  created_at: string
+}
+
+export interface EsgDestinacaoMaterial {
+  id: string
+  data: string
+  cliente: string
+  material: string
+  quantidade: number
+  valor?: number | null
+  observacoes?: string | null
+  created_at: string
+}
+
+export interface EsgReciclagemGas {
+  id: string
+  data: string
+  empresa_emissora: string
+  manutencao_contrato_id?: string | null
+  contrato?: { id: string; numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string | null } | null } | null
+  tipo_gas: string
+  quantidade: number
+  valor_recebido?: number | null
+  observacoes?: string | null
+  created_at: string
+}
+// ──────────────────────────────────────────────────────
+
 export type TipoMovimentacao = 'entrada' | 'saida' | 'devolucao' | 'ajuste'
 export type StatusMovimentacao = 'concluido' | 'pendente_devolucao' | 'devolvido_parcial' | 'devolvido_total'
 
