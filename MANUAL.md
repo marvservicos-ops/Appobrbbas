@@ -2,7 +2,7 @@
 
 Sistema de gestão de obras, estoque, ferramentas, funcionários, manutenções e financeiro, construído em Next.js 14 (App Router) + Supabase.
 
-> Este manual foi gerado a partir de uma revisão do código-fonte, última atualização em 2026-08-01. Ele documenta o que o sistema faz e como está estruturado — não substitui uma auditoria de segurança nem o schema definitivo do banco (algumas tabelas foram criadas fora dos arquivos `.sql` versionados no repositório; veja seção 14).
+> Este manual foi gerado a partir de uma revisão do código-fonte, última atualização em 2026-08-03. Ele documenta o que o sistema faz e como está estruturado — não substitui uma auditoria de segurança nem o schema definitivo do banco (algumas tabelas foram criadas fora dos arquivos `.sql` versionados no repositório; veja seção 14).
 
 ## Sumário
 1. [Visão geral e autenticação](#1-visão-geral-e-autenticação)
@@ -13,6 +13,7 @@ Sistema de gestão de obras, estoque, ferramentas, funcionários, manutenções 
 6. [Funcionários](#6-funcionários)
 7. [Financeiro e OCs](#7-financeiro-e-ocs)
 8. [Manutenções](#8-manutenções)
+8.5. [ESG](#85-esg)
 9. [Outras páginas](#9-outras-páginas)
 10. [Admin e permissões](#10-admin-e-permissões)
 11. [APIs internas](#11-apis-internas)
@@ -193,6 +194,16 @@ Cards de contratos com empresa, número, valor mensal, data de início, status. 
 - Campos técnicos dinâmicos (criados livremente pelo usuário e reaproveitados entre equipamentos).
 - Histórico de manutenções por competência: preventiva realizada (checkbox), corretiva com descrição e custo adicional.
 
+## 8.5. ESG
+
+Página `/esg`, com 4 abas, cada uma um log simples de dados (adicionar/editar/excluir) — substitui o controle que era feito em planilha:
+- **Combustível**: abastecimentos vinculados aos veículos cadastrados (`veiculos`), com combustível/litros/valor/data. Totais de litros e valor gasto no topo.
+- **Investimentos (Melhorias)**: item + categoria (Ambiental, Social, Ferramental, SST) + quantidade + valor. Totais por categoria.
+- **Destinação dos Materiais**: material reciclável (ferro, cobre, alumínio etc.) enviado a um cliente/destino, com quantidade (kg) e valor recebido (opcional).
+- **Reciclagem de Gás**: gás refrigerante recolhido (tipo, quantidade, valor recebido), com empresa emissora — pode ser vinculado a um contrato de manutenção existente (autopreenche a empresa a partir do contrato) ou lançado avulso para clientes fora do módulo de Manutenções.
+
+Tabelas: `esg_combustivel`, `esg_investimentos`, `esg_destinacao_materiais`, `esg_reciclagem_gas`.
+
 ## 9. Outras páginas
 
 - **`/clientes`**: abas Pessoas (nome, e-mail, telefone, tipo Gestor/Comprador, vínculo a empresa) e Empresas (razão social, CNPJ, endereço, contato). Excluir cliente desvincula obras; excluir empresa desvincula pessoas.
@@ -267,6 +278,7 @@ Acessíveis sem login (liberadas no middleware):
 - **Funcionários**: `funcionarios`, `funcionario_alocacoes`, `veiculos`.
 - **Obras/Clientes**: `obras`, `clientes`, `empresas`, `cronograma_etapas`, `obra_materiais` (ganhou `oc_id`), `obra_notas_material` (ganhou `oc_id`).
 - **Administrativo**: `categorias_administrativas`, `custos_administrativos`, `configuracoes_empresa`, `email_templates`.
+- **ESG**: `esg_combustivel` (liga a `veiculos`), `esg_investimentos`, `esg_destinacao_materiais`, `esg_reciclagem_gas` (liga opcionalmente a `contratos_manutencao`).
 
 > Algumas tabelas acima (`obras`, `rdo_modelos`, `campos_tecnicos`, `equipamento_dados`, `grupos_equipamentos`, `obra_materiais`, `obra_notas_material` etc.) não têm migração rastreada no repositório — foram criadas via Supabase Studio ou migrations não versionadas. As tabelas novas descritas neste manual (`ferramentas*`, `obra_ocs`, `obra_acessos_cliente`, `obra_portal_sessoes`, e as colunas `oc_id` adicionadas) **estão** rastreadas em `supabase/migrations/*.sql`. Para o schema definitivo e completo, rode `list_tables`/`generate_typescript_types` direto no projeto Supabase.
 
