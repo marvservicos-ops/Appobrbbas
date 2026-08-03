@@ -150,8 +150,8 @@ function AbaCombustivel() {
         </div>
       </div>
 
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
+      <div className="card p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">Abastecimentos</h3>
           <button onClick={() => { setEditing(null); setShowModal(true) }} className="flex items-center gap-1 text-xs text-[#4F7CFF] hover:underline">
             <Plus size={13} /> Novo abastecimento
@@ -160,24 +160,40 @@ function AbaCombustivel() {
         {registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum abastecimento registrado</p>
         ) : (
-          <div className="space-y-2">
-            {registros.map(r => (
-              <div key={r.id} className="flex items-center gap-3 py-2 px-3 bg-[#F8FAFC] rounded-lg group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#0F172A]">{r.veiculo?.nome ?? '—'} {r.veiculo?.placa ? `— ${r.veiculo.placa}` : ''}</p>
-                  <p className="text-xs text-[#94A3B8]">{r.combustivel} · {fmtNum(r.litros)} L · {fmtDate(r.data)}</p>
-                </div>
-                <span className="text-sm font-semibold text-[#0F172A] shrink-0">{fmt(r.valor)}</span>
-                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                    <Pencil size={13} />
-                  </button>
-                  <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Data</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Veículo</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Combustível</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Litros</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Valor</th>
+                  <th className="px-4 py-2.5 w-20"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9]">
+                {registros.map(r => (
+                  <tr key={r.id} className="hover:bg-[#F8FAFC] group">
+                    <td className="px-4 py-2.5 text-[#374151] whitespace-nowrap">{fmtDate(r.data)}</td>
+                    <td className="px-4 py-2.5 text-[#0F172A] font-medium whitespace-nowrap">{r.veiculo?.nome ?? '—'}{r.veiculo?.placa ? ` — ${r.veiculo.placa}` : ''}</td>
+                    <td className="px-4 py-2.5 text-[#64748B]">{r.combustivel}</td>
+                    <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.litros)} L</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{fmt(r.valor)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -301,8 +317,8 @@ function AbaInvestimentos() {
         ))}
       </div>
 
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
+      <div className="card p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">Investimentos (melhorias) · {fmt(totalGeral)}</h3>
           <button onClick={() => { setEditing(null); setShowModal(true) }} className="flex items-center gap-1 text-xs text-[#4F7CFF] hover:underline">
             <Plus size={13} /> Novo investimento
@@ -311,25 +327,42 @@ function AbaInvestimentos() {
         {registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum investimento registrado</p>
         ) : (
-          <div className="space-y-2">
-            {registros.map(r => (
-              <div key={r.id} className="flex items-center gap-3 py-2 px-3 bg-[#F8FAFC] rounded-lg group">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${CATEGORIA_COLOR[r.categoria]}`}>{r.categoria}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#0F172A] truncate">{r.item}</p>
-                  <p className="text-xs text-[#94A3B8]">Qtd: {fmtNum(r.quantidade)} · {fmtDate(r.data)}</p>
-                </div>
-                <span className="text-sm font-semibold text-[#0F172A] shrink-0">{fmt(r.valor)}</span>
-                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                    <Pencil size={13} />
-                  </button>
-                  <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Data</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Categoria</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Item</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Qtd</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Valor</th>
+                  <th className="px-4 py-2.5 w-20"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9]">
+                {registros.map(r => (
+                  <tr key={r.id} className="hover:bg-[#F8FAFC] group">
+                    <td className="px-4 py-2.5 text-[#374151] whitespace-nowrap">{fmtDate(r.data)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORIA_COLOR[r.categoria]}`}>{r.categoria}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-[#0F172A] font-medium">{r.item}</td>
+                    <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.quantidade)}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{fmt(r.valor)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -456,8 +489,8 @@ function AbaDestinacaoMateriais() {
         </div>
       </div>
 
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
+      <div className="card p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">Destinação dos materiais</h3>
           <button onClick={() => { setEditing(null); setShowModal(true) }} className="flex items-center gap-1 text-xs text-[#4F7CFF] hover:underline">
             <Plus size={13} /> Nova destinação
@@ -466,24 +499,40 @@ function AbaDestinacaoMateriais() {
         {registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhuma destinação registrada</p>
         ) : (
-          <div className="space-y-2">
-            {registros.map(r => (
-              <div key={r.id} className="flex items-center gap-3 py-2 px-3 bg-[#F8FAFC] rounded-lg group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#0F172A]">{r.material} · {r.cliente}</p>
-                  <p className="text-xs text-[#94A3B8]">{fmtNum(r.quantidade)} kg · {fmtDate(r.data)}</p>
-                </div>
-                <span className="text-sm font-semibold text-[#0F172A] shrink-0">{r.valor != null ? fmt(r.valor) : '—'}</span>
-                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                    <Pencil size={13} />
-                  </button>
-                  <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Data</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Material</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Cliente / Destino</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Quantidade</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Valor</th>
+                  <th className="px-4 py-2.5 w-20"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9]">
+                {registros.map(r => (
+                  <tr key={r.id} className="hover:bg-[#F8FAFC] group">
+                    <td className="px-4 py-2.5 text-[#374151] whitespace-nowrap">{fmtDate(r.data)}</td>
+                    <td className="px-4 py-2.5 text-[#0F172A] font-medium">{r.material}</td>
+                    <td className="px-4 py-2.5 text-[#64748B]">{r.cliente}</td>
+                    <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.quantidade)} kg</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{r.valor != null ? fmt(r.valor) : '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -642,8 +691,8 @@ function AbaReciclagemGas() {
         </div>
       </div>
 
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
+      <div className="card p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">Reciclagem de gás refrigerante</h3>
           <button onClick={() => { setEditing(null); setShowModal(true) }} className="flex items-center gap-1 text-xs text-[#4F7CFF] hover:underline">
             <Plus size={13} /> Novo registro
@@ -652,24 +701,42 @@ function AbaReciclagemGas() {
         {registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum registro ainda</p>
         ) : (
-          <div className="space-y-2">
-            {registros.map(r => (
-              <div key={r.id} className="flex items-center gap-3 py-2 px-3 bg-[#F8FAFC] rounded-lg group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#0F172A]">{r.tipo_gas} · {r.empresa_emissora}</p>
-                  <p className="text-xs text-[#94A3B8]">{fmtNum(r.quantidade)} kg · {fmtDate(r.data)}{r.contrato?.numero_contrato ? ` · ${r.contrato.numero_contrato}` : ''}</p>
-                </div>
-                <span className="text-sm font-semibold text-[#0F172A] shrink-0">{r.valor_recebido != null ? fmt(r.valor_recebido) : '—'}</span>
-                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                    <Pencil size={13} />
-                  </button>
-                  <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Data</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Tipo de gás</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Empresa emissora</th>
+                  <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Contrato</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Quantidade</th>
+                  <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-2.5">Valor recebido</th>
+                  <th className="px-4 py-2.5 w-20"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9]">
+                {registros.map(r => (
+                  <tr key={r.id} className="hover:bg-[#F8FAFC] group">
+                    <td className="px-4 py-2.5 text-[#374151] whitespace-nowrap">{fmtDate(r.data)}</td>
+                    <td className="px-4 py-2.5 text-[#0F172A] font-medium whitespace-nowrap">{r.tipo_gas}</td>
+                    <td className="px-4 py-2.5 text-[#64748B]">{r.empresa_emissora}</td>
+                    <td className="px-4 py-2.5 text-[#94A3B8]">{r.contrato?.numero_contrato ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.quantidade)} kg</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{r.valor_recebido != null ? fmt(r.valor_recebido) : '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
