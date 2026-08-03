@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Upload, Wrench } from 'lucide-react'
+import { X, Loader2, Upload, Wrench, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta } from '@/lib/types'
 
-export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: {
-  ferramenta: Ferramenta; onClose: () => void; onSaved: () => void
+export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = false, onClose, onSaved }: {
+  ferramenta: Ferramenta; modoPatrimonio?: boolean; onClose: () => void; onSaved: () => void
 }) {
   const [nome, setNome] = useState(ferramenta.nome)
   const [codigoInterno, setCodigoInterno] = useState(ferramenta.codigo_interno ?? '')
@@ -21,7 +21,9 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
   const [dataAquisicao, setDataAquisicao] = useState(ferramenta.data_aquisicao ?? '')
   const [observacoes, setObservacoes] = useState(ferramenta.observacoes ?? '')
   const [fotoUrl, setFotoUrl] = useState(ferramenta.foto_url ?? '')
+  const [fotoUrl2, setFotoUrl2] = useState(ferramenta.foto_url_2 ?? '')
   const [uploadingFoto, setUploadingFoto] = useState(false)
+  const [uploadingFoto2, setUploadingFoto2] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -47,6 +49,18 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
     setUploadingFoto(false)
   }
 
+  async function uploadFoto2(file: File) {
+    setUploadingFoto2(true)
+    const supabase = createClient()
+    const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${file.name}`
+    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
+    if (!err) {
+      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
+      setFotoUrl2(data.publicUrl)
+    }
+    setUploadingFoto2(false)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) return
@@ -65,6 +79,7 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
       data_aquisicao: dataAquisicao || null,
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
+      foto_url_2: fotoUrl2 || null,
       eh_mala: ehMala,
       mala_id: !ehMala && malaId ? malaId : null,
       updated_at: new Date().toISOString(),
@@ -81,7 +96,7 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100dvh-env(safe-area-inset-top))] overflow-y-auto mt-auto sm:mt-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
-          <h2 className="font-syne font-semibold text-[#0F172A]">Editar Ferramenta</h2>
+          <h2 className="font-syne font-semibold text-[#0F172A]">{modoPatrimonio ? 'Editar Item de Patrimônio' : 'Editar Ferramenta'}</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
@@ -128,11 +143,13 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
             <input className="field" value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Opcional" />
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer px-3 py-2.5 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-            <input type="checkbox" checked={ehMala} onChange={e => { setEhMala(e.target.checked); if (e.target.checked) setMalaId('') }} className="rounded" />
-            É uma mala de ferramentas (kit com responsável fixo)
-          </label>
-          {!ehMala && malas.length > 0 && (
+          {!modoPatrimonio && (
+            <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer px-3 py-2.5 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+              <input type="checkbox" checked={ehMala} onChange={e => { setEhMala(e.target.checked); if (e.target.checked) setMalaId('') }} className="rounded" />
+              É uma mala de ferramentas (kit com responsável fixo)
+            </label>
+          )}
+          {!ehMala && !modoPatrimonio && malas.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Pertence a uma mala?</label>
               <select className="field" value={malaId} onChange={e => setMalaId(e.target.value)}>
@@ -143,12 +160,12 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
           )}
 
           <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto</label>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">{modoPatrimonio ? 'Foto 1' : 'Foto'}</label>
             <div className="flex items-center gap-3">
               {fotoUrl
                 ? <img src={fotoUrl} alt="foto" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
                 : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
-                    <Wrench size={20} className="text-[#94A3B8]" />
+                    {modoPatrimonio ? <Building2 size={20} className="text-[#94A3B8]" /> : <Wrench size={20} className="text-[#94A3B8]" />}
                   </div>}
               <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                 {uploadingFoto ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
@@ -163,6 +180,30 @@ export default function ModalEditarFerramenta({ ferramenta, onClose, onSaved }: 
               )}
             </div>
           </div>
+          {modoPatrimonio && (
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto 2 (opcional)</label>
+              <p className="text-xs text-[#94A3B8] mb-1.5">Ex: evaporadora + condensadora de um ar-condicionado</p>
+              <div className="flex items-center gap-3">
+                {fotoUrl2
+                  ? <img src={fotoUrl2} alt="foto 2" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
+                  : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
+                      <Building2 size={20} className="text-[#94A3B8]" />
+                    </div>}
+                <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
+                  {uploadingFoto2 ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  {uploadingFoto2 ? 'Enviando...' : fotoUrl2 ? 'Trocar foto' : 'Adicionar foto'}
+                  <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto2}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto2(f) }} />
+                </label>
+                {fotoUrl2 && (
+                  <button type="button" onClick={() => setFotoUrl2('')} className="text-[#94A3B8] hover:text-red-500 transition-colors">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {error && <p className="text-sm text-red-500">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>

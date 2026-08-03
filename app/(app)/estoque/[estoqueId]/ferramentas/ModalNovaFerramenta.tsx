@@ -17,7 +17,9 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
   const [dataAquisicao, setDataAquisicao] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [fotoUrl, setFotoUrl] = useState('')
+  const [fotoUrl2, setFotoUrl2] = useState('')
   const [uploadingFoto, setUploadingFoto] = useState(false)
+  const [uploadingFoto2, setUploadingFoto2] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [ehMala, setEhMala] = useState(false)
@@ -51,6 +53,18 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
     setUploadingFoto(false)
   }
 
+  async function uploadFoto2(file: File) {
+    setUploadingFoto2(true)
+    const supabase = createClient()
+    const path = `ferramentas/${estoqueId}/${Date.now()}_${file.name}`
+    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
+    if (!err) {
+      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
+      setFotoUrl2(data.publicUrl)
+    }
+    setUploadingFoto2(false)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) return
@@ -70,6 +84,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
       data_aquisicao: dataAquisicao || null,
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
+      foto_url_2: fotoUrl2 || null,
       eh_mala: ehMala,
       mala_id: !ehMala && malaId ? malaId : null,
     })
@@ -152,7 +167,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
             <p className="text-xs text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg">Esta ferramenta será adicionada ao conteúdo da mala.</p>
           )}
           <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto</label>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">{modoPatrimonio ? 'Foto 1' : 'Foto'}</label>
             <div className="flex items-center gap-3">
               {fotoUrl
                 ? <img src={fotoUrl} alt="foto" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
@@ -167,6 +182,25 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
               </label>
             </div>
           </div>
+          {modoPatrimonio && (
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto 2 (opcional)</label>
+              <p className="text-xs text-[#94A3B8] mb-1.5">Ex: evaporadora + condensadora de um ar-condicionado</p>
+              <div className="flex items-center gap-3">
+                {fotoUrl2
+                  ? <img src={fotoUrl2} alt="foto 2" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
+                  : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
+                      <Building2 size={20} className="text-[#94A3B8]" />
+                    </div>}
+                <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
+                  {uploadingFoto2 ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  {uploadingFoto2 ? 'Enviando...' : fotoUrl2 ? 'Trocar foto' : 'Adicionar foto'}
+                  <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto2}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto2(f) }} />
+                </label>
+              </div>
+            </div>
+          )}
           {error && <p className="text-sm text-red-500">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2 } from 'lucide-react'
+import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito, CampoTecnico, FerramentaDado } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
@@ -10,8 +10,10 @@ import ModalEditarFerramenta from './ModalEditarFerramenta'
 import ModalAtribuirMala from './ModalAtribuirMala'
 import ModalNovaFerramenta from './ModalNovaFerramenta'
 
-const STATUS_LABEL: Record<string, string> = {
-  disponivel: 'Disponível', emprestada: 'Emprestada', em_manutencao: 'Em manutenção', baixada: 'Baixada',
+function statusLabelMap(modoPatrimonio: boolean): Record<string, string> {
+  return modoPatrimonio
+    ? { disponivel: 'Em operação', emprestada: 'Em uso', em_manutencao: 'Com defeito', baixada: 'Fora de uso' }
+    : { disponivel: 'Disponível', emprestada: 'Emprestada', em_manutencao: 'Em manutenção', baixada: 'Baixada' }
 }
 const STATUS_COLOR: Record<string, string> = {
   disponivel: 'bg-emerald-50 text-emerald-700', emprestada: 'bg-amber-50 text-amber-700',
@@ -141,9 +143,10 @@ function DadosTecnicos({ ferramentaId }: { ferramentaId: string }) {
   )
 }
 
-export default function FerramentaDetalheModal({ ferramentaId, onClose, onChanged }: {
-  ferramentaId: string; onClose: () => void; onChanged: () => void
+export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = false, onClose, onChanged }: {
+  ferramentaId: string; modoPatrimonio?: boolean; onClose: () => void; onChanged: () => void
 }) {
+  const STATUS_LABEL = statusLabelMap(modoPatrimonio)
   const [currentId, setCurrentId] = useState(ferramentaId)
   const [voltarPara, setVoltarPara] = useState<string | null>(null)
   const [ferramenta, setFerramenta] = useState<Ferramenta | null>(null)
@@ -236,7 +239,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
                 )}
                 <h2 className="font-syne font-semibold text-[#0F172A]">{ferramenta.nome}</h2>
                 {ferramenta.codigo_interno && <span className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B]">{ferramenta.codigo_interno}</span>}
-                <button onClick={() => setShowEditar(true)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors" title="Editar ferramenta">
+                <button onClick={() => setShowEditar(true)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors" title={modoPatrimonio ? 'Editar item' : 'Editar ferramenta'}>
                   <Pencil size={14} />
                 </button>
               </div>
@@ -252,11 +255,16 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
               )}
 
               <div className="flex items-center gap-4">
-                {ferramenta.foto_url
-                  ? <img src={ferramenta.foto_url} alt="" className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0]" />
-                  : <div className="w-16 h-16 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]">
-                      {ferramenta.eh_mala ? <Briefcase size={22} /> : <Wrench size={22} />}
-                    </div>}
+                <div className="flex items-center gap-2">
+                  {ferramenta.foto_url
+                    ? <img src={ferramenta.foto_url} alt="" className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0]" />
+                    : <div className="w-16 h-16 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]">
+                        {ferramenta.eh_mala ? <Briefcase size={22} /> : modoPatrimonio ? <Building2 size={22} /> : <Wrench size={22} />}
+                      </div>}
+                  {ferramenta.foto_url_2 && (
+                    <img src={ferramenta.foto_url_2} alt="" className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0]" />
+                  )}
+                </div>
                 <div>
                   {ferramenta.eh_mala ? (
                     ferramenta.responsavel_atual
@@ -361,7 +369,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
               )}
 
               {/* Histórico de empréstimos */}
-              {!ferramenta.eh_mala && !ferramenta.mala_id && (
+              {!modoPatrimonio && !ferramenta.eh_mala && !ferramenta.mala_id && (
                 <div>
                   <h3 className="text-sm font-semibold text-[#374151] mb-2">Histórico de empréstimos</h3>
                   {historicoEmprestimos.length === 0 ? (
@@ -409,9 +417,9 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
       {showQr && ferramenta && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={() => setShowQr(false)}>
           <div className="bg-white rounded-2xl shadow-xl p-6 flex flex-col items-center gap-4 max-w-xs w-full" onClick={e => e.stopPropagation()}>
-            <h3 className="font-syne font-semibold text-[#0F172A]">QR Code da Ferramenta</h3>
+            <h3 className="font-syne font-semibold text-[#0F172A]">{modoPatrimonio ? 'QR Code do Patrimônio' : 'QR Code da Ferramenta'}</h3>
             <img src={qrSrc} alt="QR Code" className="w-56 h-56 rounded-xl" />
-            <p className="text-xs text-[#94A3B8] text-center">Escaneie para ver a ficha pública desta ferramenta</p>
+            <p className="text-xs text-[#94A3B8] text-center">Escaneie para ver a ficha pública {modoPatrimonio ? 'deste item' : 'desta ferramenta'}</p>
             <div className="flex gap-2 w-full">
               <a href={url} target="_blank" rel="noopener noreferrer"
                 className="flex-1 text-center text-xs text-[#4F7CFF] border border-[#C7D2FE] px-3 py-2 rounded-lg hover:bg-[#EEF2FF] transition-colors">
@@ -434,7 +442,7 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
         <ModalDefeito ferramentaId={ferramenta.id} onClose={() => setShowDefeito(false)} onSaved={() => { setShowDefeito(false); load(); onChanged() }} />
       )}
       {showEditar && ferramenta && (
-        <ModalEditarFerramenta ferramenta={ferramenta} onClose={() => setShowEditar(false)} onSaved={() => { setShowEditar(false); load(); onChanged() }} />
+        <ModalEditarFerramenta ferramenta={ferramenta} modoPatrimonio={modoPatrimonio} onClose={() => setShowEditar(false)} onSaved={() => { setShowEditar(false); load(); onChanged() }} />
       )}
       {showAtribuir && ferramenta && (
         <ModalAtribuirMala ferramentaId={ferramenta.id} responsavelAtualId={ferramenta.responsavel_atual_id}

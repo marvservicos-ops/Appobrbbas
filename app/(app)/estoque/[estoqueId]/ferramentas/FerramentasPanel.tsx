@@ -9,11 +9,10 @@ import ModalNovoEmprestimo from './ModalNovoEmprestimo'
 import FerramentaDetalheModal from './FerramentaDetalheModal'
 import ModalEmprestimos from './ModalEmprestimos'
 
-const STATUS_LABEL: Record<string, string> = {
-  disponivel: 'Disponível',
-  emprestada: 'Emprestada',
-  em_manutencao: 'Em manutenção',
-  baixada: 'Baixada',
+function statusLabelMap(modoPatrimonio: boolean): Record<string, string> {
+  return modoPatrimonio
+    ? { disponivel: 'Em operação', emprestada: 'Em uso', em_manutencao: 'Com defeito', baixada: 'Fora de uso' }
+    : { disponivel: 'Disponível', emprestada: 'Emprestada', em_manutencao: 'Em manutenção', baixada: 'Baixada' }
 }
 const STATUS_COLOR: Record<string, string> = {
   disponivel: 'bg-emerald-50 text-emerald-700',
@@ -88,6 +87,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
     })
   }, [topLevel, filtroStatus, busca, ordenarPor])
 
+  const STATUS_LABEL = statusLabelMap(modoPatrimonio)
   const valorTotal = ferramentas.filter(f => f.status !== 'baixada').reduce((s, f) => s + (f.valor_aquisicao ?? 0), 0)
   const contagem = {
     disponivel: ferramentas.filter(f => f.status === 'disponivel').length,
@@ -116,7 +116,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
         <div className="card flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600"><PackageCheck size={18} /></div>
           <div>
-            <p className="text-xs text-[#64748B]">Disponíveis</p>
+            <p className="text-xs text-[#64748B]">{modoPatrimonio ? 'Em operação' : 'Disponíveis'}</p>
             <p className="font-syne font-bold text-[#0F172A]">{contagem.disponivel}</p>
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
         <div className="card flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600"><Hammer size={18} /></div>
           <div>
-            <p className="text-xs text-[#64748B]">Em manutenção</p>
+            <p className="text-xs text-[#64748B]">{modoPatrimonio ? 'Com defeito' : 'Em manutenção'}</p>
             <p className="font-syne font-bold text-[#0F172A]">{contagem.em_manutencao}</p>
           </div>
         </div>
@@ -147,10 +147,10 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
         </div>
         <select className="field text-sm w-auto py-2" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
           <option value="todos">Todos os status</option>
-          <option value="disponivel">Disponível</option>
-          <option value="emprestada">Emprestada</option>
-          <option value="em_manutencao">Em manutenção</option>
-          <option value="baixada">Baixada</option>
+          <option value="disponivel">{STATUS_LABEL.disponivel}</option>
+          {!modoPatrimonio && <option value="emprestada">{STATUS_LABEL.emprestada}</option>}
+          <option value="em_manutencao">{STATUS_LABEL.em_manutencao}</option>
+          <option value="baixada">{STATUS_LABEL.baixada}</option>
         </select>
         <select className="field text-sm w-auto py-2" value={ordenarPor} onChange={e => setOrdenarPor(e.target.value as 'nome' | 'codigo_interno')}>
           <option value="nome">Ordenar por nome</option>
@@ -233,6 +233,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
       {detalheId && (
         <FerramentaDetalheModal
           ferramentaId={detalheId}
+          modoPatrimonio={modoPatrimonio}
           onClose={() => setDetalheId(null)}
           onChanged={() => { load() }}
         />

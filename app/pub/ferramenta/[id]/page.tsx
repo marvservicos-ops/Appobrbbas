@@ -7,8 +7,10 @@ function fmtDate(d?: string | null) {
 }
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 
-const STATUS_LABEL: Record<string, string> = {
-  disponivel: 'Disponível', emprestada: 'Emprestada', em_manutencao: 'Em manutenção', baixada: 'Baixada',
+function statusLabelMap(modoPatrimonio: boolean): Record<string, string> {
+  return modoPatrimonio
+    ? { disponivel: 'Em operação', emprestada: 'Em uso', em_manutencao: 'Com defeito', baixada: 'Fora de uso' }
+    : { disponivel: 'Disponível', emprestada: 'Emprestada', em_manutencao: 'Em manutenção', baixada: 'Baixada' }
 }
 const STATUS_COLOR: Record<string, string> = {
   disponivel: '#059669', emprestada: '#D97706', em_manutencao: '#DC2626', baixada: '#64748B',
@@ -18,7 +20,7 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
   const sb = await createClient()
 
   const [{ data: ferramenta }, { data: itemAberto }, { data: defeitos }, { data: conteudoMala }, { data: dadosTecnicos }] = await Promise.all([
-    sb.from('ferramentas').select('*, mala:mala_id(id, nome, codigo_interno, responsavel_atual:funcionarios(id, nome)), responsavel_atual:funcionarios(id, nome)').eq('id', params.id).single(),
+    sb.from('ferramentas').select('*, estoque:estoques(icone), mala:mala_id(id, nome, codigo_interno, responsavel_atual:funcionarios(id, nome)), responsavel_atual:funcionarios(id, nome)').eq('id', params.id).single(),
     sb.from('ferramenta_emprestimo_itens').select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))').eq('ferramenta_id', params.id).is('data_devolucao', null).maybeSingle(),
     sb.from('ferramenta_defeitos').select('*').eq('ferramenta_id', params.id).order('data', { ascending: false }).limit(10),
     sb.from('ferramentas').select('id, nome, codigo_interno, status').eq('mala_id', params.id).order('nome'),
@@ -28,6 +30,8 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
   if (!ferramenta) notFound()
 
   const f = ferramenta as any
+  const modoPatrimonio = f.estoque?.icone === 'building2'
+  const STATUS_LABEL = statusLabelMap(modoPatrimonio)
   const cor = STATUS_COLOR[f.status] ?? '#64748B'
   const funcionario = (itemAberto as any)?.emprestimo?.funcionario
 
@@ -37,7 +41,7 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
       <div style={{ background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 24px' }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
           <p style={{ fontSize: 11, color: '#94A3B8', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 1 }}>
-            MARV Gestão · Ferramentas
+            MARV Gestão · {modoPatrimonio ? 'Patrimônio' : 'Ferramentas'}
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {f.eh_mala ? (
@@ -64,8 +68,15 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
 
         {/* Foto */}
         {f.foto_url && (
-          <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001' }}>
-            <img src={f.foto_url} alt={f.nome} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001', flex: 1 }}>
+              <img src={f.foto_url} alt={f.nome} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+            </div>
+            {f.foto_url_2 && (
+              <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001', flex: 1 }}>
+                <img src={f.foto_url_2} alt={f.nome} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+              </div>
+            )}
           </div>
         )}
 
@@ -115,7 +126,7 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
 
         {/* Dados */}
         <div style={{ background: '#fff', borderRadius: 16, padding: '16px 20px', boxShadow: '0 1px 4px #0001' }}>
-          <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Dados da Ferramenta</p>
+          <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>{modoPatrimonio ? 'Dados do Patrimônio' : 'Dados da Ferramenta'}</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
             {f.categoria && (
               <div>

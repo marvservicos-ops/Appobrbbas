@@ -452,6 +452,7 @@ export interface Ferramenta {
   valor_aquisicao?: number | null
   data_aquisicao?: string | null
   foto_url?: string | null
+  foto_url_2?: string | null
   status: FerramentaStatus
   observacoes?: string | null
   eh_mala: boolean
