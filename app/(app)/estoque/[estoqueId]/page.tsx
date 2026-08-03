@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2 } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2 } from 'lucide-react'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
@@ -13,9 +13,10 @@ const ICONE_MAP: Record<string, React.ReactNode> = {
   shield: <Shield size={18} />, sparkles: <Sparkles size={18} />,
   thermometer: <Thermometer size={18} />, shirt: <Shirt size={18} />,
   droplets: <Droplets size={18} />, package: <Package size={18} />,
-  wrench: <Wrench size={18} />,
+  wrench: <Wrench size={18} />, building2: <Building2 size={18} />,
 }
-const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets', 'wrench']
+const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets', 'wrench', 'building2']
+const ICONES_ATIVO = ['wrench', 'building2']
 const CORES = ['#4F7CFF', '#F59E0B', '#2DD4BF', '#8B5CF6', '#06B6D4', '#EF4444', '#10B981', '#F97316']
 
 type Tab = 'registros' | 'produtos' | 'configurar'
@@ -158,7 +159,7 @@ export default function EstoqueDetalhe() {
             {estoque.descricao && <p className="text-xs text-[#64748B]">{estoque.descricao}</p>}
           </div>
         </div>
-        {estoque.icone !== 'wrench' && (
+        {!ICONES_ATIVO.includes(estoque.icone) && (
           <div className="flex items-center gap-2 shrink-0">
             <Link href={`/estoque/${estoqueId}/importar`}
               className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
@@ -171,7 +172,7 @@ export default function EstoqueDetalhe() {
         )}
       </div>
 
-      {estoque.icone === 'wrench' ? (
+      {ICONES_ATIVO.includes(estoque.icone) ? (
         <FerramentasPanel estoqueId={estoqueId} />
       ) : (
       <>
@@ -758,7 +759,7 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
     shield: <Shield size={20} />, sparkles: <Sparkles size={20} />,
     thermometer: <Thermometer size={20} />, shirt: <Shirt size={20} />,
     droplets: <Droplets size={20} />, package: <Package size={20} />,
-    wrench: <Wrench size={20} />,
+    wrench: <Wrench size={20} />, building2: <Building2 size={20} />,
   }
 
   async function salvar(e: React.FormEvent) {

@@ -497,4 +497,20 @@ export interface FerramentaDefeito {
   data_resolucao?: string | null
   created_at: string
 }
+
+export interface CampoTecnico {
+  id: string
+  nome: string
+  unidade?: string | null
+  ordem: number
+}
+
+export interface FerramentaDado {
+  id: string
+  ferramenta_id: string
+  campo_id: string
+  valor: string
+  campo: CampoTecnico
+  created_at: string
+}
 // ──────────────────────────────────────────────────────

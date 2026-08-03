@@ -107,7 +107,7 @@ Apenas redireciona para `/obras/[id]/financeiro`.
 
 ## 5. Ferramentas (patrimônio)
 
-Vive **dentro de Estoque** como uma categoria especial: quando um estoque tem o ícone "chave inglesa" (`wrench`), a tela deixa de mostrar Registros/Produtos e passa a mostrar o painel de Ferramentas (`FerramentasPanel`). Diferente do estoque normal (quantidade fungível), aqui cada item é um **ativo individual rastreável** — ferramenta ou máquina, com identidade própria, QR code, histórico de custódia e defeitos.
+Vive **dentro de Estoque** como uma categoria especial: quando um estoque tem o ícone "chave inglesa" (`wrench`) **ou** "prédio" (`building2` — usado para patrimônio fixo do galpão: ar-condicionado, bebedouro, cafeteira etc.), a tela deixa de mostrar Registros/Produtos e passa a mostrar o painel de Ferramentas (`FerramentasPanel`). Diferente do estoque normal (quantidade fungível), aqui cada item é um **ativo individual rastreável** — ferramenta, máquina ou equipamento fixo, com identidade própria, QR code, histórico de custódia e defeitos. Para ativos fixos que nunca saem do lugar (ex. ar-condicionado do galpão), o fluxo de empréstimo simplesmente não é usado — o item fica sempre "Disponível".
 
 ### Cadastro
 - Cada ferramenta tem: nome, **código interno/patrimônio** (obrigatório e único por categoria, ex. `FER-0001`, sugerido automaticamente ao cadastrar), categoria, marca/modelo, nº de série, valor de aquisição, data de aquisição, foto, observações.
@@ -129,6 +129,10 @@ Para ferramentas que ficam permanentemente com um encarregado dentro de uma mala
 - **Registrar defeito**: só disponível quando a ferramenta não está emprestada nem já em manutenção (força devolução antes). Move o status para "Em manutenção".
 - **Concluir manutenção**: marca o defeito como resolvido e volta o status para "Disponível".
 - **Dar baixa**: definitiva (perda/quebra irrecuperável), bloqueada enquanto a ferramenta estiver emprestada. Sem reversão nesta versão.
+
+### Dados técnicos (campos livres)
+- Na ficha de cada ferramenta/ativo (exceto malas), é possível adicionar **campos técnicos livres** (nome + unidade opcional, ex. "Capacidade BTU", "Voltagem") e preencher um valor por item — mesma biblioteca de campos (`campos_tecnicos`) compartilhada com os equipamentos de Manutenções, então um campo criado em um módulo fica disponível para reutilizar no outro.
+- Os valores ficam visíveis também na ficha pública (QR code).
 
 ### QR Code e ficha pública
 - Cada ferramenta tem um botão de QR Code, apontando para `/pub/ferramenta/[id]` (ficha somente leitura) e um link de etiqueta imprimível 80×50mm (`/pub/etiqueta-ferramenta/[id]`).
@@ -271,7 +275,7 @@ Acessíveis sem login (liberadas no middleware):
 - **Portal do Cliente**: `obra_acessos_cliente` (token + PIN hasheado), `obra_portal_sessoes` (sessão pós-PIN).
 - **Estoque (atual)**: `estoques`, `estoque_campos`, `estoque_produtos`, `estoque_registros`, `estoque_registro_valores`, `estoque_logs`.
 - **Estoque (legado)**: `estoque_categorias`, `estoque_itens`, `estoque_movimentacoes`, `estoque_alertas`.
-- **Ferramentas**: `ferramentas` (`eh_mala`, `mala_id`, `responsavel_atual_id`, `codigo_interno`), `ferramenta_emprestimos`, `ferramenta_emprestimo_itens`, `ferramenta_defeitos`.
+- **Ferramentas**: `ferramentas` (`eh_mala`, `mala_id`, `responsavel_atual_id`, `codigo_interno`), `ferramenta_emprestimos`, `ferramenta_emprestimo_itens`, `ferramenta_defeitos`, `ferramenta_dados` (campos técnicos livres, referencia `campos_tecnicos` — mesma tabela usada pelos equipamentos de Manutenções).
 - **Documentos**: `doc_pastas`, `documentos`.
 - **RDO**: `rdos`, `rdo_clima`, `rdo_mao_obra`, `rdo_equipamentos`, `rdo_atividades`, `rdo_ocorrencias`, `rdo_comentarios`, `rdo_fotos`, `rdo_assinaturas`, `rdo_modelos`.
 - **Manutenções**: `contratos_manutencao`, `manutencao_aditivos`, `manutencao_nfs`, `manutencao_funcionarios`, `equipamentos`, `grupos_equipamentos`, `campos_tecnicos`, `equipamento_dados`, `manutencao_historico`, `manutencao_estoque_produtos`, `manutencao_estoque_registros` (mini-estoque local por contrato; `estoque_registros` ganhou `manutencao_id`).

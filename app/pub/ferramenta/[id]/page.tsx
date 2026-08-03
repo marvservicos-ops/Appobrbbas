@@ -17,11 +17,12 @@ const STATUS_COLOR: Record<string, string> = {
 export default async function PubFerramentaPage({ params }: { params: { id: string } }) {
   const sb = await createClient()
 
-  const [{ data: ferramenta }, { data: itemAberto }, { data: defeitos }, { data: conteudoMala }] = await Promise.all([
+  const [{ data: ferramenta }, { data: itemAberto }, { data: defeitos }, { data: conteudoMala }, { data: dadosTecnicos }] = await Promise.all([
     sb.from('ferramentas').select('*, mala:mala_id(id, nome, codigo_interno, responsavel_atual:funcionarios(id, nome)), responsavel_atual:funcionarios(id, nome)').eq('id', params.id).single(),
     sb.from('ferramenta_emprestimo_itens').select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))').eq('ferramenta_id', params.id).is('data_devolucao', null).maybeSingle(),
     sb.from('ferramenta_defeitos').select('*').eq('ferramenta_id', params.id).order('data', { ascending: false }).limit(10),
     sb.from('ferramentas').select('id, nome, codigo_interno, status').eq('mala_id', params.id).order('nome'),
+    sb.from('ferramenta_dados').select('*, campo:campos_tecnicos(*)').eq('ferramenta_id', params.id),
   ])
 
   if (!ferramenta) notFound()
@@ -142,6 +143,21 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
             )}
           </div>
         </div>
+
+        {/* Dados técnicos */}
+        {dadosTecnicos && dadosTecnicos.length > 0 && (
+          <div style={{ background: '#fff', borderRadius: 16, padding: '16px 20px', boxShadow: '0 1px 4px #0001' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Dados Técnicos</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+              {(dadosTecnicos as any[]).filter(d => d.valor).map((d: any) => (
+                <div key={d.id}>
+                  <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>{d.campo?.nome}{d.campo?.unidade ? ` (${d.campo.unidade})` : ''}</p>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{d.valor}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Histórico de defeitos */}
         {defeitos && defeitos.length > 0 && (

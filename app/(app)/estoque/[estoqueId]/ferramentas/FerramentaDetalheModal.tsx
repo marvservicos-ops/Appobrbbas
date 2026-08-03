@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer } from 'lucide-react'
+import { X, Loader2, Wrench, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito } from '@/lib/types'
+import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito, CampoTecnico, FerramentaDado } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
 import ModalDefeito from './ModalDefeito'
 import ModalEditarFerramenta from './ModalEditarFerramenta'
@@ -19,6 +19,127 @@ const STATUS_COLOR: Record<string, string> = {
 }
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtData = (d?: string | null) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
+
+function DadosTecnicos({ ferramentaId }: { ferramentaId: string }) {
+  const [todos, setTodos] = useState<CampoTecnico[]>([])
+  const [dados, setDados] = useState<FerramentaDado[]>([])
+  const [showPicker, setShowPicker] = useState(false)
+  const [novoCampo, setNovoCampo] = useState('')
+  const [editando, setEditando] = useState<Record<string, string>>({})
+
+  async function load() {
+    const sb = createClient()
+    const [{ data: c }, { data: d }] = await Promise.all([
+      sb.from('campos_tecnicos').select('*').order('ordem').order('nome'),
+      sb.from('ferramenta_dados').select('*, campo:campos_tecnicos(*)').eq('ferramenta_id', ferramentaId),
+    ])
+    setTodos((c ?? []) as CampoTecnico[])
+    setDados((d ?? []) as unknown as FerramentaDado[])
+  }
+
+  useEffect(() => { load() }, [ferramentaId])
+
+  const dadosCampoIds = new Set(dados.map(d => d.campo_id))
+  const disponiveis = todos.filter(c => !dadosCampoIds.has(c.id))
+
+  async function adicionarCampo(campo: CampoTecnico) {
+    const { data } = await createClient().from('ferramenta_dados').insert({
+      ferramenta_id: ferramentaId, campo_id: campo.id, valor: '',
+    }).select('*, campo:campos_tecnicos(*)').single()
+    if (data) setDados(prev => [...prev, data as unknown as FerramentaDado])
+    setShowPicker(false)
+  }
+
+  async function criarEAdicionar() {
+    if (!novoCampo.trim()) return
+    const sb = createClient()
+    const { data: campo } = await sb.from('campos_tecnicos').insert({
+      nome: novoCampo.trim(), ordem: todos.length,
+    }).select().single()
+    if (!campo) return
+    setTodos(prev => [...prev, campo as CampoTecnico])
+    await adicionarCampo(campo as CampoTecnico)
+    setNovoCampo('')
+  }
+
+  async function salvarValor(dado: FerramentaDado) {
+    const valor = editando[dado.id] ?? dado.valor
+    await createClient().from('ferramenta_dados').update({ valor }).eq('id', dado.id)
+    setDados(prev => prev.map(d => d.id === dado.id ? { ...d, valor } : d))
+    setEditando(prev => { const n = { ...prev }; delete n[dado.id]; return n })
+  }
+
+  async function removerDado(dadoId: string) {
+    await createClient().from('ferramenta_dados').delete().eq('id', dadoId)
+    setDados(prev => prev.filter(d => d.id !== dadoId))
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-[#374151]">Dados Técnicos</h3>
+        <button onClick={() => setShowPicker(v => !v)}
+          className="flex items-center gap-1 text-xs font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-2 py-1 rounded-lg transition-colors">
+          <Plus size={12} /> Adicionar campo
+        </button>
+      </div>
+
+      {showPicker && (
+        <div className="mb-3 border border-[#E2E8F0] rounded-xl overflow-hidden">
+          {disponiveis.length > 0 && (
+            <div className="divide-y divide-[#F1F5F9] max-h-40 overflow-y-auto">
+              {disponiveis.map(c => (
+                <button key={c.id} onClick={() => adicionarCampo(c)}
+                  className="w-full text-left px-3 py-2 text-xs text-[#0F172A] hover:bg-[#F8FAFC] flex items-center justify-between group transition-colors">
+                  <span>{c.nome}{c.unidade ? ` (${c.unidade})` : ''}</span>
+                  <Plus size={12} className="text-[#4F7CFF] opacity-0 group-hover:opacity-100" />
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2 p-2.5 bg-[#F8FAFC] border-t border-[#E2E8F0]">
+            <input
+              autoFocus
+              className="field text-xs py-1.5 flex-1"
+              placeholder="Criar novo campo..."
+              value={novoCampo}
+              onChange={e => setNovoCampo(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') criarEAdicionar(); if (e.key === 'Escape') setShowPicker(false) }}
+            />
+            <button onClick={criarEAdicionar} disabled={!novoCampo.trim()}
+              className="text-xs bg-[#4F7CFF] text-white px-2.5 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">
+              Criar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {dados.length === 0 ? (
+        <p className="text-xs text-[#94A3B8]">Nenhum dado técnico cadastrado ainda.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {dados.map(d => (
+            <div key={d.id} className="bg-[#F8FAFC] rounded-lg px-3 py-2">
+              <div className="flex items-center justify-between gap-1">
+                <p className="text-[11px] text-[#94A3B8]">{d.campo.nome}{d.campo.unidade ? ` (${d.campo.unidade})` : ''}</p>
+                <button onClick={() => removerDado(d.id)} className="text-[#CBD5E1] hover:text-red-400 shrink-0">
+                  <Trash2 size={11} />
+                </button>
+              </div>
+              <input
+                className="text-sm font-medium text-[#0F172A] bg-transparent border-b border-transparent focus:border-[#4F7CFF] focus:outline-none w-full"
+                value={editando[d.id] ?? d.valor}
+                onChange={e => setEditando(prev => ({ ...prev, [d.id]: e.target.value }))}
+                onBlur={() => salvarValor(d)}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function FerramentaDetalheModal({ ferramentaId, onClose, onChanged }: {
   ferramentaId: string; onClose: () => void; onChanged: () => void
@@ -257,6 +378,9 @@ export default function FerramentaDetalheModal({ ferramentaId, onClose, onChange
                   )}
                 </div>
               )}
+
+              {/* Dados técnicos */}
+              {!ferramenta.eh_mala && <DadosTecnicos ferramentaId={ferramenta.id} />}
 
               {/* Histórico de defeitos */}
               <div>
