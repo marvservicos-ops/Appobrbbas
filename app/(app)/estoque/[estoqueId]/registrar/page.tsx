@@ -256,6 +256,10 @@ export default function RegistrarPage() {
       }
     }
 
+    // Saída de EPI/uniforme gera termo de responsabilidade pra imprimir e o funcionário assinar
+    const needsFuncionario = tipo === 'saida' && (estoque?.icone === 'shield' || estoque?.icone === 'shirt')
+    if (needsFuncionario) window.open(`/print/epi/${reg.id}`, '_blank')
+
     router.push(`/estoque/${estoqueId}`)
   }
 

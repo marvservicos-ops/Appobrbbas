@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2, Wrench } from 'lucide-react'
+import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2, Wrench, Printer } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 import GestaoPJPanel from '@/components/GestaoPJPanel'
 
@@ -433,6 +433,7 @@ export default function CentralFuncionarioPage() {
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden sm:table-cell">Categoria</th>
                   <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3 hidden md:table-cell">CA</th>
                   <th className="text-right text-xs font-semibold text-[#64748B] px-4 py-3">Qtd</th>
+                  <th className="px-4 py-3 w-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -456,6 +457,14 @@ export default function CentralFuncionarioPage() {
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-[#374151] text-right whitespace-nowrap">
                       {r.quantidade} {r.unidade}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(r.estoque_icone === 'shield' || r.estoque_icone === 'shirt') && (
+                        <a href={`/print/epi/${r.id}`} target="_blank" rel="noopener noreferrer" title="Imprimir termo"
+                          className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+                          <Printer size={14} />
+                        </a>
+                      )}
                     </td>
                   </tr>
                 ))}
