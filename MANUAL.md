@@ -208,6 +208,9 @@ Página `/esg`, com 4 abas, cada uma um log simples de dados (adicionar/editar/e
 
 Tabelas: `esg_combustivel`, `esg_investimentos`, `esg_destinacao_materiais`, `esg_reciclagem_gas`.
 
+### Adicionar com IA
+Botão no topo da página ESG (`ModalImportarEsgIA`): envia uma foto ou PDF de nota/cupom/romaneio para a rota `/api/parse-esg` (Gemini, mesma IA já usada em "Importar NF" no Estoque), que identifica automaticamente a categoria (combustível, investimento, destinação de materiais ou reciclagem de gás) e extrai os campos correspondentes (data, litros/kg/valor, tipo, veículo/cliente/gás etc.). O usuário confere e edita os campos pré-preenchidos antes de salvar — nada é inserido sem confirmação. Se a IA não conseguir classificar o documento, o usuário escolhe a categoria manualmente e preenche o formulário do zero. Requer a env var `GEMINI_API_KEY` (já configurada, mesma usada pelo import de NF).
+
 ## 9. Outras páginas
 
 - **`/clientes`**: abas Pessoas (nome, e-mail, telefone, tipo Gestor/Comprador, vínculo a empresa) e Empresas (razão social, CNPJ, endereço, contato). Excluir cliente desvincula obras; excluir empresa desvincula pessoas.

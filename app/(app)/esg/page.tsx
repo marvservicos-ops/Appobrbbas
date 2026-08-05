@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import {
   EsgCombustivel, EsgInvestimento, EsgInvestimentoCategoria, EsgDestinacaoMaterial, EsgReciclagemGas,
 } from '@/lib/types'
-import { Leaf, Fuel, Hammer, Recycle, Wind, Plus, Pencil, Trash2, X, BarChart3 } from 'lucide-react'
+import { Leaf, Fuel, Hammer, Recycle, Wind, Plus, Pencil, Trash2, X, BarChart3, Sparkles } from 'lucide-react'
+import ModalImportarEsgIA from './ModalImportarEsgIA'
 
 type Tab = 'combustivel' | 'investimentos' | 'destinacao' | 'gas' | 'relatorios'
 
@@ -1050,6 +1051,8 @@ function AbaRelatorios() {
 // ── Página principal ──────────────────────────────────
 export default function EsgPage() {
   const [tab, setTab] = useState<Tab>('combustivel')
+  const [showIA, setShowIA] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'combustivel', label: 'Combustível', icon: <Fuel size={15} /> },
@@ -1067,10 +1070,14 @@ export default function EsgPage() {
             <div className="w-10 h-10 rounded-xl bg-[#D1FAE5] flex items-center justify-center shrink-0">
               <Leaf size={18} className="text-[#059669]" />
             </div>
-            <div>
+            <div className="flex-1">
               <h1 className="font-syne font-bold text-xl text-[#0F172A]">ESG</h1>
               <p className="text-xs text-[#94A3B8]">Controles ambientais e sociais da empresa</p>
             </div>
+            <button onClick={() => setShowIA(true)}
+              className="flex items-center gap-1.5 text-sm font-medium text-[#4F7CFF] border border-[#C7D2FE] rounded-lg px-3 py-2 hover:bg-[#EEF2FF] transition-colors shrink-0">
+              <Sparkles size={14} /> Adicionar com IA
+            </button>
           </div>
 
           <div className="flex gap-1 mt-4 overflow-x-auto">
@@ -1086,12 +1093,16 @@ export default function EsgPage() {
       </div>
 
       <main className="flex-1 p-4 md:p-6 max-w-5xl mx-auto w-full">
-        {tab === 'combustivel' && <AbaCombustivel />}
-        {tab === 'investimentos' && <AbaInvestimentos />}
-        {tab === 'destinacao' && <AbaDestinacaoMateriais />}
-        {tab === 'gas' && <AbaReciclagemGas />}
-        {tab === 'relatorios' && <AbaRelatorios />}
+        {tab === 'combustivel' && <AbaCombustivel key={`c${refreshKey}`} />}
+        {tab === 'investimentos' && <AbaInvestimentos key={`i${refreshKey}`} />}
+        {tab === 'destinacao' && <AbaDestinacaoMateriais key={`d${refreshKey}`} />}
+        {tab === 'gas' && <AbaReciclagemGas key={`g${refreshKey}`} />}
+        {tab === 'relatorios' && <AbaRelatorios key={`r${refreshKey}`} />}
       </main>
+
+      {showIA && (
+        <ModalImportarEsgIA onClose={() => setShowIA(false)} onSaved={() => { setShowIA(false); setRefreshKey(k => k + 1) }} />
+      )}
     </div>
   )
 }
