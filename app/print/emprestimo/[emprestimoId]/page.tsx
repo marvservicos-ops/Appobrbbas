@@ -16,7 +16,7 @@ export default function EmprestimoPrintPage() {
     async function load() {
       const supabase = createClient()
       const [{ data: emp }, { data: its }] = await Promise.all([
-        supabase.from('ferramenta_emprestimos').select('*, funcionario:funcionarios(id, nome), obra:obras(id, titulo)').eq('id', emprestimoId).single(),
+        supabase.from('ferramenta_emprestimos').select('*, funcionario:funcionarios(id, nome, cargo, funcao, cpf), obra:obras(id, titulo)').eq('id', emprestimoId).single(),
         supabase.from('ferramenta_emprestimo_itens').select('*, ferramenta:ferramentas(*)').eq('emprestimo_id', emprestimoId),
       ])
       setEmprestimo(emp as unknown as FerramentaEmprestimo)
@@ -86,6 +86,18 @@ export default function EmprestimoPrintPage() {
               <td style={{ ...s.th, width: '30%' }}>Funcionário responsável</td>
               <td style={s.td}>{emprestimo.funcionario?.nome ?? '—'}</td>
             </tr>
+            {(emprestimo.funcionario?.cargo || emprestimo.funcionario?.funcao) && (
+              <tr>
+                <td style={s.th}>Cargo / Função</td>
+                <td style={s.td}>{[emprestimo.funcionario?.cargo, emprestimo.funcionario?.funcao].filter(Boolean).join(' / ')}</td>
+              </tr>
+            )}
+            {emprestimo.funcionario?.cpf && (
+              <tr>
+                <td style={s.th}>CPF</td>
+                <td style={s.td}>{emprestimo.funcionario.cpf}</td>
+              </tr>
+            )}
             <tr>
               <td style={s.th}>Data do empréstimo</td>
               <td style={s.td}>{dataEmprestimo}</td>

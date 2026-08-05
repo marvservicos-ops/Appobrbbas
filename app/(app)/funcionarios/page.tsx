@@ -20,6 +20,11 @@ interface Funcionario {
   id: string
   nome: string
   cargo: string | null
+  funcao: string | null
+  cpf: string | null
+  telefone: string | null
+  email: string | null
+  responsavel_entrega: boolean
   salario_bruto: number | null
   horas_dia: number | null
   dias_mes: number | null
@@ -82,6 +87,11 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
 }) {
   const [nome, setNome] = useState(funcionario?.nome ?? '')
   const [cargo, setCargo] = useState(funcionario?.cargo ?? '')
+  const [funcao, setFuncao] = useState(funcionario?.funcao ?? '')
+  const [cpf, setCpf] = useState(funcionario?.cpf ?? '')
+  const [telefone, setTelefone] = useState(funcionario?.telefone ?? '')
+  const [email, setEmail] = useState(funcionario?.email ?? '')
+  const [responsavelEntrega, setResponsavelEntrega] = useState(funcionario?.responsavel_entrega ?? false)
   const [dataAdmissao, setDataAdmissao] = useState(funcionario?.data_admissao ?? '')
   const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario?.acordo_rescisorio ?? false)
   const [salarioBruto, setSalarioBruto] = useState(funcionario?.salario_bruto ? String(funcionario.salario_bruto) : '')
@@ -135,6 +145,11 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
     const payload = {
       nome: nome.trim(),
       cargo: cargo.trim() || null,
+      funcao: funcao.trim() || null,
+      cpf: cpf.trim() || null,
+      telefone: telefone.trim() || null,
+      email: email.trim() || null,
+      responsavel_entrega: responsavelEntrega,
       data_admissao: dataAdmissao || null,
       acordo_rescisorio: acordoRescisorio,
       salario_bruto: salNum || null,
@@ -185,9 +200,29 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Nome *</label>
               <input className="field" value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome completo" autoFocus />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
+                <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC, Auxiliar..." />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Função</label>
+                <input className="field" value={funcao} onChange={e => setFuncao(e.target.value)} placeholder="Ex: Instalador, Motorista..." />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">CPF</label>
+                <input className="field" value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Telefone</label>
+                <input className="field" value={telefone} onChange={e => setTelefone(e.target.value)} placeholder="(00) 00000-0000" />
+              </div>
+            </div>
             <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
-              <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC, Auxiliar..." />
+              <label className="block text-xs font-medium text-[#374151] mb-1.5">E-mail</label>
+              <input type="email" className="field" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@exemplo.com" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -369,6 +404,14 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
               <span className="text-sm text-[#374151]">{ativo ? 'Ativo' : 'Inativo'}</span>
             </div>
           )}
+
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <button type="button" onClick={() => setResponsavelEntrega(v => !v)}
+              className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${responsavelEntrega ? 'bg-[#4F7CFF]' : 'bg-[#CBD5E1]'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${responsavelEntrega ? 'left-4' : 'left-0.5'}`} />
+            </button>
+            <span className="text-sm text-[#374151]">Habilitado a entregar itens de estoque (aparece como opção de responsável na saída de EPI, uniforme etc.)</span>
+          </label>
 
           {error && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
 

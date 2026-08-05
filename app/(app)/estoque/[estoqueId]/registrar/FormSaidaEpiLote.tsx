@@ -20,13 +20,15 @@ const isCAField = (c: EstoqueCampo) => {
   return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
 }
 
-export default function FormSaidaEpiLote({ estoqueId, produtos, campos, funcionarios }: {
+export default function FormSaidaEpiLote({ estoqueId, produtos, campos, funcionarios, responsaveis }: {
   estoqueId: string
   produtos: EstoqueProduto[]
   campos: EstoqueCampo[]
   funcionarios: { id: string; nome: string }[]
+  responsaveis: { id: string; nome: string }[]
 }) {
   const router = useRouter()
+  const [respModoLivre, setRespModoLivre] = useState(false)
 
   const [funcionarioId, setFuncionarioId] = useState('')
   const [data, setData] = useState(new Date().toISOString().split('T')[0])
@@ -183,7 +185,22 @@ export default function FormSaidaEpiLote({ estoqueId, produtos, campos, funciona
 
       <div>
         <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome do responsável pela entrega *</label>
-        <input required className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
+        {responsaveis.length > 0 && !respModoLivre ? (
+          <select className="field" value={responsavel} required
+            onChange={e => { if (e.target.value === '__outro__') { setRespModoLivre(true); setResponsavel('') } else setResponsavel(e.target.value) }}>
+            <option value="">Selecione...</option>
+            {responsaveis.map(f => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+            <option value="__outro__">Outro (digitar manualmente)</option>
+          </select>
+        ) : (
+          <div className="flex gap-2">
+            <input required className="field flex-1" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
+            {responsaveis.length > 0 && (
+              <button type="button" onClick={() => { setRespModoLivre(false); setResponsavel('') }}
+                className="text-xs text-[#4F7CFF] shrink-0 px-2 hover:underline">Lista</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Carrinho de itens */}

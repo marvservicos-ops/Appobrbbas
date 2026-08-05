@@ -460,7 +460,7 @@ export interface Ferramenta {
   mala_id?: string | null
   mala?: { id: string; nome: string; codigo_interno?: string | null; responsavel_atual?: { id: string; nome: string } | null } | null
   responsavel_atual_id?: string | null
-  responsavel_atual?: { id: string; nome: string } | null
+  responsavel_atual?: { id: string; nome: string; cargo?: string | null; funcao?: string | null; cpf?: string | null } | null
   created_at: string
   updated_at: string
 }
@@ -468,7 +468,7 @@ export interface Ferramenta {
 export interface FerramentaEmprestimo {
   id: string
   funcionario_id: string
-  funcionario?: { id: string; nome: string }
+  funcionario?: { id: string; nome: string; cargo?: string | null; funcao?: string | null; cpf?: string | null }
   obra_id?: string | null
   obra?: { id: string; titulo: string }
   data_emprestimo: string

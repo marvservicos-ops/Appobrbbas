@@ -53,7 +53,7 @@ export default function RegistrarPage() {
   const [obraId, setObraId] = useState('')
   const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
   const [funcionarioId, setFuncionarioId] = useState('')
-  const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string }[]>([])
+  const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string; responsavel_entrega?: boolean }[]>([])
   const [destinoTipo, setDestinoTipo] = useState<'obra' | 'manutencao' | 'uso_interno'>('obra')
   const [manutencaoId, setManutencaoId] = useState('')
   const [manutencoes, setManutencoes] = useState<{ id: string; numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string } | null }[]>([])
@@ -71,7 +71,7 @@ export default function RegistrarPage() {
         supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
         supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
         supabase.from('obras').select('id, titulo, status').in('status', ['Em Andamento', 'Aprovada', 'Em Orçamento']).order('titulo'),
-        supabase.from('funcionarios').select('id, nome').order('nome'),
+        supabase.from('funcionarios').select('id, nome, responsavel_entrega').eq('ativo', true).order('nome'),
         supabase.from('contratos_manutencao').select('id, numero_contrato, empresa:empresas(razao_social, apelido)').eq('ativo', true),
       ])
       setEstoque(est)
@@ -321,10 +321,11 @@ export default function RegistrarPage() {
 
       {/* ── SAÍDA ── */}
       {tipo === 'saida' && (estoque?.icone === 'shield' || estoque?.icone === 'shirt') ? (
-        <FormSaidaEpiLote estoqueId={estoqueId} produtos={produtos} campos={campos} funcionarios={funcionarios} />
+        <FormSaidaEpiLote estoqueId={estoqueId} produtos={produtos} campos={campos} funcionarios={funcionarios} responsaveis={funcionarios.filter(f => f.responsavel_entrega)} />
       ) : tipo === 'saida' && (
         <FormSaida
           produtos={produtos} campos={campos} obras={obras} funcionarios={funcionarios} manutencoes={manutencoes}
+          responsaveis={funcionarios.filter(f => f.responsavel_entrega)}
           produtoId={produtoId} setProdutoId={setProdutoId}
           produtoNome={produtoNome} setProdutoNome={setProdutoNome}
           quantidade={quantidade} setQuantidade={setQuantidade}
@@ -442,7 +443,7 @@ export default function RegistrarPage() {
 }
 
 // ── FormSaida ─────────────────────────────────────────
-function FormSaida({ produtos, campos, obras, funcionarios, manutencoes, produtoId, setProdutoId, produtoNome, setProdutoNome,
+function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manutencoes, produtoId, setProdutoId, produtoNome, setProdutoNome,
   quantidade, setQuantidade, unidade, setUnidade, responsavel, setResponsavel, data, setData,
   observacoes, setObservacoes, valoresCampos, setValoresCampos, temAssinatura, canvasRef,
   startDraw, draw, stopDraw, limparCanvas, obraId, setObraId, funcionarioId, setFuncionarioId,
@@ -450,6 +451,7 @@ function FormSaida({ produtos, campos, obras, funcionarios, manutencoes, produto
   scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone, produtoCodigo }: any) {
   const isEpiOuUniforme = estoqueIcone === 'shield' || estoqueIcone === 'shirt'
   const isLimpeza = estoqueIcone === 'sparkles'
+  const [respModoLivre, setRespModoLivre] = useState(false)
   const isCA = (campo: any) => {
     const n = (campo.nome as string).toLowerCase().replace(/\s/g, '')
     return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
@@ -540,7 +542,22 @@ function FormSaida({ produtos, campos, obras, funcionarios, manutencoes, produto
 
       <div>
         <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome do responsável *</label>
-        <input required className="field" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
+        {responsaveis && responsaveis.length > 0 && !respModoLivre ? (
+          <select className="field" value={responsavel} required
+            onChange={e => { if (e.target.value === '__outro__') { setRespModoLivre(true); setResponsavel('') } else setResponsavel(e.target.value) }}>
+            <option value="">Selecione...</option>
+            {responsaveis.map((f: any) => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+            <option value="__outro__">Outro (digitar manualmente)</option>
+          </select>
+        ) : (
+          <div className="flex gap-2">
+            <input required className="field flex-1" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
+            {responsaveis && responsaveis.length > 0 && (
+              <button type="button" onClick={() => { setRespModoLivre(false); setResponsavel('') }}
+                className="text-xs text-[#4F7CFF] shrink-0 px-2 hover:underline">Lista</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Destino dinâmico por categoria */}

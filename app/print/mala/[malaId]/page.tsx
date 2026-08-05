@@ -16,7 +16,7 @@ export default function MalaPrintPage() {
     async function load() {
       const supabase = createClient()
       const [{ data: m }, { data: its }] = await Promise.all([
-        supabase.from('ferramentas').select('*, responsavel_atual:funcionarios(id, nome)').eq('id', malaId).single(),
+        supabase.from('ferramentas').select('*, responsavel_atual:funcionarios(id, nome, cargo, funcao, cpf)').eq('id', malaId).single(),
         supabase.from('ferramentas').select('*').eq('mala_id', malaId).order('nome'),
       ])
       setMala(m as unknown as Ferramenta)
@@ -87,6 +87,18 @@ export default function MalaPrintPage() {
               <td style={s.th}>Responsável atual</td>
               <td style={s.td}>{mala.responsavel_atual?.nome ?? '—'}</td>
             </tr>
+            {(mala.responsavel_atual?.cargo || mala.responsavel_atual?.funcao) && (
+              <tr>
+                <td style={s.th}>Cargo / Função</td>
+                <td style={s.td}>{[mala.responsavel_atual?.cargo, mala.responsavel_atual?.funcao].filter(Boolean).join(' / ')}</td>
+              </tr>
+            )}
+            {mala.responsavel_atual?.cpf && (
+              <tr>
+                <td style={s.th}>CPF</td>
+                <td style={s.td}>{mala.responsavel_atual.cpf}</td>
+              </tr>
+            )}
             <tr>
               <td style={s.th}>Data de emissão</td>
               <td style={s.td}>{dataHoje}</td>

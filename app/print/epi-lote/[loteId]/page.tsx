@@ -12,7 +12,7 @@ interface RegistroEpi {
   unidade?: string | null
   responsavel: string
   observacoes?: string | null
-  funcionario?: { nome: string } | null
+  funcionario?: { nome: string; cargo: string | null; funcao: string | null; cpf: string | null } | null
   estoque?: { nome: string } | null
   valores?: { valor: string; campo?: { nome: string } | null }[]
 }
@@ -27,7 +27,7 @@ export default function EpiLotePrintPage() {
     async function load() {
       const supabase = createClient()
       const { data } = await supabase.from('estoque_registros')
-        .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome), estoque:estoque_id(nome), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
+        .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
         .eq('lote_id', loteId)
         .order('created_at')
       setRegistros((data ?? []) as unknown as RegistroEpi[])
@@ -99,6 +99,18 @@ export default function EpiLotePrintPage() {
               <td style={{ ...s.th, width: '30%' }}>Funcionário</td>
               <td style={s.td}>{primeiro.funcionario?.nome ?? '—'}</td>
             </tr>
+            {(primeiro.funcionario?.cargo || primeiro.funcionario?.funcao) && (
+              <tr>
+                <td style={s.th}>Cargo / Função</td>
+                <td style={s.td}>{[primeiro.funcionario?.cargo, primeiro.funcionario?.funcao].filter(Boolean).join(' / ')}</td>
+              </tr>
+            )}
+            {primeiro.funcionario?.cpf && (
+              <tr>
+                <td style={s.th}>CPF</td>
+                <td style={s.td}>{primeiro.funcionario.cpf}</td>
+              </tr>
+            )}
             <tr>
               <td style={s.th}>Data de emissão</td>
               <td style={s.td}>{dataEmissao}</td>
