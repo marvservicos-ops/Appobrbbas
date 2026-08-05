@@ -53,6 +53,7 @@ interface RegistroItem {
   estoque_icone: string
   estoque_cor: string
   ca_valor: string | null
+  lote_id: string | null
 }
 
 interface FerramentaItem {
@@ -114,7 +115,7 @@ export default function CentralFuncionarioPage() {
       supabase.from('funcionarios').select('*').eq('id', id).single(),
       supabase.from('estoque_registros')
         .select(`
-          id, data, produto_nome, quantidade, unidade, responsavel, observacoes,
+          id, data, produto_nome, quantidade, unidade, responsavel, observacoes, lote_id,
           estoque:estoque_id(nome, icone, cor),
           valores:estoque_registro_valores(valor, campo:campo_id(nome))
         `)
@@ -157,6 +158,7 @@ export default function CentralFuncionarioPage() {
         estoque_icone: r.estoque?.icone ?? '',
         estoque_cor: r.estoque?.cor ?? '#94A3B8',
         ca_valor: caValor,
+        lote_id: r.lote_id ?? null,
       }
     })
     setRegistros(items)
@@ -460,7 +462,7 @@ export default function CentralFuncionarioPage() {
                     </td>
                     <td className="px-4 py-3">
                       {(r.estoque_icone === 'shield' || r.estoque_icone === 'shirt') && (
-                        <a href={`/print/epi/${r.id}`} target="_blank" rel="noopener noreferrer" title="Imprimir termo"
+                        <a href={r.lote_id ? `/print/epi-lote/${r.lote_id}` : `/print/epi/${r.id}`} target="_blank" rel="noopener noreferrer" title="Imprimir termo"
                           className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
                           <Printer size={14} />
                         </a>

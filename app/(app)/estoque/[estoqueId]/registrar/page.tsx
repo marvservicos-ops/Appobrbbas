@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto } from '@/lib/types'
 import Link from 'next/link'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
+import FormSaidaEpiLote from './FormSaidaEpiLote'
 
 // ── Tipos ─────────────────────────────────────────────
 type ItemNF = { produtoId: string; produtoNome: string; quantidade: string; unidade: string; precoUnitario: string; valorTotal: string }
@@ -319,7 +320,9 @@ export default function RegistrarPage() {
       </div>
 
       {/* ── SAÍDA ── */}
-      {tipo === 'saida' && (
+      {tipo === 'saida' && (estoque?.icone === 'shield' || estoque?.icone === 'shirt') ? (
+        <FormSaidaEpiLote estoqueId={estoqueId} produtos={produtos} campos={campos} funcionarios={funcionarios} />
+      ) : tipo === 'saida' && (
         <FormSaida
           produtos={produtos} campos={campos} obras={obras} funcionarios={funcionarios} manutencoes={manutencoes}
           produtoId={produtoId} setProdutoId={setProdutoId}

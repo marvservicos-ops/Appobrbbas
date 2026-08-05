@@ -207,6 +207,7 @@ export interface EstoqueRegistro {
   funcionario_id?: string | null
   manutencao_id?: string | null
   destino_tipo?: 'obra' | 'manutencao' | 'uso_interno' | 'funcionario' | null
+  lote_id?: string | null
   preco_unitario_custo?: number | null
   valor_total?: number | null
   created_at: string
