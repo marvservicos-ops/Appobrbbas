@@ -35,17 +35,35 @@ create table if not exists pj_pagamentos (
   observacao text,
   comprovante_url text,
   nota_fiscal_url text,
-  nota_fiscal_urls text[],
   created_at timestamptz not null default now()
 );
+
+-- Coluna nova (permite anexar mais de uma NF por pagamento) em tabela que já pode existir
+alter table pj_pagamentos add column if not exists nota_fiscal_urls text[];
 
 alter table pj_contratos enable row level security;
 alter table pj_ferias enable row level security;
 alter table pj_pagamentos enable row level security;
-create policy "auth_all" on pj_contratos for all to authenticated using (true) with check (true);
-create policy "auth_all" on pj_ferias for all to authenticated using (true) with check (true);
-create policy "auth_all" on pj_pagamentos for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'pj_contratos' and policyname = 'auth_all') then
+    create policy "auth_all" on pj_contratos for all to authenticated using (true) with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'pj_ferias' and policyname = 'auth_all') then
+    create policy "auth_all" on pj_ferias for all to authenticated using (true) with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'pj_pagamentos' and policyname = 'auth_all') then
+    create policy "auth_all" on pj_pagamentos for all to authenticated using (true) with check (true);
+  end if;
+end $$;
 
 -- Storage bucket para contratos, comprovantes e notas fiscais
 insert into storage.buckets (id, name, public) values ('marv-pj', 'marv-pj', true) on conflict do nothing;
-create policy "auth_all_pj" on storage.objects for all to authenticated using (bucket_id = 'marv-pj') with check (bucket_id = 'marv-pj');
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'objects' and schemaname = 'storage' and policyname = 'auth_all_pj') then
+    create policy "auth_all_pj" on storage.objects for all to authenticated using (bucket_id = 'marv-pj') with check (bucket_id = 'marv-pj');
+  end if;
+end $$;
