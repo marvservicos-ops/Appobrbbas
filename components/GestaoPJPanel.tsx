@@ -39,6 +39,7 @@ interface Pagamento {
   observacao: string | null
   comprovante_url: string | null
   nota_fiscal_url: string | null
+  nota_fiscal_urls: string[] | null
 }
 
 const tipoLabel: Record<Pagamento['tipo'], string> = {
@@ -72,24 +73,28 @@ export default function GestaoPJPanel() {
   const [showAddPagamento, setShowAddPagamento] = useState(false)
   const [editandoPagamento, setEditandoPagamento] = useState<Pagamento | null>(null)
   const [uploadingComprovante, setUploadingComprovante] = useState(false)
+  const [uploadingNF, setUploadingNF] = useState(false)
   const [saving, setSaving] = useState(false)
   const [expandedContrato, setExpandedContrato] = useState<string | null>(null)
+  const [erro, setErro] = useState('')
 
   // Forms
   const [fContrato, setFContrato] = useState({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '', arquivo_url: '' })
   const [fFerias, setFFerias] = useState({ contrato_id: '', data_inicio: '', data_fim: '', valor_pago: '', observacao: '' })
-  const [fPagamento, setFPagamento] = useState({ contrato_id: '', tipo: 'salario' as Pagamento['tipo'], competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_url: '' })
+  const [fPagamento, setFPagamento] = useState({ contrato_id: '', tipo: 'salario' as Pagamento['tipo'], competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_urls: [] as string[] })
 
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
     const sb = createClient()
-    const [{ data: c }, { data: f }, { data: p }] = await Promise.all([
+    const [{ data: c, error: eC }, { data: f, error: eF }, { data: p, error: eP }] = await Promise.all([
       sb.from('pj_contratos').select('*').order('data_inicio', { ascending: false }),
       sb.from('pj_ferias').select('*').order('data_inicio', { ascending: false }),
       sb.from('pj_pagamentos').select('*').order('competencia', { ascending: false }),
     ])
+    const erroCarregamento = eC || eF || eP
+    if (erroCarregamento) setErro(`Falha ao carregar dados: ${erroCarregamento.message}`)
     setContratos((c ?? []) as Contrato[])
     setFerias((f ?? []) as Ferias[])
     setPagamentos((p ?? []) as Pagamento[])
@@ -136,6 +141,7 @@ export default function GestaoPJPanel() {
   async function salvarContrato() {
     if (!fContrato.data_inicio || !fContrato.data_fim || !fContrato.valor_mensal) return
     setSaving(true)
+    setErro('')
     const sb = createClient()
     const payload = {
       numero_contrato: fContrato.numero_contrato || null,
@@ -146,15 +152,14 @@ export default function GestaoPJPanel() {
       observacao: fContrato.observacao || null,
       arquivo_url: fContrato.arquivo_url || null,
     }
-    if (editandoContrato) {
-      await sb.from('pj_contratos').update(payload).eq('id', editandoContrato.id)
-    } else {
-      await sb.from('pj_contratos').insert(payload)
-    }
+    const { error } = editandoContrato
+      ? await sb.from('pj_contratos').update(payload).eq('id', editandoContrato.id)
+      : await sb.from('pj_contratos').insert(payload)
+    setSaving(false)
+    if (error) { setErro(`Falha ao salvar contrato: ${error.message}`); return }
     setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '', arquivo_url: '' })
     setEditandoContrato(null)
     setShowAddContrato(false)
-    setSaving(false)
     load()
   }
 
@@ -179,7 +184,7 @@ export default function GestaoPJPanel() {
       horas_extras: p.horas_extras != null ? String(p.horas_extras) : '',
       observacao: p.observacao ?? '',
       comprovante_url: p.comprovante_url ?? '',
-      nota_fiscal_url: p.nota_fiscal_url ?? '',
+      nota_fiscal_urls: p.nota_fiscal_urls ?? (p.nota_fiscal_url ? [p.nota_fiscal_url] : []),
     })
     setEditandoPagamento(p)
     setShowAddPagamento(true)
@@ -191,15 +196,32 @@ export default function GestaoPJPanel() {
     const ext = file.name.split('.').pop()
     const path = `${folder}/${Date.now()}.${ext}`
     const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true })
-    if (error) { setUploadingComprovante(false); return null }
+    if (error) { setUploadingComprovante(false); setErro(`Falha ao enviar arquivo: ${error.message}`); return null }
     const { data } = sb.storage.from(bucket).getPublicUrl(path)
     setUploadingComprovante(false)
     return data.publicUrl
   }
 
+  async function uploadNFs(files: FileList) {
+    setUploadingNF(true)
+    const sb = createClient()
+    const urls: string[] = []
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop()
+      const path = `notas-fiscais/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const { error } = await sb.storage.from('marv-pj').upload(path, file, { upsert: true })
+      if (error) { setErro(`Falha ao enviar "${file.name}": ${error.message}`); continue }
+      const { data } = sb.storage.from('marv-pj').getPublicUrl(path)
+      urls.push(data.publicUrl)
+    }
+    if (urls.length > 0) setFPagamento(p => ({ ...p, nota_fiscal_urls: [...p.nota_fiscal_urls, ...urls] }))
+    setUploadingNF(false)
+  }
+
   async function salvarFerias() {
     if (!fFerias.data_inicio || !fFerias.data_fim) return
     setSaving(true)
+    setErro('')
     const dias = calcDiasFerias(fFerias.data_inicio, fFerias.data_fim)
     const sb = createClient()
     const payload = {
@@ -210,21 +232,21 @@ export default function GestaoPJPanel() {
       valor_pago: fFerias.valor_pago ? parseFloat(fFerias.valor_pago) : null,
       observacao: fFerias.observacao || null,
     }
-    if (editandoFerias) {
-      await sb.from('pj_ferias').update(payload).eq('id', editandoFerias.id)
-    } else {
-      await sb.from('pj_ferias').insert(payload)
-    }
+    const { error } = editandoFerias
+      ? await sb.from('pj_ferias').update(payload).eq('id', editandoFerias.id)
+      : await sb.from('pj_ferias').insert(payload)
+    setSaving(false)
+    if (error) { setErro(`Falha ao salvar férias: ${error.message}`); return }
     setFFerias({ contrato_id: '', data_inicio: '', data_fim: '', valor_pago: '', observacao: '' })
     setEditandoFerias(null)
     setShowAddFerias(false)
-    setSaving(false)
     load()
   }
 
   async function salvarPagamento() {
     if (!fPagamento.competencia || !fPagamento.valor) return
     setSaving(true)
+    setErro('')
     const sb = createClient()
     const payload = {
       contrato_id: fPagamento.contrato_id || null,
@@ -234,31 +256,33 @@ export default function GestaoPJPanel() {
       horas_extras: fPagamento.horas_extras ? parseFloat(fPagamento.horas_extras) : null,
       observacao: fPagamento.observacao || null,
       comprovante_url: fPagamento.comprovante_url || null,
-      nota_fiscal_url: fPagamento.nota_fiscal_url || null,
+      nota_fiscal_url: fPagamento.nota_fiscal_urls[0] || null,
+      nota_fiscal_urls: fPagamento.nota_fiscal_urls.length > 0 ? fPagamento.nota_fiscal_urls : null,
     }
-    if (editandoPagamento) {
-      await sb.from('pj_pagamentos').update(payload).eq('id', editandoPagamento.id)
-    } else {
-      await sb.from('pj_pagamentos').insert(payload)
-    }
-    setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_url: '' })
+    const { error } = editandoPagamento
+      ? await sb.from('pj_pagamentos').update(payload).eq('id', editandoPagamento.id)
+      : await sb.from('pj_pagamentos').insert(payload)
+    setSaving(false)
+    if (error) { setErro(`Falha ao salvar pagamento: ${error.message}`); return }
+    setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_urls: [] })
     setEditandoPagamento(null)
     setShowAddPagamento(false)
-    setSaving(false)
     load()
   }
 
   async function deletarFerias(id: string) {
     if (!confirm('Remover este registro de férias?')) return
     const sb = createClient()
-    await sb.from('pj_ferias').delete().eq('id', id)
+    const { error } = await sb.from('pj_ferias').delete().eq('id', id)
+    if (error) { setErro(`Falha ao remover: ${error.message}`); return }
     load()
   }
 
   async function deletarPagamento(id: string) {
     if (!confirm('Remover este pagamento?')) return
     const sb = createClient()
-    await sb.from('pj_pagamentos').delete().eq('id', id)
+    const { error } = await sb.from('pj_pagamentos').delete().eq('id', id)
+    if (error) { setErro(`Falha ao remover: ${error.message}`); return }
     load()
   }
 
@@ -289,6 +313,13 @@ export default function GestaoPJPanel() {
           <RefreshCw size={13} className="text-[#94A3B8]" />
         </button>
       </div>
+
+      {erro && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-4 py-3 mb-4">
+          <span className="flex-1">{erro}</span>
+          <button onClick={() => setErro('')} className="text-red-400 hover:text-red-600 shrink-0"><X size={14} /></button>
+        </div>
+      )}
 
       <div className="pb-6">
 
@@ -702,17 +733,23 @@ export default function GestaoPJPanel() {
                         </label>}
                   </div>
                   <div>
-                    <label className="text-xs text-[#64748B] font-medium block mb-1">Nota Fiscal (HTML/XLSX)</label>
-                    {fPagamento.nota_fiscal_url
-                      ? <div className="flex items-center gap-2">
-                          <a href={fPagamento.nota_fiscal_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">Ver NF</a>
-                          <button onClick={() => setFPagamento(p => ({ ...p, nota_fiscal_url: '' }))} className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
+                    <label className="text-xs text-[#64748B] font-medium block mb-1">
+                      Nota{fPagamento.nota_fiscal_urls.length !== 1 ? 's' : ''} Fiscal{fPagamento.nota_fiscal_urls.length !== 1 ? 'is' : ''} (HTML/XLSX/PDF)
+                    </label>
+                    <div className="space-y-1.5">
+                      {fPagamento.nota_fiscal_urls.map((url, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <a href={url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">NF {i + 1}</a>
+                          <button onClick={() => setFPagamento(p => ({ ...p, nota_fiscal_urls: p.nota_fiscal_urls.filter((_, idx) => idx !== i) }))}
+                            className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
                         </div>
-                      : <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-[#E2E8F0] rounded-lg text-xs text-[#64748B] cursor-pointer hover:border-[#4F7CFF] ${uploadingComprovante ? 'opacity-50' : ''}`}>
-                          <input type="file" accept=".html,.htm,.xlsx,.xls,.pdf" className="hidden" disabled={uploadingComprovante}
-                            onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadArquivo(f, 'marv-pj', 'notas-fiscais'); if (url) setFPagamento(p => ({ ...p, nota_fiscal_url: url })) } }} />
-                          {uploadingComprovante ? 'Enviando...' : 'Selecionar NF'}
-                        </label>}
+                      ))}
+                      <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-[#E2E8F0] rounded-lg text-xs text-[#64748B] cursor-pointer hover:border-[#4F7CFF] ${uploadingNF ? 'opacity-50' : ''}`}>
+                        <input type="file" accept=".html,.htm,.xlsx,.xls,.pdf,.jpg,.jpeg,.png" multiple className="hidden" disabled={uploadingNF}
+                          onChange={async e => { const files = e.target.files; if (files && files.length > 0) { await uploadNFs(files); e.target.value = '' } }} />
+                        {uploadingNF ? 'Enviando...' : 'Adicionar NF (pode selecionar várias)'}
+                      </label>
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-1">
@@ -737,7 +774,9 @@ export default function GestaoPJPanel() {
                       <span className="text-xs text-[#64748B]">{p.competencia}</span>
                       {p.horas_extras && <span className="text-xs text-amber-600">{p.horas_extras}h</span>}
                       {p.comprovante_url && <a href={p.comprovante_url} target="_blank" rel="noreferrer" className="text-[10px] text-[#4F7CFF] underline">Comprovante</a>}
-                      {p.nota_fiscal_url && <a href={p.nota_fiscal_url} target="_blank" rel="noreferrer" className="text-[10px] text-[#4F7CFF] underline">NF</a>}
+                      {(p.nota_fiscal_urls ?? (p.nota_fiscal_url ? [p.nota_fiscal_url] : [])).map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noreferrer" className="text-[10px] text-[#4F7CFF] underline">NF{(p.nota_fiscal_urls?.length ?? 1) > 1 ? ` ${i + 1}` : ''}</a>
+                      ))}
                     </div>
                     {p.observacao && <p className="text-xs text-[#94A3B8] mt-0.5 truncate">{p.observacao}</p>}
                   </div>
