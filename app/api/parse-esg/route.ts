@@ -4,6 +4,25 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Modelos tentados em ordem — o Google aposenta modelos "preview" com frequência,
+// então caímos para o próximo candidato se o principal não existir mais (404).
+const MODELOS_CANDIDATOS = ['gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.0-flash']
+
+async function gerarComFallback(genAI: GoogleGenerativeAI, parts: any[]) {
+  let ultimoErro: unknown = null
+  for (const nomeModelo of MODELOS_CANDIDATOS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: nomeModelo })
+      return await model.generateContent(parts)
+    } catch (err) {
+      ultimoErro = err
+      const msg = String(err)
+      if (!msg.includes('404') && !msg.includes('not found')) throw err
+    }
+  }
+  throw ultimoErro
+}
+
 const PROMPT = `Você é um extrator de dados de documentos para controle ESG de uma empresa de manutenção e serviços mecânicos (ar-condicionado, refrigeração).
 
 Analise o documento (pode ser uma nota fiscal, cupom, comprovante, foto de painel de combustível, romaneio de sucata, recibo de venda de gás refrigerante, nota de compra de equipamento/EPI etc.) e identifique a qual das 4 categorias abaixo ele pertence, extraindo os dados correspondentes.
@@ -58,9 +77,7 @@ export async function POST(req: NextRequest) {
     const base64 = buffer.toString('base64')
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
-
-    const result = await model.generateContent([
+    const result = await gerarComFallback(genAI, [
       { inlineData: { mimeType, data: base64 } },
       PROMPT,
     ])
