@@ -75,6 +75,37 @@ function itemVazio(nomeArquivo: string): ItemIA {
   }
 }
 
+// Fotos de celular costumam vir enormes (4000px+, vários MB) — reduzir antes de
+// enviar deixa a análise mais rápida e menos sujeita a erro de sobrecarga/timeout.
+// PDFs passam direto (não dá pra reamostrar sem uma lib de PDF).
+function comprimirSeImagem(file: File): Promise<File> {
+  return new Promise(resolve => {
+    if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') { resolve(file); return }
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const MAX = 1600
+      let { width, height } = img
+      if (width > MAX || height > MAX) {
+        const escala = MAX / Math.max(width, height)
+        width = Math.round(width * escala); height = Math.round(height * escala)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width; canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(file); return }
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(blob => {
+        if (!blob) { resolve(file); return }
+        resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }))
+      }, 'image/jpeg', 0.82)
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+    img.src = url
+  })
+}
+
 export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [files, setFiles] = useState<File[]>([])
   const [processando, setProcessando] = useState(false)
@@ -135,7 +166,8 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
     for (const file of files) {
       let base = itemVazio(file.name)
       try {
-        const fd = new FormData(); fd.append('file', file)
+        const arquivoEnvio = await comprimirSeImagem(file)
+        const fd = new FormData(); fd.append('file', arquivoEnvio)
         const res = await fetch('/api/parse-esg', { method: 'POST', body: fd })
         const parsed = await res.json()
         if (!res.ok) {

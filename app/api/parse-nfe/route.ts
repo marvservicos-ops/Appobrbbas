@@ -23,6 +23,18 @@ async function listarModelosDisponiveis(apiKey: string): Promise<string[]> {
   return [...flash, ...outros]
 }
 
+function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)) }
+
+// 503/"overloaded"/"high demand" são transitórios — vale tentar de novo antes de
+// desistir do modelo. 404/"not found" significa que o modelo não existe: já pula
+// direto pro próximo candidato, sem gastar tempo tentando de novo.
+function transitorio(msg: string) {
+  return msg.includes('503') || msg.toLowerCase().includes('overloaded') || msg.toLowerCase().includes('high demand') || msg.toLowerCase().includes('unavailable')
+}
+function inexistente(msg: string) {
+  return msg.includes('404') || msg.toLowerCase().includes('not found')
+}
+
 async function gerarComFallback(genAI: GoogleGenerativeAI, apiKey: string, parts: any[]) {
   let ultimoErro: unknown = null
   const tentar = async (nomeModelo: string) => {
@@ -31,12 +43,18 @@ async function gerarComFallback(genAI: GoogleGenerativeAI, apiKey: string, parts
   }
 
   for (const nomeModelo of MODELOS_CANDIDATOS) {
-    try {
-      return await tentar(nomeModelo)
-    } catch (err) {
-      ultimoErro = err
-      const msg = String(err)
-      if (!msg.includes('404') && !msg.includes('not found')) throw err
+    const tentativas = 3
+    for (let i = 0; i < tentativas; i++) {
+      try {
+        return await tentar(nomeModelo)
+      } catch (err) {
+        ultimoErro = err
+        const msg = String(err)
+        if (inexistente(msg)) break // pula pro próximo modelo, sem retry
+        if (transitorio(msg) && i < tentativas - 1) { await sleep(1500 * (i + 1)); continue }
+        if (!transitorio(msg)) throw err // erro de verdade (ex: arquivo inválido) — não adianta tentar outro modelo
+        break // esgotou as tentativas transitórias neste modelo, tenta o próximo
+      }
     }
   }
 
