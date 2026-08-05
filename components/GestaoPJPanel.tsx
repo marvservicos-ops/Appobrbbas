@@ -666,7 +666,7 @@ export default function GestaoPJPanel() {
               })}
             </div>
 
-            <button onClick={() => { setEditandoPagamento(null); setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_url: '' }); setShowAddPagamento(true) }}
+            <button onClick={() => { setEditandoPagamento(null); setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_urls: [] }); setShowAddPagamento(true) }}
               className="w-full flex items-center gap-2 justify-center py-3 border-2 border-dashed border-[#E2E8F0] rounded-xl text-sm text-[#64748B] hover:border-[#4F7CFF] hover:text-[#4F7CFF] transition-colors">
               <Plus size={16} /> Registrar Pagamento
             </button>
