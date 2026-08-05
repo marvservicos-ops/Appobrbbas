@@ -210,6 +210,7 @@ export interface EstoqueRegistro {
   lote_id?: string | null
   preco_unitario_custo?: number | null
   valor_total?: number | null
+  registro_origem_id?: string | null
   created_at: string
   valores?: EstoqueRegistroValor[]
 }

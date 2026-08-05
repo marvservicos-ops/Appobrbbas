@@ -33,6 +33,7 @@ export default function EstoqueDetalhe() {
   const [showEdit, setShowEdit] = useState(false)
   const [editandoProduto, setEditandoProduto] = useState<EstoqueProduto | null>(null)
   const [devolvendoRegistro, setDevolvendoRegistro] = useState<EstoqueRegistro | null>(null)
+  const [destacado, setDestacado] = useState<string | null>(null)
 
   // Seleção em lote
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
@@ -127,6 +128,26 @@ export default function EstoqueDetalhe() {
   const produtosAbaixoMinimo = produtos.filter(p => p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0)
 
   const todosSelec = registrosOrdenados.length > 0 && selecionados.size === registrosOrdenados.length
+
+  // Quanto já foi devolvido de cada saída (soma das entradas com registro_origem_id apontando pra ela)
+  const devolvidoMap = new Map<string, number>()
+  for (const r of registros) {
+    if (r.registro_origem_id) {
+      devolvidoMap.set(r.registro_origem_id, (devolvidoMap.get(r.registro_origem_id) ?? 0) + r.quantidade)
+    }
+  }
+  const registrosPorId = new Map(registros.map(r => [r.id, r]))
+
+  function irParaOrigem(id: string) {
+    setTab('registros')
+    setFiltroTipo('todos')
+    setTimeout(() => {
+      const el = document.getElementById(`reg-${id}`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setDestacado(id)
+      setTimeout(() => setDestacado(d => d === id ? null : d), 2000)
+    }, 50)
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen">
@@ -265,9 +286,11 @@ export default function EstoqueDetalhe() {
                   <tbody>
                     {registrosOrdenados.map(reg => {
                       const selec = selecionados.has(reg.id)
+                      const devolvido = reg.tipo === 'saida' ? (devolvidoMap.get(reg.id) ?? 0) : 0
+                      const origem = reg.registro_origem_id ? registrosPorId.get(reg.registro_origem_id) : null
                       return (
-                        <tr key={reg.id}
-                          className={`border-b border-[#F1F5F9] transition-colors group cursor-pointer ${selec ? 'bg-[#F5F7FF]' : 'hover:bg-[#F8FAFC]'}`}
+                        <tr key={reg.id} id={`reg-${reg.id}`}
+                          className={`border-b border-[#F1F5F9] transition-colors group cursor-pointer ${destacado === reg.id ? 'bg-amber-50' : selec ? 'bg-[#F5F7FF]' : 'hover:bg-[#F8FAFC]'}`}
                           onClick={() => toggleSelecionado(reg.id)}>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             <button onClick={() => toggleSelecionado(reg.id)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
@@ -282,7 +305,20 @@ export default function EstoqueDetalhe() {
                               {reg.tipo === 'saida' ? 'Saída' : 'Entrada'}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">{reg.produto_nome}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-[#0F172A]">
+                            {reg.produto_nome}
+                            {devolvido > 0 && (
+                              <div className="text-[10px] font-semibold text-amber-700 mt-0.5">
+                                ↩ {devolvido} de {reg.quantidade} devolvido
+                              </div>
+                            )}
+                            {origem && (
+                              <button onClick={e => { e.stopPropagation(); irParaOrigem(origem.id) }}
+                                className="block text-[10px] font-medium text-[#4F7CFF] hover:underline mt-0.5">
+                                ↪ devolução de {origem.responsavel} ({new Date(origem.data + 'T00:00:00').toLocaleDateString('pt-BR')})
+                              </button>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-sm text-[#374151]">{reg.quantidade} {reg.unidade ?? ''}</td>
                           {campos.map(c => {
                             const val = reg.valores?.find(v => v.campo_id === c.id)
@@ -296,7 +332,7 @@ export default function EstoqueDetalhe() {
                           </td>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {reg.tipo === 'saida' && (
+                              {reg.tipo === 'saida' && devolvido < reg.quantidade && (
                                 <button
                                   onClick={() => setDevolvendoRegistro(reg)}
                                   title="Registrar devolução"
@@ -445,6 +481,7 @@ export default function EstoqueDetalhe() {
       {devolvendoRegistro && (
         <ModalDevolucao
           registro={devolvendoRegistro}
+          jaDevolvido={devolvidoMap.get(devolvendoRegistro.id) ?? 0}
           produtos={produtos}
           onClose={() => setDevolvendoRegistro(null)}
           onSaved={() => { setDevolvendoRegistro(null); load() }}
@@ -632,8 +669,8 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
 }
 
 // ── Modal devolução ───────────────────────────────────
-function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
-  registro: EstoqueRegistro; produtos: EstoqueProduto[]
+function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
+  registro: EstoqueRegistro; jaDevolvido: number; produtos: EstoqueProduto[]
   onClose: () => void; onSaved: () => void
 }) {
   const [qtd, setQtd] = useState('')
@@ -645,19 +682,20 @@ function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
   const qtdNum = parseFloat(qtd) || 0
   const precoAtual = produto?.preco_unitario || registro.preco_unitario_custo || 0
   const valorCredito = qtdNum * precoAtual
+  const restante = registro.quantidade - jaDevolvido
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade a devolver.'); return }
-    if (qtdNum > registro.quantidade) {
-      setError(`Não pode devolver mais do que a saída original (${registro.quantidade} ${registro.unidade ?? ''}).`)
+    if (qtdNum > restante) {
+      setError(`Não pode devolver mais do que o saldo ainda não devolvido (${restante} ${registro.unidade ?? ''}).`)
       return
     }
     setSaving(true)
     setError('')
     const supabase = createClient()
 
-    // Novo registro de entrada representando a devolução
+    // Novo registro de entrada representando a devolução, ligado à saída original
     const { error: regErr } = await supabase.from('estoque_registros').insert({
       estoque_id: registro.estoque_id,
       produto_id: registro.produto_id ?? null,
@@ -670,6 +708,7 @@ function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
       obra_id: registro.obra_id ?? null,
       preco_unitario_custo: precoAtual || null,
       valor_total: valorCredito || null,
+      registro_origem_id: registro.id,
       observacoes: `Devolução de saída de ${new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}`,
     })
 
@@ -708,15 +747,16 @@ function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
           {/* Info da saída original */}
           <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800 space-y-1">
             <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+            {jaDevolvido > 0 && <p>Já devolvido: <strong>{jaDevolvido} {registro.unidade ?? ''}</strong> · saldo restante: <strong>{restante} {registro.unidade ?? ''}</strong></p>}
             {precoAtual > 0 && <p>Preço atual do item (CMP): <strong>{precoAtual.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">
-              Quantidade a devolver * <span className="text-[#94A3B8] font-normal">(máx. {registro.quantidade} {registro.unidade ?? ''})</span>
+              Quantidade a devolver * <span className="text-[#94A3B8] font-normal">(máx. {restante} {registro.unidade ?? ''})</span>
             </label>
             <input
-              type="number" step="0.01" min="0.01" max={registro.quantidade}
+              type="number" step="0.01" min="0.01" max={restante}
               className="field" placeholder="0" autoFocus
               value={qtd} onChange={e => setQtd(e.target.value)}
             />
