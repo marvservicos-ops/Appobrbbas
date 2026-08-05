@@ -73,7 +73,8 @@ Retorne APENAS um JSON válido, sem markdown, sem explicações, com esta estrut
   "combustivel_tipo": "Gasolina" | "Diesel" | "Etanol" | "GNV" | null,
   "combustivel_litros": 25.9 ou null,
   "combustivel_valor": 150.00 ou null,
-  "combustivel_veiculo_placa": "placa do veículo se visível, ou null",
+  "combustivel_veiculo_placa": "placa do veículo se visível impressa no documento, ou null",
+  "combustivel_veiculo_nome": "apelido ou nome do veículo, geralmente escrito à mão no cupom/nota (ex: Bongo, Corsa, L200, Amarok, Hb20, Civic/Honda) — procure por qualquer anotação manuscrita no documento, ou null",
 
   "investimento_item": "nome do item comprado, ou null",
   "investimento_categoria": "Ambiental" | "Social" | "Ferramental" | "SST" | null,

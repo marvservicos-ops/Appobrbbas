@@ -15,6 +15,7 @@ interface Extraido {
   combustivel_litros?: number | null
   combustivel_valor?: number | null
   combustivel_veiculo_placa?: string | null
+  combustivel_veiculo_nome?: string | null
   investimento_item?: string | null
   investimento_categoria?: string | null
   investimento_quantidade?: number | null
@@ -115,6 +116,11 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
     if (p.gas_valor_recebido != null) patch.valorGas = String(p.gas_valor_recebido)
     if (p.combustivel_veiculo_placa) {
       const v = veiculos.find(v => (v.placa ?? '').toLowerCase().replace(/[-\s]/g, '') === p.combustivel_veiculo_placa!.toLowerCase().replace(/[-\s]/g, ''))
+      if (v) patch.veiculoId = v.id
+    }
+    if (!patch.veiculoId && p.combustivel_veiculo_nome) {
+      const nome = p.combustivel_veiculo_nome.toLowerCase().trim()
+      const v = veiculos.find(v => v.nome.toLowerCase().includes(nome) || nome.includes(v.nome.toLowerCase()))
       if (v) patch.veiculoId = v.id
     }
     return { ...base, ...patch }
