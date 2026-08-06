@@ -26,11 +26,17 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
   const [malaId, setMalaId] = useState(malaIdPadrao ?? '')
   const [malas, setMalas] = useState<{ id: string; nome: string; codigo_interno: string | null }[]>([])
 
+  const PREFIXO_POR_ICONE: Record<string, string> = { building2: 'PAT', hammer: 'MAN' }
+
   useEffect(() => {
     async function sugerirCodigo() {
       const supabase = createClient()
-      const { count } = await supabase.from('ferramentas').select('id', { count: 'exact', head: true }).eq('estoque_id', estoqueId)
-      setCodigoInterno(`${modoPatrimonio ? 'PAT' : 'FER'}-${String((count ?? 0) + 1).padStart(4, '0')}`)
+      const [{ count }, { data: est }] = await Promise.all([
+        supabase.from('ferramentas').select('id', { count: 'exact', head: true }).eq('estoque_id', estoqueId),
+        supabase.from('estoques').select('icone').eq('id', estoqueId).single(),
+      ])
+      const prefixo = PREFIXO_POR_ICONE[est?.icone ?? ''] ?? 'FER'
+      setCodigoInterno(`${prefixo}-${String((count ?? 0) + 1).padStart(4, '0')}`)
     }
     async function carregarMalas() {
       const supabase = createClient()

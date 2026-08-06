@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2 } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2 } from 'lucide-react'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
@@ -13,10 +13,10 @@ const ICONE_MAP: Record<string, React.ReactNode> = {
   shield: <Shield size={18} />, sparkles: <Sparkles size={18} />,
   thermometer: <Thermometer size={18} />, shirt: <Shirt size={18} />,
   droplets: <Droplets size={18} />, package: <Package size={18} />,
-  wrench: <Wrench size={18} />, building2: <Building2 size={18} />,
+  wrench: <Wrench size={18} />, building2: <Building2 size={18} />, hammer: <Hammer size={18} />,
 }
-const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets', 'wrench', 'building2']
-const ICONES_ATIVO = ['wrench', 'building2']
+const ICONES = ['package', 'shield', 'sparkles', 'thermometer', 'shirt', 'droplets', 'wrench', 'building2', 'hammer']
+const ICONES_ATIVO = ['wrench', 'building2', 'hammer']
 const CORES = ['#4F7CFF', '#F59E0B', '#2DD4BF', '#8B5CF6', '#06B6D4', '#EF4444', '#10B981', '#F97316']
 
 type Tab = 'registros' | 'produtos' | 'configurar'
@@ -799,7 +799,7 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
     shield: <Shield size={20} />, sparkles: <Sparkles size={20} />,
     thermometer: <Thermometer size={20} />, shirt: <Shirt size={20} />,
     droplets: <Droplets size={20} />, package: <Package size={20} />,
-    wrench: <Wrench size={20} />, building2: <Building2 size={20} />,
+    wrench: <Wrench size={20} />, building2: <Building2 size={20} />, hammer: <Hammer size={20} />,
   }
 
   async function salvar(e: React.FormEvent) {
