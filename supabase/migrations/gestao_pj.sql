@@ -38,7 +38,30 @@ create table if not exists pj_pagamentos (
   created_at timestamptz not null default now()
 );
 
--- Coluna nova (permite anexar mais de uma NF por pagamento) em tabela que já pode existir
+-- Garante todas as colunas mesmo se as tabelas já existiam com outro schema
+alter table pj_contratos add column if not exists numero_contrato text;
+alter table pj_contratos add column if not exists data_inicio date;
+alter table pj_contratos add column if not exists data_fim date;
+alter table pj_contratos add column if not exists valor_mensal numeric(12,2) not null default 0;
+alter table pj_contratos add column if not exists dias_ferias_acumulados integer not null default 15;
+alter table pj_contratos add column if not exists observacao text;
+alter table pj_contratos add column if not exists arquivo_url text;
+
+alter table pj_ferias add column if not exists contrato_id uuid references pj_contratos(id) on delete set null;
+alter table pj_ferias add column if not exists data_inicio date;
+alter table pj_ferias add column if not exists data_fim date;
+alter table pj_ferias add column if not exists dias integer not null default 0;
+alter table pj_ferias add column if not exists valor_pago numeric(12,2);
+alter table pj_ferias add column if not exists observacao text;
+
+alter table pj_pagamentos add column if not exists contrato_id uuid references pj_contratos(id) on delete set null;
+alter table pj_pagamentos add column if not exists tipo text not null default 'salario';
+alter table pj_pagamentos add column if not exists competencia text;
+alter table pj_pagamentos add column if not exists valor numeric(12,2) not null default 0;
+alter table pj_pagamentos add column if not exists horas_extras numeric;
+alter table pj_pagamentos add column if not exists observacao text;
+alter table pj_pagamentos add column if not exists comprovante_url text;
+alter table pj_pagamentos add column if not exists nota_fiscal_url text;
 alter table pj_pagamentos add column if not exists nota_fiscal_urls text[];
 
 alter table pj_contratos enable row level security;
