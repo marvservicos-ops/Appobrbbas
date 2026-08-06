@@ -21,16 +21,25 @@ export default function EpiPrintPage() {
   const { registroId } = useParams<{ registroId: string }>()
 
   const [registro, setRegistro] = useState<RegistroEpi | null>(null)
+  const [empresa, setEmpresa] = useState({
+    razao_social: 'Marv Manutenção e Serviços Ltda.',
+    cnpj: '03.709.796/0001-44',
+    endereco: 'Rua Cândido Benício, nº 2326, Loja — Praça Seca, Jacarepaguá — RJ, CEP 22733-001',
+  })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const { data } = await supabase.from('estoque_registros')
-        .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
-        .eq('id', registroId)
-        .single()
+      const [{ data }, { data: dadosEmpresa }] = await Promise.all([
+        supabase.from('estoque_registros')
+          .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
+          .eq('id', registroId)
+          .single(),
+        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
+      ])
       setRegistro(data as unknown as RegistroEpi)
+      if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
       setLoading(false)
     }
     load()
@@ -84,8 +93,9 @@ export default function EpiPrintPage() {
         <h1 style={{ fontSize: 18, fontWeight: 700, textAlign: 'center', marginBottom: 4 }}>
           Termo de Responsabilidade — {registro.estoque?.nome ?? 'Entrega de EPI'}
         </h1>
-        <p style={{ textAlign: 'center', fontSize: 11, color: '#64748B', marginBottom: 20 }}>
-          MARV Serviços
+        <p style={{ textAlign: 'center', fontSize: 11, color: '#64748B', marginBottom: 20, lineHeight: 1.5 }}>
+          {empresa.razao_social} — CNPJ {empresa.cnpj}<br />
+          {empresa.endereco}
         </p>
 
         <table style={s.table}>

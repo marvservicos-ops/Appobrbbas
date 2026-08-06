@@ -10,17 +10,24 @@ export default function MalaPrintPage() {
 
   const [mala, setMala] = useState<Ferramenta | null>(null)
   const [itens, setItens] = useState<Ferramenta[]>([])
+  const [empresa, setEmpresa] = useState({
+    razao_social: 'Marv Manutenção e Serviços Ltda.',
+    cnpj: '03.709.796/0001-44',
+    endereco: 'Rua Cândido Benício, nº 2326, Loja — Praça Seca, Jacarepaguá — RJ, CEP 22733-001',
+  })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: m }, { data: its }] = await Promise.all([
+      const [{ data: m }, { data: its }, { data: dadosEmpresa }] = await Promise.all([
         supabase.from('ferramentas').select('*, responsavel_atual:funcionarios(id, nome, cargo, funcao, cpf)').eq('id', malaId).single(),
         supabase.from('ferramentas').select('*').eq('mala_id', malaId).order('nome'),
+        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
       ])
       setMala(m as unknown as Ferramenta)
       setItens((its ?? []) as unknown as Ferramenta[])
+      if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
       setLoading(false)
     }
     load()
@@ -73,8 +80,9 @@ export default function MalaPrintPage() {
         <h1 style={{ fontSize: 18, fontWeight: 700, textAlign: 'center', marginBottom: 4 }}>
           Termo de Responsabilidade — Mala de Ferramentas
         </h1>
-        <p style={{ textAlign: 'center', fontSize: 11, color: '#64748B', marginBottom: 20 }}>
-          MARV Serviços
+        <p style={{ textAlign: 'center', fontSize: 11, color: '#64748B', marginBottom: 20, lineHeight: 1.5 }}>
+          {empresa.razao_social} — CNPJ {empresa.cnpj}<br />
+          {empresa.endereco}
         </p>
 
         <table style={s.table}>

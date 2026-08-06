@@ -500,9 +500,18 @@ function SecaoExtras() {
   )
 }
 
+const EMPRESA_PADRAO = {
+  razao_social: 'Marv Manutenção e Serviços Ltda.',
+  cnpj: '03.709.796/0001-44',
+  telefone: '(21) 3327-7621',
+  endereco: 'Rua Cândido Benício, nº 2326, Loja — Praça Seca, Jacarepaguá — RJ, CEP 22733-001',
+}
+
 export default function ConfiguracoesPage() {
   const [perfil, setPerfil] = useState({ nome: '', email: '', cargo: '' })
-  const [empresa, setEmpresa] = useState({ razao_social: '', cnpj: '', telefone: '', endereco: '' })
+  const [empresa, setEmpresa] = useState(EMPRESA_PADRAO)
+  const [salvandoEmpresa, setSalvandoEmpresa] = useState(false)
+  const [savedEmpresa, setSavedEmpresa] = useState(false)
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -510,7 +519,10 @@ export default function ConfiguracoesPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const [{ data: { user } }, { data: dadosEmpresa }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
+      ])
       if (user) {
         setPerfil(p => ({
           ...p,
@@ -519,6 +531,7 @@ export default function ConfiguracoesPage() {
           cargo: user.user_metadata?.cargo ?? '',
         }))
       }
+      if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
       setLoading(false)
     }
     load()
@@ -534,6 +547,19 @@ export default function ConfiguracoesPage() {
     setSalvando(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  async function salvarEmpresa() {
+    setSalvandoEmpresa(true)
+    await createClient().from('configuracoes_empresa').upsert({
+      chave: 'dados_empresa',
+      descricao: 'Dados cadastrais da empresa (razão social, CNPJ, telefone, endereço)',
+      valor: empresa,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'chave' })
+    setSalvandoEmpresa(false)
+    setSavedEmpresa(true)
+    setTimeout(() => setSavedEmpresa(false), 2000)
   }
 
   if (loading) return (
@@ -592,7 +618,7 @@ export default function ConfiguracoesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Razão Social</label>
-                <input className="field" value={empresa.razao_social} onChange={e => setEmpresa(p => ({ ...p, razao_social: e.target.value }))} placeholder="MARV Serviços Ltda." />
+                <input className="field" value={empresa.razao_social} onChange={e => setEmpresa(p => ({ ...p, razao_social: e.target.value }))} placeholder="Marv Manutenção e Serviços Ltda." />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">CNPJ</label>
@@ -609,7 +635,13 @@ export default function ConfiguracoesPage() {
                 <input className="field" value={empresa.endereco} onChange={e => setEmpresa(p => ({ ...p, endereco: e.target.value }))} placeholder="Rua, número, cidade" />
               </div>
             </div>
-            <p className="text-xs text-[#94A3B8]">Esses dados aparecem nos relatórios exportados.</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-[#94A3B8]">Esses dados aparecem nas fichas de EPI/ferramentas impressas e nos relatórios exportados.</p>
+              <button onClick={salvarEmpresa} disabled={salvandoEmpresa} className="btn-primary flex items-center gap-2 shrink-0">
+                {salvandoEmpresa ? <Loader2 size={14} className="animate-spin" /> : savedEmpresa ? <Check size={14} /> : <Save size={14} />}
+                {salvandoEmpresa ? 'Salvando...' : savedEmpresa ? 'Salvo!' : 'Salvar'}
+              </button>
+            </div>
           </div>
         </section>
 

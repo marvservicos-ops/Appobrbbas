@@ -10,17 +10,24 @@ export default function EmprestimoPrintPage() {
 
   const [emprestimo, setEmprestimo] = useState<FerramentaEmprestimo | null>(null)
   const [itens, setItens] = useState<FerramentaEmprestimoItem[]>([])
+  const [empresa, setEmpresa] = useState({
+    razao_social: 'Marv Manutenção e Serviços Ltda.',
+    cnpj: '03.709.796/0001-44',
+    endereco: 'Rua Cândido Benício, nº 2326, Loja — Praça Seca, Jacarepaguá — RJ, CEP 22733-001',
+  })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: emp }, { data: its }] = await Promise.all([
+      const [{ data: emp }, { data: its }, { data: dadosEmpresa }] = await Promise.all([
         supabase.from('ferramenta_emprestimos').select('*, funcionario:funcionarios(id, nome, cargo, funcao, cpf), obra:obras(id, titulo)').eq('id', emprestimoId).single(),
         supabase.from('ferramenta_emprestimo_itens').select('*, ferramenta:ferramentas(*)').eq('emprestimo_id', emprestimoId),
+        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
       ])
       setEmprestimo(emp as unknown as FerramentaEmprestimo)
       setItens((its ?? []) as unknown as FerramentaEmprestimoItem[])
+      if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
       setLoading(false)
     }
     load()
@@ -76,8 +83,9 @@ export default function EmprestimoPrintPage() {
         <h1 style={{ fontSize: 18, fontWeight: 700, textAlign: 'center', marginBottom: 4 }}>
           Contrato de Empréstimo de Ferramentas
         </h1>
-        <p style={{ textAlign: 'center', fontSize: 11, color: '#64748B', marginBottom: 20 }}>
-          MARV Serviços
+        <p style={{ textAlign: 'center', fontSize: 11, color: '#64748B', marginBottom: 20, lineHeight: 1.5 }}>
+          {empresa.razao_social} — CNPJ {empresa.cnpj}<br />
+          {empresa.endereco}
         </p>
 
         <table style={s.table}>
