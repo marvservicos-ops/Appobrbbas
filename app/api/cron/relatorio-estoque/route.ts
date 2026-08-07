@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
   const threadEstoque = process.env.TELEGRAM_THREAD_ESTOQUE
   const dataHoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
   const erros: string[] = []
+  const entregas: unknown[] = []
   let enviados = 0
 
   const esperar = (ms: number) => new Promise(res => setTimeout(res, ms))
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
   async function enviar(texto: string) {
     if (enviados + erros.length > 0) await esperar(600) // respeita limite de ~1 msg/s do Telegram por chat, sem estourar o timeout da function (Hobby: 10s)
     const r = await enviarTelegram(texto, threadEstoque)
-    if (r.ok) enviados++
+    if (r.ok) { enviados++; entregas.push({ messageId: r.messageId, chatId: r.chatId, threadId: r.threadId }) }
     else erros.push(r.error ?? 'erro desconhecido')
   }
 
@@ -64,6 +65,7 @@ export async function GET(req: NextRequest) {
     chatIdConfigurado: Boolean(process.env.TELEGRAM_CHAT_ID),
     threadConfigurado: Boolean(threadEstoque),
     executadoEm: new Date().toISOString(),
+    entregas,
     erros: erros.length > 0 ? Array.from(new Set(erros)) : undefined,
   }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } })
 }

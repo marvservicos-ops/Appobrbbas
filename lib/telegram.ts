@@ -13,5 +13,5 @@ export async function enviarTelegram(texto: string, threadId?: string) {
   })
   const data = await res.json()
   if (!data.ok) return { ok: false, error: data.description ?? 'Falha ao enviar mensagem' }
-  return { ok: true }
+  return { ok: true, messageId: data.result?.message_id, chatId: data.result?.chat?.id, threadId: data.result?.message_thread_id }
 }
