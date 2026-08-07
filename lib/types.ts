@@ -56,8 +56,21 @@ export interface Obra {
   gestor?: Cliente
   comprador?: Cliente
   valor_art?: number | null
+  diario_obra_id?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface DiarioObraRelatorio {
+  id: string
+  obra_id: string
+  diario_relatorio_id: string
+  numero?: number | null
+  data?: string | null
+  status_descricao?: string | null
+  drive_file_id?: string | null
+  drive_file_url?: string | null
+  importado_em: string
 }
 
 export interface CronogramaEtapa {

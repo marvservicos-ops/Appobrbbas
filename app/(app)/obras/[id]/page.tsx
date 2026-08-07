@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, Building2, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, Mail, Send } from 'lucide-react'
+import { ArrowLeft, Search, Bell, Building2, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, Mail, Send, Cloud, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO, Empresa } from '@/lib/types'
+import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO, Empresa, DiarioObraRelatorio } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
 import { useAccess } from '@/lib/useAccess'
@@ -211,6 +211,9 @@ export default function ObraDetailPage() {
   const [docs, setDocs] = useState<Documento[]>([])
   const [pastas, setPastas] = useState<DocPasta[]>([])
   const [rdos, setRdos] = useState<RDO[]>([])
+  const [diarioRelatorios, setDiarioRelatorios] = useState<DiarioObraRelatorio[]>([])
+  const [sincronizandoDiario, setSincronizandoDiario] = useState(false)
+  const [msgSincronizacao, setMsgSincronizacao] = useState('')
   const [materiais, setMateriais] = useState<ObraMaterial[]>([])
   const [equipe] = useState<ObraFuncionario[]>([])
   const [criandoRdo, setCriandoRdo] = useState(false)
@@ -347,6 +350,7 @@ export default function ObraDetailPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [id])
+  useEffect(() => { if (obra?.diario_obra_id) loadDiarioRelatorios() }, [obra?.diario_obra_id])
 
   if (loading) return (
     <div className="flex items-center justify-center h-full min-h-screen">
@@ -439,6 +443,31 @@ export default function ObraDetailPage() {
       router.push(`/obras/${id}/rdo/${rdo.id}`)
     }
     setCriandoRdo(false)
+  }
+
+  async function loadDiarioRelatorios() {
+    const { data } = await createClient().from('diario_obra_relatorios').select('*').eq('obra_id', id).order('numero', { ascending: false })
+    setDiarioRelatorios((data ?? []) as DiarioObraRelatorio[])
+  }
+
+  async function sincronizarDiario() {
+    setSincronizandoDiario(true)
+    setMsgSincronizacao('')
+    try {
+      const res = await fetch('/api/diario-obra/sincronizar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ obraId: id }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setMsgSincronizacao(`Erro: ${json.error ?? 'falha desconhecida'}`)
+      } else {
+        setMsgSincronizacao(`${json.importados} RDO(s) importado(s), ${json.ignorados} já existiam.${json.erros?.length ? ` ${json.erros.length} erro(s).` : ''}`)
+        loadDiarioRelatorios()
+      }
+    } catch (e) {
+      setMsgSincronizacao(`Erro: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    setSincronizandoDiario(false)
   }
 
   async function excluirPasta(pastaId: string, nomePasta: string) {
@@ -1069,6 +1098,63 @@ export default function ObraDetailPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* ===== RDOs importados do Diário de Obra ===== */}
+            {obra?.diario_obra_id && (
+              <div className="mt-8">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="font-syne font-semibold text-[#0F172A] text-sm flex items-center gap-2">
+                      <Cloud size={15} className="text-[#4F7CFF]" /> RDOs importados do Diário de Obra
+                    </h3>
+                    <p className="text-xs text-[#94A3B8] mt-0.5">PDFs salvos no Google Drive, um índice fica listado aqui.</p>
+                  </div>
+                  <button onClick={sincronizarDiario} disabled={sincronizandoDiario}
+                    className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
+                    {sincronizandoDiario ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Importar agora
+                  </button>
+                </div>
+
+                {msgSincronizacao && <p className="text-xs text-[#64748B] mb-3">{msgSincronizacao}</p>}
+
+                {diarioRelatorios.length === 0 ? (
+                  <p className="text-sm text-[#94A3B8]">Nenhum RDO importado ainda.</p>
+                ) : (
+                  <div className="card p-0 overflow-x-auto">
+                    <table className="w-full min-w-[520px]">
+                      <thead>
+                        <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
+                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
+                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
+                          <th className="px-4 py-3 w-24" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {diarioRelatorios.map(r => (
+                          <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
+                            <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{r.numero ?? '—'}</td>
+                            <td className="px-4 py-3 text-sm text-[#374151]">
+                              {r.data ? new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-[#64748B]">{r.status_descricao ?? '—'}</td>
+                            <td className="px-4 py-3 text-right">
+                              {r.drive_file_url && (
+                                <a href={r.drive_file_url} target="_blank" rel="noopener noreferrer"
+                                  className="text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1 rounded transition-colors">
+                                  Abrir no Drive
+                                </a>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </div>

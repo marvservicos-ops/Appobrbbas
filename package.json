@@ -23,6 +23,7 @@
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.22.0",
     "bcryptjs": "^2.4.3",
+    "googleapis": "^174.0.1",
     "lucide-react": "^1.17.0",
     "next": "14.2.35",
     "pdf-parse": "^2.4.5",

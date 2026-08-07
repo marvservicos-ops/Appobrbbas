@@ -165,6 +165,7 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
     descricao: obra?.descricao ?? '',
     gestor_id: obra?.gestor_id ?? '',
     comprador_id: obra?.comprador_id ?? '',
+    diario_obra_id: obra?.diario_obra_id ?? '',
   })
 
   function set(field: string, value: string) {
@@ -225,6 +226,7 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
       comprador_id: form.comprador_id || null,
       cliente_id: form.gestor_id || form.comprador_id || null,
       valor_art: form.valor_art ? parseFloat(form.valor_art) : null,
+      diario_obra_id: form.diario_obra_id || null,
     }
     const { error: err } = editing
       ? await supabase.from('obras').update(payload).eq('id', obra!.id)
@@ -303,6 +305,14 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
                   <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor da ART (R$)</label>
                   <input type="number" step="0.01" min="0" placeholder="0,00"
                     value={form.valor_art} onChange={e => set('valor_art', e.target.value)} className="field" />
+                </div>
+
+                {/* Diário de Obra */}
+                <div>
+                  <label className="block text-sm font-medium text-[#374151] mb-1.5">ID da obra no Diário de Obra</label>
+                  <input type="text" placeholder="Ex: 5cb071d833e3823aab41e333"
+                    value={form.diario_obra_id} onChange={e => set('diario_obra_id', e.target.value)} className="field" />
+                  <p className="text-xs text-[#94A3B8] mt-1">Vincula esta obra ao app Diário de Obra para importar os RDOs automaticamente.</p>
                 </div>
               </div>
             </div>
