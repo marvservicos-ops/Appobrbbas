@@ -16,6 +16,6 @@ export async function POST(req: NextRequest) {
 
   const marca = quantidadeNova < 0 ? '🔴' : '🟠'
   const texto = `${marca} <b>Estoque crítico</b>\n${estoqueNome} — ${produtoNome}\nQuantidade atual: <b>${quantidadeNova} ${unidade ?? ''}</b> (mínimo: ${quantidadeMinima})`
-  const resultado = await enviarTelegram(texto)
+  const resultado = await enviarTelegram(texto, process.env.TELEGRAM_THREAD_ESTOQUE)
   return NextResponse.json({ ok: resultado.ok, enviado: resultado.ok })
 }

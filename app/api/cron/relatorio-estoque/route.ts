@@ -20,8 +20,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, enviado: false, motivo: 'sem categorias de estoque com quantidade' })
   }
 
+  const threadEstoque = process.env.TELEGRAM_THREAD_ESTOQUE
   const dataHoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-  await enviarTelegram(`📦 <b>Relatório diário de estoque — ${dataHoje}</b>`)
+  await enviarTelegram(`📦 <b>Relatório diário de estoque — ${dataHoje}</b>`, threadEstoque)
 
   for (const estoque of categoriasComQuantidade) {
     const { data: produtos } = await supabase
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
       return `${marca} ${p.nome}: <b>${p.quantidade_atual}</b> ${p.unidade ?? ''}`
     })
 
-    await enviarTelegram(`<b>${estoque.nome}</b>\n${linhas.join('\n')}`)
+    await enviarTelegram(`<b>${estoque.nome}</b>\n${linhas.join('\n')}`, threadEstoque)
   }
 
   return NextResponse.json({ ok: true, enviado: true, categorias: categoriasComQuantidade.length })
