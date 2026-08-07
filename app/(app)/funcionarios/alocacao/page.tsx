@@ -7,11 +7,11 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered, Palmtree,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
-type TipoAlocacao = 'obra' | 'manutencao' | 'escritorio' | 'folga' | 'atestado' | 'falta'
+type TipoAlocacao = 'obra' | 'manutencao' | 'escritorio' | 'folga' | 'atestado' | 'falta' | 'ferias'
 
 interface Funcionario { id: string; nome: string; cargo: string | null }
 interface Obra { id: string; titulo: string }
@@ -48,6 +48,7 @@ const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon:
   { tipo: 'folga',      label: 'Folga',       cor: '#10B981', bg: '#ECFDF5', Icon: Sun       },
   { tipo: 'atestado',   label: 'Atestado',    cor: '#F59E0B', bg: '#FFFBEB', Icon: FileText  },
   { tipo: 'falta',      label: 'Falta',       cor: '#EF4444', bg: '#FEF2F2', Icon: UserX     },
+  { tipo: 'ferias',     label: 'Férias',      cor: '#14B8A6', bg: '#F0FDFA', Icon: Palmtree  },
 ]
 const TIPO_MAP = Object.fromEntries(TIPOS.map(t => [t.tipo, t])) as Record<TipoAlocacao, typeof TIPOS[number]>
 
@@ -82,7 +83,7 @@ function exportarRelatorio(
 
   const rows = funcionarios.map(f => {
     const obraMap: Record<string, number> = {}
-    let diasEscritorio = 0, diasFolga = 0, diasFalta = 0, diasAtestado = 0
+    let diasEscritorio = 0, diasFolga = 0, diasFalta = 0, diasAtestado = 0, diasFerias = 0
 
     dias.forEach(dia => {
       const alocs = alocMap.get(`${f.id}_${dia}`) ?? []
@@ -94,6 +95,7 @@ function exportarRelatorio(
         else if (a.tipo === 'folga') diasFolga += frac
         else if (a.tipo === 'falta') diasFalta += frac
         else if (a.tipo === 'atestado') diasAtestado += frac
+        else if (a.tipo === 'ferias') diasFerias += frac
       })
     })
 
@@ -104,7 +106,7 @@ function exportarRelatorio(
 
     const totalObra = Object.values(obraMap).reduce((s, v) => s + v, 0)
 
-    return { nome: f.nome, cargo: f.cargo ?? '', obrasDetalhes, totalObra, diasEscritorio, diasFolga, diasFalta, diasAtestado }
+    return { nome: f.nome, cargo: f.cargo ?? '', obrasDetalhes, totalObra, diasEscritorio, diasFolga, diasFalta, diasAtestado, diasFerias }
   })
 
   const html = `<!DOCTYPE html><html lang="pt-BR"><head>
@@ -126,7 +128,7 @@ function exportarRelatorio(
     <thead><tr>
       <th>Funcionário</th><th>Cargo</th><th>Obras e dias</th>
       <th class="num">Dias obra</th><th class="num">Escrit.</th>
-      <th class="num">Folga</th><th class="num">Falta</th><th class="num">Atest.</th>
+      <th class="num">Folga</th><th class="num">Falta</th><th class="num">Atest.</th><th class="num">Férias</th>
     </tr></thead>
     <tbody>
     ${rows.map(r => `<tr>
@@ -138,6 +140,7 @@ function exportarRelatorio(
       <td class="num">${r.diasFolga > 0 ? r.diasFolga.toFixed(r.diasFolga % 1 === 0 ? 0 : 1) : '—'}</td>
       <td class="num">${r.diasFalta > 0 ? r.diasFalta.toFixed(r.diasFalta % 1 === 0 ? 0 : 1) : '—'}</td>
       <td class="num">${r.diasAtestado > 0 ? r.diasAtestado.toFixed(r.diasAtestado % 1 === 0 ? 0 : 1) : '—'}</td>
+      <td class="num">${r.diasFerias > 0 ? r.diasFerias.toFixed(r.diasFerias % 1 === 0 ? 0 : 1) : '—'}</td>
     </tr>`).join('')}
     </tbody>
   </table>
