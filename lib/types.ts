@@ -242,6 +242,32 @@ export interface ManutencaoEstoqueRegistro {
 }
 // ──────────────────────────────────────────────────────
 
+// ── Materiais de uso dentro de uma mala de ferramentas ──
+export interface MalaEstoqueProduto {
+  id: string
+  mala_id: string
+  produto_id: string
+  produto?: EstoqueProduto
+  quantidade_atual: number
+  quantidade_minima: number
+  created_at: string
+}
+
+export interface MalaEstoqueRegistro {
+  id: string
+  mala_id: string
+  produto_id: string
+  produto?: EstoqueProduto
+  tipo: 'entrada' | 'saida'
+  quantidade: number
+  responsavel?: string | null
+  data: string
+  observacoes?: string | null
+  origem_estoque_registro_id?: string | null
+  created_at: string
+}
+// ──────────────────────────────────────────────────────
+
 // ── RDO ──────────────────────────────────────────────
 export interface RDO {
   id: string; obra_id: string; numero: number; data: string

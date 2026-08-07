@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2, Search } from 'lucide-react'
+import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2, Search, Package, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito, CampoTecnico, FerramentaDado } from '@/lib/types'
+import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito, CampoTecnico, FerramentaDado, EstoqueProduto, MalaEstoqueProduto, MalaEstoqueRegistro } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
 import ModalDefeito from './ModalDefeito'
 import ModalEditarFerramenta from './ModalEditarFerramenta'
@@ -138,6 +138,232 @@ function DadosTecnicos({ ferramentaId }: { ferramentaId: string }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+function ModalAdicionarMaterialMala({ malaId, estoqueId, jaRastreados, onClose, onSaved }: {
+  malaId: string; estoqueId: string; jaRastreados: string[]; onClose: () => void; onSaved: () => void
+}) {
+  const [catalogo, setCatalogo] = useState<EstoqueProduto[]>([])
+  const [produtoId, setProdutoId] = useState('')
+  const [quantidadeMinima, setQuantidadeMinima] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    createClient().from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome')
+      .then(({ data }) => setCatalogo((data ?? []) as EstoqueProduto[]))
+  }, [estoqueId])
+
+  const disponiveis = catalogo.filter(p => !jaRastreados.includes(p.id))
+
+  async function salvar() {
+    if (!produtoId) return
+    setSaving(true)
+    await createClient().from('mala_estoque_produtos').insert({
+      mala_id: malaId, produto_id: produtoId, quantidade_minima: parseFloat(quantidadeMinima) || 0,
+    })
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-[#0F172A]">Adicionar material</h3>
+          <button onClick={onClose}><X size={18} className="text-[#94A3B8]" /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Material do catálogo *</label>
+            <select className="field text-sm" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
+              <option value="">Selecione...</option>
+              {disponiveis.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Quantidade mínima</label>
+            <input type="number" min="0" step="any" className="field text-sm" value={quantidadeMinima} onChange={e => setQuantidadeMinima(e.target.value)} placeholder="0" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
+          <button onClick={salvar} disabled={!produtoId || saving} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Adicionar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ModalMovimentacaoMaterialMala({ malaId, produtos, onClose, onSaved }: {
+  malaId: string; produtos: MalaEstoqueProduto[]; onClose: () => void; onSaved: () => void
+}) {
+  const [tipo, setTipo] = useState<'entrada' | 'saida'>('saida')
+  const [produtoId, setProdutoId] = useState('')
+  const [quantidade, setQuantidade] = useState('')
+  const [responsavel, setResponsavel] = useState('')
+  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [observacoes, setObservacoes] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const produto = produtos.find(p => p.produto_id === produtoId)
+
+  async function salvar() {
+    setError('')
+    const qtd = parseFloat(quantidade)
+    if (!produtoId) { setError('Selecione o material.'); return }
+    if (!qtd || qtd <= 0) { setError('Informe a quantidade.'); return }
+    if (!responsavel.trim()) { setError('Informe o responsável.'); return }
+    if (tipo === 'saida' && produto && produto.quantidade_atual - qtd < 0) {
+      setError(`Saldo insuficiente. Disponível: ${produto.quantidade_atual}.`); return
+    }
+    setSaving(true)
+    const sb = createClient()
+    await sb.from('mala_estoque_registros').insert({
+      mala_id: malaId, produto_id: produtoId, tipo, quantidade: qtd,
+      responsavel: responsavel.trim(), data, observacoes: observacoes || null,
+    })
+    if (produto) {
+      const novaQtd = produto.quantidade_atual + (tipo === 'entrada' ? qtd : -qtd)
+      await sb.from('mala_estoque_produtos').update({ quantidade_atual: novaQtd }).eq('id', produto.id)
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-[#0F172A]">Nova movimentação</h3>
+          <button onClick={onClose}><X size={18} className="text-[#94A3B8]" /></button>
+        </div>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            {(['saida', 'entrada'] as const).map(t => (
+              <button key={t} type="button" onClick={() => setTipo(t)}
+                className={`py-2 rounded-lg text-xs font-medium border-2 transition-all ${tipo === t
+                  ? t === 'saida' ? 'border-red-400 bg-red-50 text-red-600' : 'border-green-400 bg-green-50 text-green-600'
+                  : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                {t === 'saida' ? 'Saída' : 'Entrada'}
+              </button>
+            ))}
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Material *</label>
+            <select className="field text-sm" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
+              <option value="">Selecione...</option>
+              {produtos.map(p => <option key={p.produto_id} value={p.produto_id}>{p.produto?.nome} ({p.quantidade_atual} {p.produto?.unidade})</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-[#64748B] block mb-1">Quantidade *</label>
+              <input type="number" min="0" step="any" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[#64748B] block mb-1">Data</label>
+              <input type="date" className="field text-sm" value={data} onChange={e => setData(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Responsável *</label>
+            <input className="field text-sm" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Nome completo" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#64748B] block mb-1">Observações</label>
+            <input className="field text-sm" value={observacoes} onChange={e => setObservacoes(e.target.value)} />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
+          <button onClick={salvar} disabled={saving} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Salvar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MateriaisMala({ malaId, estoqueId }: { malaId: string; estoqueId: string }) {
+  const [produtos, setProdutos] = useState<MalaEstoqueProduto[]>([])
+  const [registros, setRegistros] = useState<MalaEstoqueRegistro[]>([])
+  const [showAdicionar, setShowAdicionar] = useState(false)
+  const [showMovimentacao, setShowMovimentacao] = useState(false)
+
+  async function load() {
+    const sb = createClient()
+    const [{ data: p }, { data: r }] = await Promise.all([
+      sb.from('mala_estoque_produtos').select('*, produto:estoque_produtos(nome, unidade)').eq('mala_id', malaId).order('created_at'),
+      sb.from('mala_estoque_registros').select('*, produto:estoque_produtos(nome, unidade)').eq('mala_id', malaId).order('created_at', { ascending: false }).limit(20),
+    ])
+    setProdutos((p ?? []) as unknown as MalaEstoqueProduto[])
+    setRegistros((r ?? []) as unknown as MalaEstoqueRegistro[])
+  }
+
+  useEffect(() => { load() }, [malaId])
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-[#374151]">Materiais de uso</h3>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setShowAdicionar(true)}
+            className="flex items-center gap-1 text-xs font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-2 py-1 rounded-lg transition-colors">
+            <Plus size={12} /> Adicionar material
+          </button>
+          <button onClick={() => setShowMovimentacao(true)} disabled={produtos.length === 0}
+            className="flex items-center gap-1 text-xs font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-2 py-1 rounded-lg transition-colors disabled:opacity-40">
+            <Plus size={12} /> Movimentação
+          </button>
+        </div>
+      </div>
+
+      {produtos.length === 0 ? (
+        <p className="text-xs text-[#94A3B8]">Nenhum material de uso cadastrado nesta mala ainda.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {produtos.map(p => {
+            const critico = p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0
+            return (
+              <div key={p.id} className={`flex items-center justify-between text-xs rounded-lg px-3 py-2 ${critico ? 'bg-amber-50' : 'bg-[#F8FAFC]'}`}>
+                <span className="text-[#374151] font-medium">{p.produto?.nome}</span>
+                <span className="flex items-center gap-1.5">
+                  {critico && <span className="px-1.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Crítico</span>}
+                  <span className="font-semibold text-[#0F172A]">{p.quantidade_atual} {p.produto?.unidade}</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {registros.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {registros.map(r => (
+            <div key={r.id} className="flex items-center gap-2 text-[11px] text-[#94A3B8]">
+              {r.tipo === 'entrada'
+                ? <ArrowDownCircle size={12} className="text-green-500 shrink-0" />
+                : <ArrowUpCircle size={12} className="text-red-500 shrink-0" />}
+              <span className="truncate">{r.produto?.nome} · {r.responsavel ?? '—'} · {fmtData(r.data)}</span>
+              <span className={`ml-auto font-semibold ${r.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
+                {r.tipo === 'entrada' ? '+' : '-'}{r.quantidade}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAdicionar && (
+        <ModalAdicionarMaterialMala malaId={malaId} estoqueId={estoqueId} jaRastreados={produtos.map(p => p.produto_id)}
+          onClose={() => setShowAdicionar(false)} onSaved={() => { setShowAdicionar(false); load() }} />
+      )}
+      {showMovimentacao && (
+        <ModalMovimentacaoMaterialMala malaId={malaId} produtos={produtos}
+          onClose={() => setShowMovimentacao(false)} onSaved={() => { setShowMovimentacao(false); load() }} />
       )}
     </div>
   )
@@ -387,6 +613,11 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
                     </>
                   )}
                 </div>
+              )}
+
+              {/* Materiais de uso (consumíveis) da mala */}
+              {ferramenta.eh_mala && (
+                <MateriaisMala malaId={ferramenta.id} estoqueId={ferramenta.estoque_id} />
               )}
 
               {/* Histórico de empréstimos */}
