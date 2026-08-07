@@ -10,6 +10,7 @@ export async function enviarTelegram(texto: string, threadId?: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    cache: 'no-store',
   })
   const data = await res.json()
   if (!data.ok) return { ok: false, error: data.description ?? 'Falha ao enviar mensagem' }
