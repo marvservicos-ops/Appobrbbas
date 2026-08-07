@@ -20,8 +20,9 @@ const isCAField = (c: EstoqueCampo) => {
   return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
 }
 
-export default function FormSaidaEpiLote({ estoqueId, produtos, campos, funcionarios, responsaveis }: {
+export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, campos, funcionarios, responsaveis }: {
   estoqueId: string
+  estoqueNome: string
   produtos: EstoqueProduto[]
   campos: EstoqueCampo[]
   funcionarios: { id: string; nome: string }[]
@@ -155,9 +156,21 @@ export default function FormSaidaEpiLote({ estoqueId, produtos, campos, funciona
       if (item.produtoId !== '__outro__') {
         const prod = produtos.find(p => p.id === item.produtoId)
         if (prod) {
-          const novaQtd = prod.quantidade_atual - parseFloat(item.quantidade)
+          const quantidadeAnterior = prod.quantidade_atual
+          const novaQtd = quantidadeAnterior - parseFloat(item.quantidade)
           await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd }).eq('id', item.produtoId)
           prod.quantidade_atual = novaQtd // mantém consistente caso o mesmo produto apareça de novo no loop
+
+          if (prod.quantidade_minima > 0) {
+            fetch('/api/estoque/alerta-critico', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                produtoNome: prod.nome, estoqueNome,
+                quantidadeAnterior, quantidadeNova: novaQtd,
+                quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
+              }),
+            }).catch(() => {})
+          }
         }
       }
     }

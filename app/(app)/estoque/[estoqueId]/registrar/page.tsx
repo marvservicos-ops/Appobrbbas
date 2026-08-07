@@ -218,6 +218,17 @@ export default function RegistrarPage() {
         prodUpdate.preco_unitario = novoCMP
       }
       await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produtoId)
+
+      if (tipo === 'saida' && prod.quantidade_minima > 0) {
+        fetch('/api/estoque/alerta-critico', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            produtoNome: prod.nome, estoqueNome: estoque?.nome ?? '',
+            quantidadeAnterior: prod.quantidade_atual, quantidadeNova: novaQtd,
+            quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
+          }),
+        }).catch(() => {})
+      }
     }
 
     // Saída de material de limpeza com destino Manutenção repõe o estoque local do contrato
@@ -321,7 +332,7 @@ export default function RegistrarPage() {
 
       {/* ── SAÍDA ── */}
       {tipo === 'saida' && (estoque?.icone === 'shield' || estoque?.icone === 'shirt') ? (
-        <FormSaidaEpiLote estoqueId={estoqueId} produtos={produtos} campos={campos} funcionarios={funcionarios} responsaveis={funcionarios.filter(f => f.responsavel_entrega)} />
+        <FormSaidaEpiLote estoqueId={estoqueId} estoqueNome={estoque?.nome ?? ''} produtos={produtos} campos={campos} funcionarios={funcionarios} responsaveis={funcionarios.filter(f => f.responsavel_entrega)} />
       ) : tipo === 'saida' && (
         <FormSaida
           produtos={produtos} campos={campos} obras={obras} funcionarios={funcionarios} manutencoes={manutencoes}
