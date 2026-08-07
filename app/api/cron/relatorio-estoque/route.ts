@@ -60,6 +60,8 @@ export async function GET(req: NextRequest) {
     categorias: categoriasComQuantidade.length,
     chatIdConfigurado: Boolean(process.env.TELEGRAM_CHAT_ID),
     threadConfigurado: Boolean(threadEstoque),
+    debugChatId: process.env.TELEGRAM_CHAT_ID,
+    debugThreadEstoque: threadEstoque,
     executadoEm: new Date().toISOString(),
     erros: erros.length > 0 ? Array.from(new Set(erros)) : undefined,
   }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } })
