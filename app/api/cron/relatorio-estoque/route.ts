@@ -22,7 +22,16 @@ export async function GET(req: NextRequest) {
 
   const threadEstoque = process.env.TELEGRAM_THREAD_ESTOQUE
   const dataHoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-  await enviarTelegram(`📦 <b>Relatório diário de estoque — ${dataHoje}</b>`, threadEstoque)
+  const erros: string[] = []
+  let enviados = 0
+
+  async function enviar(texto: string) {
+    const r = await enviarTelegram(texto, threadEstoque)
+    if (r.ok) enviados++
+    else erros.push(r.error ?? 'erro desconhecido')
+  }
+
+  await enviar(`📦 <b>Relatório diário de estoque — ${dataHoje}</b>`)
 
   for (const estoque of categoriasComQuantidade) {
     const { data: produtos } = await supabase
@@ -41,8 +50,16 @@ export async function GET(req: NextRequest) {
       return `${marca} ${p.nome}: <b>${p.quantidade_atual}</b> ${p.unidade ?? ''}`
     })
 
-    await enviarTelegram(`<b>${estoque.nome}</b>\n${linhas.join('\n')}`, threadEstoque)
+    await enviar(`<b>${estoque.nome}</b>\n${linhas.join('\n')}`)
   }
 
-  return NextResponse.json({ ok: true, enviado: true, categorias: categoriasComQuantidade.length })
+  return NextResponse.json({
+    ok: erros.length === 0,
+    enviado: enviados > 0,
+    enviados,
+    categorias: categoriasComQuantidade.length,
+    chatIdConfigurado: Boolean(process.env.TELEGRAM_CHAT_ID),
+    threadConfigurado: Boolean(threadEstoque),
+    erros: erros.length > 0 ? Array.from(new Set(erros)) : undefined,
+  })
 }
