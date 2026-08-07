@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2 } from 'lucide-react'
+import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito, CampoTecnico, FerramentaDado } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
@@ -160,6 +160,7 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
   const [showEditar, setShowEditar] = useState(false)
   const [showAtribuir, setShowAtribuir] = useState(false)
   const [showNovoItemMala, setShowNovoItemMala] = useState(false)
+  const [buscaMala, setBuscaMala] = useState('')
   const [processando, setProcessando] = useState(false)
 
   async function load() {
@@ -351,8 +352,25 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
                   {conteudoMala.length === 0 ? (
                     <p className="text-xs text-[#94A3B8]">Nenhuma ferramenta cadastrada nesta mala ainda.</p>
                   ) : (
+                    <>
+                      <div className="relative mb-2">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                        <input value={buscaMala} onChange={e => setBuscaMala(e.target.value)}
+                          placeholder="Buscar por nome ou código..."
+                          className="field pl-8 text-xs py-1.5" />
+                      </div>
+                      {(() => {
+                        const termo = buscaMala.trim().toLowerCase()
+                        const itensFiltrados = termo
+                          ? conteudoMala.filter(item =>
+                              item.nome.toLowerCase().includes(termo) ||
+                              (item.codigo_interno ?? '').toLowerCase().includes(termo))
+                          : conteudoMala
+                        return itensFiltrados.length === 0 ? (
+                          <p className="text-xs text-[#94A3B8]">Nenhum item encontrado.</p>
+                        ) : (
                     <div className="space-y-1.5">
-                      {conteudoMala.map(item => (
+                      {itensFiltrados.map(item => (
                         <button key={item.id} onClick={() => abrirFilho(item.id)}
                           className="w-full flex items-center justify-between text-xs bg-[#F8FAFC] hover:bg-[#F1F5F9] rounded-lg px-3 py-2 transition-colors text-left">
                           <span className="text-[#374151] font-medium">{item.nome}{item.codigo_interno ? ` · ${item.codigo_interno}` : ''}</span>
@@ -364,6 +382,9 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
                         </button>
                       ))}
                     </div>
+                        )
+                      })()}
+                    </>
                   )}
                 </div>
               )}
