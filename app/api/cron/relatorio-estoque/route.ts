@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const esperar = (ms: number) => new Promise(res => setTimeout(res, ms))
 
   async function enviar(texto: string) {
-    if (enviados + erros.length > 0) await esperar(1200) // respeita limite de ~1 msg/s do Telegram por chat
+    if (enviados + erros.length > 0) await esperar(600) // respeita limite de ~1 msg/s do Telegram por chat, sem estourar o timeout da function (Hobby: 10s)
     const r = await enviarTelegram(texto, threadEstoque)
     if (r.ok) enviados++
     else erros.push(r.error ?? 'erro desconhecido')
