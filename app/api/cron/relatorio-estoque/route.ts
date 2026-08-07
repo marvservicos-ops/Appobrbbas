@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
   }
 
   const threadEstoque = process.env.TELEGRAM_THREAD_ESTOQUE
-  const dataHoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  const agora = new Date()
+  const dataHoje = agora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  const horaAgora = agora.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })
   const erros: string[] = []
   const entregas: unknown[] = []
   let enviados = 0
@@ -35,7 +37,7 @@ export async function GET(req: NextRequest) {
     else erros.push(r.error ?? 'erro desconhecido')
   }
 
-  await enviar(`📦 <b>Relatório diário de estoque — ${dataHoje}</b>`)
+  await enviar(`📦 <b>Relatório diário de estoque — ${dataHoje} ${horaAgora}</b>`)
 
   for (const estoque of categoriasComQuantidade) {
     const { data: produtos } = await supabase
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
       return `${marca} ${p.nome}: <b>${p.quantidade_atual}</b> ${p.unidade ?? ''}`
     })
 
-    await enviar(`<b>${estoque.nome}</b>\n${linhas.join('\n')}`)
+    await enviar(`<b>${estoque.nome}</b>\n${linhas.join('\n')}\n<i>${horaAgora}</i>`)
   }
 
   return NextResponse.json({
