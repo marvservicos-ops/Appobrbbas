@@ -156,11 +156,12 @@ export default function RegistrarPage() {
       const icone = estoque?.icone
       const needsFuncionario = icone === 'shield' || icone === 'shirt'
       const isLimpeza = icone === 'sparkles'
+      const isCopa = estoque?.nome === 'Copa/Escritório'
       if (needsFuncionario && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
       if (isLimpeza && destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
       if (isLimpeza && destinoTipo === 'manutencao' && !manutencaoId) { setError('Selecione o contrato de manutenção de destino.'); return }
       if (isLimpeza && destinoTipo === 'manutencao' && (!produtoId || produtoId === '__outro__')) { setError('Para destino Manutenção, selecione um produto do catálogo.'); return }
-      if (!needsFuncionario && !isLimpeza && !obraId) { setError('Selecione a obra de destino.'); return }
+      if (!needsFuncionario && !isLimpeza && !isCopa && !obraId) { setError('Selecione a obra de destino.'); return }
     }
     if (tipo === 'entrada' && !precoEntrada) { setError('Informe o preço unitário desta entrada.'); return }
 
@@ -186,13 +187,15 @@ export default function RegistrarPage() {
     const precoEntradaNum = parseFloat(precoEntrada) || 0
     const preco_unitario_custo = tipo === 'entrada' ? precoEntradaNum : cmpAtual
     const valor_total = qtd * preco_unitario_custo
+    const isCopa = estoque?.nome === 'Copa/Escritório'
+    const destinoFinal = isCopa ? 'uso_interno' : destinoTipo
 
     const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
       estoque_id: estoqueId, produto_id: produtoId || null, produto_nome: produtoNome.trim(),
       tipo, quantidade: qtd, unidade, responsavel: responsavel.trim(), assinatura_url, data,
-      observacoes: observacoes || null, obra_id: obraId || null, funcionario_id: funcionarioId || null,
-      manutencao_id: tipo === 'saida' && destinoTipo === 'manutencao' ? manutencaoId : null,
-      destino_tipo: tipo === 'saida' ? destinoTipo : null,
+      observacoes: observacoes || null, obra_id: isCopa ? null : (obraId || null), funcionario_id: funcionarioId || null,
+      manutencao_id: tipo === 'saida' && destinoFinal === 'manutencao' ? manutencaoId : null,
+      destino_tipo: tipo === 'saida' ? destinoFinal : null,
       preco_unitario_custo: preco_unitario_custo || null, valor_total: valor_total || null,
     }).select().single()
 
@@ -264,6 +267,29 @@ export default function RegistrarPage() {
           recorrencia: 'unico',
           ativo: true,
           observacao: 'Gerado automaticamente a partir de saída de estoque (uso interno).',
+        })
+      }
+    }
+
+    // Saída de item da Copa/Escritório vira gasto administrativo do mês, na categoria Café ou Escritório
+    if (tipo === 'saida' && isCopa && valor_total > 0) {
+      const nomeCategoria = /caf[eé]/i.test(produtoNome) ? 'Café' : 'Escritório'
+      let { data: categoria } = await supabase.from('categorias_administrativas').select('id').eq('nome', nomeCategoria).maybeSingle()
+      if (!categoria) {
+        const { data: novaCategoria } = await supabase.from('categorias_administrativas')
+          .insert({ nome: nomeCategoria, icone: nomeCategoria === 'Café' ? 'Coffee' : 'Building2', cor: nomeCategoria === 'Café' ? '#92400E' : '#64748B' })
+          .select('id').single()
+        categoria = novaCategoria
+      }
+      if (categoria) {
+        await supabase.from('custos_administrativos').insert({
+          descricao: `${produtoNome.trim()} (${qtd} ${unidade})`,
+          categoria_id: categoria.id,
+          valor: valor_total,
+          data,
+          recorrencia: 'unico',
+          ativo: true,
+          observacao: 'Gerado automaticamente a partir de saída de estoque (Copa/Escritório).',
         })
       }
     }
@@ -357,6 +383,7 @@ export default function RegistrarPage() {
           onSubmit={handleSubmit}
           estoqueId={estoqueId}
           estoqueIcone={estoque?.icone ?? ''}
+          estoqueNome={estoque?.nome ?? ''}
           produtoCodigo={produtos.find(p => p.id === produtoId)?.codigo ?? ''}
         />
       )}
@@ -459,9 +486,10 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
   observacoes, setObservacoes, valoresCampos, setValoresCampos, temAssinatura, canvasRef,
   startDraw, draw, stopDraw, limparCanvas, obraId, setObraId, funcionarioId, setFuncionarioId,
   destinoTipo, setDestinoTipo, manutencaoId, setManutencaoId, showScanner, setShowScanner,
-  scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone, produtoCodigo }: any) {
+  scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone, estoqueNome, produtoCodigo }: any) {
   const isEpiOuUniforme = estoqueIcone === 'shield' || estoqueIcone === 'shirt'
   const isLimpeza = estoqueIcone === 'sparkles'
+  const isCopa = estoqueNome === 'Copa/Escritório'
   const [respModoLivre, setRespModoLivre] = useState(false)
   const isCA = (campo: any) => {
     const n = (campo.nome as string).toLowerCase().replace(/\s/g, '')
@@ -579,6 +607,10 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
             <option value="">Selecione o funcionário...</option>
             {funcionarios.map((f: any) => <option key={f.id} value={f.id}>{f.nome}</option>)}
           </select>
+        </div>
+      ) : isCopa ? (
+        <div className="px-3 py-2.5 bg-[#F0FDFA] border border-teal-100 rounded-lg text-sm text-teal-700">
+          Esta saída será lançada automaticamente como custo administrativo do mês (Café ou Escritório).
         </div>
       ) : isLimpeza ? (
         <div className="space-y-3">
