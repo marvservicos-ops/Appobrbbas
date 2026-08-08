@@ -461,7 +461,9 @@ export default function ObraDetailPage() {
       if (!res.ok || !json.ok) {
         setMsgSincronizacao(`Erro: ${json.error ?? 'falha desconhecida'}`)
       } else {
-        setMsgSincronizacao(`${json.importados} RDO(s) importado(s), ${json.ignorados} já existiam.${json.erros?.length ? ` ${json.erros.length} erro(s).` : ''}`)
+        const resumo = `${json.importados} RDO(s) importado(s), ${json.ignorados} já existiam.`
+        const detalhesErros: string[] = json.erros ?? []
+        setMsgSincronizacao(detalhesErros.length > 0 ? `${resumo} Erros: ${detalhesErros.join(' | ')}` : resumo)
         loadDiarioRelatorios()
       }
     } catch (e) {
