@@ -15,10 +15,18 @@ type DiarioRelatorioDetalhe = DiarioRelatorioResumo & {
   linkPdf?: string
 }
 
+type DiarioObraExterna = { _id: string; nome: string }
+
 function diarioObraHeaders() {
   const token = process.env.DIARIO_OBRA_TOKEN
   if (!token) throw new Error('DIARIO_OBRA_TOKEN não configurado')
   return { 'Content-Type': 'application/json', token }
+}
+
+async function listarObrasExternas(): Promise<DiarioObraExterna[]> {
+  const res = await fetch(`${API_BASE}/obras`, { headers: diarioObraHeaders() })
+  if (!res.ok) throw new Error(`Erro ao listar obras (${res.status})`)
+  return res.json()
 }
 
 async function listarRelatorios(diarioObraId: string): Promise<DiarioRelatorioResumo[]> {
@@ -79,15 +87,15 @@ async function uploadPdf(pastaId: string, nomeArquivo: string, pdfUrl: string): 
   return { id: data.id!, url: data.webViewLink ?? `https://drive.google.com/file/d/${data.id}/view` }
 }
 
-// ── Sincronização de uma obra ────────────────────────────
-export async function sincronizarRdosDaObra(obraId: string): Promise<{ importados: number; ignorados: number; erros: string[] }> {
-  const supabase = createServiceClient()
-  const { data: obra, error: obraErr } = await supabase.from('obras').select('id, titulo, diario_obra_id').eq('id', obraId).single()
-  if (obraErr || !obra) throw new Error('Obra não encontrada')
-  if (!obra.diario_obra_id) throw new Error('Esta obra não está vinculada a uma obra no Diário de Obra')
+type ResultadoSincronizacao = { importados: number; ignorados: number; erros: string[] }
 
-  const relatorios = await listarRelatorios(obra.diario_obra_id)
-  const { data: jaImportados } = await supabase.from('diario_obra_relatorios').select('diario_relatorio_id').eq('obra_id', obraId)
+// ── Sincronização de uma obra externa (do Diário de Obra) ───────────
+// obraId: id da obra correspondente no marv-gestão, se houver (só pra
+// exibir a lista dentro da tela da obra — o backup em si não depende disso).
+async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: string, obraId: string | null): Promise<ResultadoSincronizacao> {
+  const supabase = createServiceClient()
+  const relatorios = await listarRelatorios(diarioObraId)
+  const { data: jaImportados } = await supabase.from('diario_obra_relatorios').select('diario_relatorio_id').eq('diario_obra_id_externo', diarioObraId)
   const idsImportados = new Set((jaImportados ?? []).map(r => r.diario_relatorio_id))
 
   let importados = 0, ignorados = 0
@@ -96,15 +104,17 @@ export async function sincronizarRdosDaObra(obraId: string): Promise<{ importado
   for (const resumo of relatorios) {
     if (idsImportados.has(resumo._id)) { ignorados++; continue }
     try {
-      const detalhe = await buscarDetalheRelatorio(obra.diario_obra_id, resumo._id)
+      const detalhe = await buscarDetalheRelatorio(diarioObraId, resumo._id)
       if (!detalhe.linkPdf) { erros.push(`RDO ${resumo.numero}: sem PDF disponível ainda`); continue }
 
-      const pastaId = await pastaObra(obra.titulo)
+      const pastaId = await pastaObra(diarioObraNome)
       const nomeArquivo = `RDO-${String(resumo.numero).padStart(3, '0')}_${resumo.data.replace(/\//g, '-')}.pdf`
       const arquivo = await uploadPdf(pastaId, nomeArquivo, detalhe.linkPdf)
 
       await supabase.from('diario_obra_relatorios').insert({
         obra_id: obraId,
+        diario_obra_id_externo: diarioObraId,
+        diario_obra_nome: diarioObraNome,
         diario_relatorio_id: resumo._id,
         numero: resumo.numero,
         data: converterDataBR(resumo.data),
@@ -119,6 +129,36 @@ export async function sincronizarRdosDaObra(obraId: string): Promise<{ importado
   }
 
   return { importados, ignorados, erros }
+}
+
+// ── Sincronização de uma obra vinculada no marv-gestão ───────────────
+export async function sincronizarRdosDaObra(obraId: string): Promise<ResultadoSincronizacao> {
+  const supabase = createServiceClient()
+  const { data: obra, error: obraErr } = await supabase.from('obras').select('id, titulo, diario_obra_id').eq('id', obraId).single()
+  if (obraErr || !obra) throw new Error('Obra não encontrada')
+  if (!obra.diario_obra_id) throw new Error('Esta obra não está vinculada a uma obra no Diário de Obra')
+
+  return sincronizarObraExterna(obra.diario_obra_id, obra.titulo, obraId)
+}
+
+// ── Backup completo: TODAS as obras do Diário de Obra, vinculadas ou não ──
+export async function sincronizarBackupCompleto(): Promise<Record<string, ResultadoSincronizacao | { erro: string }>> {
+  const supabase = createServiceClient()
+  const [obrasExternas, { data: obrasMarv }] = await Promise.all([
+    listarObrasExternas(),
+    supabase.from('obras').select('id, diario_obra_id').not('diario_obra_id', 'is', null),
+  ])
+  const mapaLink = new Map((obrasMarv ?? []).map(o => [o.diario_obra_id as string, o.id as string]))
+
+  const resultados: Record<string, ResultadoSincronizacao | { erro: string }> = {}
+  for (const obraExterna of obrasExternas) {
+    try {
+      resultados[obraExterna.nome] = await sincronizarObraExterna(obraExterna._id, obraExterna.nome, mapaLink.get(obraExterna._id) ?? null)
+    } catch (e) {
+      resultados[obraExterna.nome] = { erro: e instanceof Error ? e.message : String(e) }
+    }
+  }
+  return resultados
 }
 
 function converterDataBR(data: string): string | null {

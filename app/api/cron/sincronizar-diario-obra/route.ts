@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/service'
-import { sincronizarRdosDaObra } from '@/lib/diarioObra'
+import { sincronizarBackupCompleto } from '@/lib/diarioObra'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 export async function GET(req: NextRequest) {
   if (process.env.CRON_SECRET) {
@@ -13,18 +12,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const supabase = createServiceClient()
-  const { data: obras } = await supabase.from('obras').select('id, titulo').not('diario_obra_id', 'is', null)
+  // Faz backup de TODAS as obras do Diário de Obra (vinculadas ou não a uma
+  // obra do marv-gestão), inclusive as que forem criadas no futuro.
+  const resultados = await sincronizarBackupCompleto()
 
-  const resultados: Record<string, unknown> = {}
-  for (const obra of obras ?? []) {
-    try {
-      resultados[obra.titulo] = await sincronizarRdosDaObra(obra.id)
-    } catch (e) {
-      resultados[obra.titulo] = { erro: e instanceof Error ? e.message : String(e) }
-    }
-  }
-
-  return NextResponse.json({ ok: true, obras: obras?.length ?? 0, resultados },
+  return NextResponse.json({ ok: true, obras: Object.keys(resultados).length, resultados },
     { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } })
 }

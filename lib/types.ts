@@ -63,7 +63,9 @@ export interface Obra {
 
 export interface DiarioObraRelatorio {
   id: string
-  obra_id: string
+  obra_id?: string | null
+  diario_obra_id_externo: string
+  diario_obra_nome?: string | null
   diario_relatorio_id: string
   numero?: number | null
   data?: string | null

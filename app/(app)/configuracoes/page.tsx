@@ -383,6 +383,60 @@ function SecaoTributacao() {
   )
 }
 
+function SecaoDiarioObra() {
+  const [rodando, setRodando] = useState(false)
+  const [resultado, setResultado] = useState<{ obras: number; resumo: string } | null>(null)
+  const [erro, setErro] = useState('')
+
+  async function rodarBackup() {
+    setRodando(true)
+    setErro('')
+    setResultado(null)
+    try {
+      const res = await fetch('/api/diario-obra/backup-completo', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setErro(json.error ?? 'falha desconhecida')
+      } else {
+        const resultados = json.resultados as Record<string, any>
+        const totalImportados = Object.values(resultados).reduce((s: number, r: any) => s + (r.importados ?? 0), 0)
+        const totalIgnorados = Object.values(resultados).reduce((s: number, r: any) => s + (r.ignorados ?? 0), 0)
+        const comErro = Object.entries(resultados).filter(([, r]: [string, any]) => r.erro || (r.erros && r.erros.length > 0))
+        let resumo = `${totalImportados} RDO(s) novo(s) salvo(s) no Drive, ${totalIgnorados} já existiam.`
+        if (comErro.length > 0) resumo += ` ${comErro.length} obra(s) com algum erro.`
+        setResultado({ obras: json.obras, resumo })
+      }
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+    setRodando(false)
+  }
+
+  return (
+    <section className="card">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+          <Save size={18} className="text-[#4F7CFF]" />
+        </div>
+        <div>
+          <h2 className="font-syne font-semibold text-[#0F172A]">Backup do Diário de Obra</h2>
+          <p className="text-xs text-[#94A3B8]">Salva os PDFs de todos os RDOs de todas as obras do Diário de Obra no Google Drive (roda sozinho todo dia às 9h também)</p>
+        </div>
+      </div>
+
+      <button onClick={rodarBackup} disabled={rodando} className="btn-primary flex items-center gap-2">
+        {rodando ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+        {rodando ? 'Fazendo backup...' : 'Fazer backup completo agora'}
+      </button>
+
+      {resultado && (
+        <p className="text-xs text-[#64748B] mt-3">{resultado.obras} obra(s) verificada(s). {resultado.resumo}</p>
+      )}
+      {erro && <p className="text-xs text-red-600 mt-3">Erro: {erro}</p>}
+    </section>
+  )
+}
+
 function SecaoExtras() {
   const [regras, setRegras] = useState<RegraExtra[]>([])
   const [editando, setEditando] = useState<Record<string, string>>({})
@@ -644,6 +698,9 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
         </section>
+
+        {/* Backup do Diário de Obra */}
+        <SecaoDiarioObra />
 
         {/* Tributação */}
         <SecaoTributacao />
