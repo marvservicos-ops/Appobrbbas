@@ -1,4 +1,5 @@
 import { google } from 'googleapis'
+import { Readable } from 'stream'
 import { createServiceClient } from '@/lib/supabase/service'
 
 const API_BASE = 'https://apiexterna.diariodeobra.app/v1'
@@ -63,7 +64,6 @@ async function uploadPdf(pastaId: string, nomeArquivo: string, pdfUrl: string): 
   if (!resp.ok) throw new Error(`Erro ao baixar PDF (${resp.status})`)
   const buffer = Buffer.from(await resp.arrayBuffer())
   const drive = driveClient()
-  const { Readable } = await import('stream')
   const { data } = await drive.files.create({
     requestBody: { name: nomeArquivo, parents: [pastaId] },
     media: { mimeType: 'application/pdf', body: Readable.from(buffer) },
