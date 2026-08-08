@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, EstoqueCategoria } from '@/lib/types'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
+import { PhotoLightbox, usePhotoLightbox } from '@/components/PhotoLightbox'
 
 function nivelEstoque(item: EstoqueItem) {
   if (item.quantidade_atual <= 0) return 'critico'
@@ -19,6 +20,7 @@ export default function EstoqueItensPage() {
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
   const [loading, setLoading] = useState(true)
+  const { lightboxUrl, openLightbox, closeLightbox } = usePhotoLightbox()
 
   async function load() {
     setLoading(true)
@@ -96,7 +98,12 @@ export default function EstoqueItensPage() {
                   {/* Foto */}
                   <div className="relative h-36 bg-[#F8FAFC] border-b border-[#E2E8F0]">
                     {item.foto_url ? (
-                      <img src={item.foto_url} alt={item.nome} className="w-full h-full object-cover" />
+                      <img
+                        src={item.foto_url}
+                        alt={item.nome}
+                        className="w-full h-full object-cover cursor-zoom-in"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); openLightbox(item.foto_url!) }}
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <Package size={32} className="text-[#CBD5E1]" />
@@ -145,6 +152,7 @@ export default function EstoqueItensPage() {
           </div>
         )}
       </div>
+      <PhotoLightbox url={lightboxUrl} onClose={closeLightbox} />
     </div>
   )
 }

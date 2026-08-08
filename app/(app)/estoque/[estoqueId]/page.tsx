@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
 import Link from 'next/link'
 import FerramentasPanel from './ferramentas/FerramentasPanel'
+import { PhotoLightbox, usePhotoLightbox } from '@/components/PhotoLightbox'
 
 const ICONE_MAP: Record<string, React.ReactNode> = {
   shield: <Shield size={18} />, sparkles: <Sparkles size={18} />,
@@ -34,6 +35,7 @@ export default function EstoqueDetalhe() {
   const [editandoProduto, setEditandoProduto] = useState<EstoqueProduto | null>(null)
   const [devolvendoRegistro, setDevolvendoRegistro] = useState<EstoqueRegistro | null>(null)
   const [destacado, setDestacado] = useState<string | null>(null)
+  const { lightboxUrl, openLightbox, closeLightbox } = usePhotoLightbox()
 
   // Seleção em lote
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
@@ -430,7 +432,12 @@ export default function EstoqueDetalhe() {
                       <tr key={p.id} className={`border-b border-[#F1F5F9] group transition-colors ${negativo ? 'bg-red-50 hover:bg-red-100' : abaixoMin ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-[#F8FAFC]'}`}>
                         <td className="px-3 py-2 hidden sm:table-cell">
                           {p.foto_url
-                            ? <img src={p.foto_url} alt="" className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0]" />
+                            ? <img
+                                src={p.foto_url}
+                                alt=""
+                                className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0] cursor-zoom-in"
+                                onClick={() => openLightbox(p.foto_url!)}
+                              />
                             : <div className="w-9 h-9 rounded-lg bg-[#F1F5F9] flex items-center justify-center"><Package size={14} className="text-[#CBD5E1]" /></div>
                           }
                         </td>
@@ -506,6 +513,8 @@ export default function EstoqueDetalhe() {
           onSaved={() => { setShowEdit(false); load() }}
         />
       )}
+
+      <PhotoLightbox url={lightboxUrl} onClose={closeLightbox} />
     </div>
   )
 }

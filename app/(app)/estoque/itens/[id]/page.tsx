@@ -6,6 +6,7 @@ import { ArrowLeft, Edit2, ArrowUpCircle, ArrowDownCircle, RefreshCw, Package, T
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, EstoqueMovimentacao } from '@/lib/types'
 import Link from 'next/link'
+import { PhotoLightbox, usePhotoLightbox } from '@/components/PhotoLightbox'
 
 function formatDate(d?: string | null) {
   if (!d) return '—'
@@ -19,6 +20,7 @@ export default function ItemDetailPage() {
   const [item, setItem] = useState<EstoqueItem | null>(null)
   const [movs, setMovs] = useState<EstoqueMovimentacao[]>([])
   const [loading, setLoading] = useState(true)
+  const { lightboxUrl, openLightbox, closeLightbox } = usePhotoLightbox()
 
   async function load() {
     const supabase = createClient()
@@ -89,7 +91,12 @@ export default function ItemDetailPage() {
             {/* Foto */}
             <div className="card p-0 overflow-hidden">
               {item.foto_url ? (
-                <img src={item.foto_url} alt={item.nome} className="w-full h-48 object-cover" />
+                <img
+                  src={item.foto_url}
+                  alt={item.nome}
+                  className="w-full h-48 object-cover cursor-zoom-in"
+                  onClick={() => openLightbox(item.foto_url!)}
+                />
               ) : (
                 <div className="w-full h-48 bg-[#F8FAFC] flex items-center justify-center">
                   <Package size={48} className="text-[#CBD5E1]" />
@@ -237,6 +244,7 @@ export default function ItemDetailPage() {
           </div>
         </div>
       </div>
+      <PhotoLightbox url={lightboxUrl} onClose={closeLightbox} />
     </div>
   )
 }

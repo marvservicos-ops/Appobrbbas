@@ -9,6 +9,7 @@ import ModalDefeito from './ModalDefeito'
 import ModalEditarFerramenta from './ModalEditarFerramenta'
 import ModalAtribuirMala from './ModalAtribuirMala'
 import ModalNovaFerramenta from './ModalNovaFerramenta'
+import { PhotoLightbox, usePhotoLightbox } from '@/components/PhotoLightbox'
 
 function statusLabelMap(modoPatrimonio: boolean): Record<string, string> {
   return modoPatrimonio
@@ -388,6 +389,7 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
   const [showNovoItemMala, setShowNovoItemMala] = useState(false)
   const [buscaMala, setBuscaMala] = useState('')
   const [processando, setProcessando] = useState(false)
+  const { lightboxUrl, openLightbox, closeLightbox } = usePhotoLightbox()
 
   async function load() {
     setLoading(true)
@@ -484,12 +486,22 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   {ferramenta.foto_url
-                    ? <img src={ferramenta.foto_url} alt="" className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0]" />
+                    ? <img
+                        src={ferramenta.foto_url}
+                        alt=""
+                        className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0] cursor-zoom-in"
+                        onClick={() => openLightbox(ferramenta.foto_url!)}
+                      />
                     : <div className="w-16 h-16 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]">
                         {ferramenta.eh_mala ? <Briefcase size={22} /> : modoPatrimonio ? <Building2 size={22} /> : <Wrench size={22} />}
                       </div>}
                   {ferramenta.foto_url_2 && (
-                    <img src={ferramenta.foto_url_2} alt="" className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0]" />
+                    <img
+                      src={ferramenta.foto_url_2}
+                      alt=""
+                      className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0] cursor-zoom-in"
+                      onClick={() => openLightbox(ferramenta.foto_url_2!)}
+                    />
                   )}
                 </div>
                 <div>
@@ -706,6 +718,7 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
           onClose={() => setShowNovoItemMala(false)}
           onCreated={() => { setShowNovoItemMala(false); load(); onChanged() }} />
       )}
+      <PhotoLightbox url={lightboxUrl} onClose={closeLightbox} />
     </div>
   )
 }
