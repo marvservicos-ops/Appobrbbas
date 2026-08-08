@@ -35,10 +35,17 @@ async function buscarDetalheRelatorio(diarioObraId: string, relatorioId: string)
 
 // ── Google Drive ────────────────────────────────────────
 function driveClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  if (!email || !privateKey) throw new Error('Credenciais do Google Drive não configuradas (GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)')
-  const auth = new google.auth.JWT({ email, key: privateKey, scopes: ['https://www.googleapis.com/auth/drive'] })
+  // Contas de serviço não têm cota própria no Drive pessoal (só funcionam em
+  // Shared Drives do Workspace). Por isso autenticamos como o usuário real via
+  // OAuth (refresh token), pra que os arquivos entrem na cota dele normalmente.
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('Credenciais OAuth do Google Drive não configuradas (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET / GOOGLE_OAUTH_REFRESH_TOKEN)')
+  }
+  const auth = new google.auth.OAuth2(clientId, clientSecret)
+  auth.setCredentials({ refresh_token: refreshToken })
   return google.drive({ version: 'v3', auth })
 }
 
