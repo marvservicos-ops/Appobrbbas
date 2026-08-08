@@ -87,22 +87,26 @@ async function uploadPdf(pastaId: string, nomeArquivo: string, pdfUrl: string): 
   return { id: data.id!, url: data.webViewLink ?? `https://drive.google.com/file/d/${data.id}/view` }
 }
 
-type ResultadoSincronizacao = { importados: number; ignorados: number; erros: string[] }
+type ResultadoSincronizacao = { importados: number; ignorados: number; erros: string[]; pendente: boolean }
 
 // ── Sincronização de uma obra externa (do Diário de Obra) ───────────
 // obraId: id da obra correspondente no marv-gestão, se houver (só pra
 // exibir a lista dentro da tela da obra — o backup em si não depende disso).
-async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: string, obraId: string | null): Promise<ResultadoSincronizacao> {
+// orcamento: número máximo de RDOs a baixar/subir nesta chamada, pra nunca
+// estourar o tempo limite do servidor — o que sobrar fica pra próxima chamada.
+async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: string, obraId: string | null, orcamento: number): Promise<ResultadoSincronizacao> {
   const supabase = createServiceClient()
   const relatorios = await listarRelatorios(diarioObraId)
   const { data: jaImportados } = await supabase.from('diario_obra_relatorios').select('diario_relatorio_id').eq('diario_obra_id_externo', diarioObraId)
   const idsImportados = new Set((jaImportados ?? []).map(r => r.diario_relatorio_id))
 
   let importados = 0, ignorados = 0
+  let pendente = false
   const erros: string[] = []
 
   for (const resumo of relatorios) {
     if (idsImportados.has(resumo._id)) { ignorados++; continue }
+    if (importados >= orcamento) { pendente = true; break }
     try {
       const detalhe = await buscarDetalheRelatorio(diarioObraId, resumo._id)
       if (!detalhe.linkPdf) { erros.push(`RDO ${resumo.numero}: sem PDF disponível ainda`); continue }
@@ -128,21 +132,24 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
     }
   }
 
-  return { importados, ignorados, erros }
+  return { importados, ignorados, erros, pendente }
 }
 
 // ── Sincronização de uma obra vinculada no marv-gestão ───────────────
-export async function sincronizarRdosDaObra(obraId: string): Promise<ResultadoSincronizacao> {
+export async function sincronizarRdosDaObra(obraId: string, orcamento = 30): Promise<ResultadoSincronizacao> {
   const supabase = createServiceClient()
   const { data: obra, error: obraErr } = await supabase.from('obras').select('id, titulo, diario_obra_id').eq('id', obraId).single()
   if (obraErr || !obra) throw new Error('Obra não encontrada')
   if (!obra.diario_obra_id) throw new Error('Esta obra não está vinculada a uma obra no Diário de Obra')
 
-  return sincronizarObraExterna(obra.diario_obra_id, obra.titulo, obraId)
+  return sincronizarObraExterna(obra.diario_obra_id, obra.titulo, obraId, orcamento)
 }
 
 // ── Backup completo: TODAS as obras do Diário de Obra, vinculadas ou não ──
-export async function sincronizarBackupCompleto(): Promise<Record<string, ResultadoSincronizacao | { erro: string }>> {
+// limite: teto de RDOs baixados/enviados nesta chamada (mantém cada chamada
+// curta o bastante pra não estourar o tempo do servidor). completo=false
+// avisa o chamador que ainda sobrou trabalho pra uma próxima chamada.
+export async function sincronizarBackupCompleto(limite = 20): Promise<{ resultados: Record<string, ResultadoSincronizacao | { erro: string }>; completo: boolean }> {
   const supabase = createServiceClient()
   const [obrasExternas, { data: obrasMarv }] = await Promise.all([
     listarObrasExternas(),
@@ -151,14 +158,21 @@ export async function sincronizarBackupCompleto(): Promise<Record<string, Result
   const mapaLink = new Map((obrasMarv ?? []).map(o => [o.diario_obra_id as string, o.id as string]))
 
   const resultados: Record<string, ResultadoSincronizacao | { erro: string }> = {}
+  let orcamentoRestante = limite
+  let completo = true
+
   for (const obraExterna of obrasExternas) {
+    if (orcamentoRestante <= 0) { completo = false; break }
     try {
-      resultados[obraExterna.nome] = await sincronizarObraExterna(obraExterna._id, obraExterna.nome, mapaLink.get(obraExterna._id) ?? null)
+      const r = await sincronizarObraExterna(obraExterna._id, obraExterna.nome, mapaLink.get(obraExterna._id) ?? null, orcamentoRestante)
+      resultados[obraExterna.nome] = r
+      orcamentoRestante -= r.importados
+      if (r.pendente) completo = false
     } catch (e) {
       resultados[obraExterna.nome] = { erro: e instanceof Error ? e.message : String(e) }
     }
   }
-  return resultados
+  return { resultados, completo }
 }
 
 function converterDataBR(data: string): string | null {

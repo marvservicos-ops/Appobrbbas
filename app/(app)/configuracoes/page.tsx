@@ -392,19 +392,29 @@ function SecaoDiarioObra() {
     setRodando(true)
     setErro('')
     setResultado(null)
+    let totalImportados = 0, totalIgnorados = 0, totalComErro = 0
+    let rodadas = 0
     try {
-      const res = await fetch('/api/diario-obra/backup-completo', { method: 'POST' })
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        setErro(json.error ?? 'falha desconhecida')
-      } else {
+      while (true) {
+        rodadas++
+        const res = await fetch('/api/diario-obra/backup-completo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limite: 20 }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.ok) { setErro(json.error ?? 'falha desconhecida'); break }
+
         const resultados = json.resultados as Record<string, any>
-        const totalImportados = Object.values(resultados).reduce((s: number, r: any) => s + (r.importados ?? 0), 0)
-        const totalIgnorados = Object.values(resultados).reduce((s: number, r: any) => s + (r.ignorados ?? 0), 0)
-        const comErro = Object.entries(resultados).filter(([, r]: [string, any]) => r.erro || (r.erros && r.erros.length > 0))
+        totalImportados += Object.values(resultados).reduce((s: number, r: any) => s + (r.importados ?? 0), 0)
+        totalIgnorados += Object.values(resultados).reduce((s: number, r: any) => s + (r.ignorados ?? 0), 0)
+        totalComErro += Object.values(resultados).filter((r: any) => r.erro || (r.erros && r.erros.length > 0)).length
+
         let resumo = `${totalImportados} RDO(s) novo(s) salvo(s) no Drive, ${totalIgnorados} já existiam.`
-        if (comErro.length > 0) resumo += ` ${comErro.length} obra(s) com algum erro.`
+        if (totalComErro > 0) resumo += ` ${totalComErro} obra(s) com algum erro.`
+        if (!json.completo) resumo += ` Continuando (rodada ${rodadas})...`
         setResultado({ obras: json.obras, resumo })
+
+        if (json.completo) break
+        if (rodadas >= 300) { setErro('Muitas rodadas — parando por segurança. Clique de novo pra continuar.'); break }
       }
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
@@ -420,7 +430,7 @@ function SecaoDiarioObra() {
         </div>
         <div>
           <h2 className="font-syne font-semibold text-[#0F172A]">Backup do Diário de Obra</h2>
-          <p className="text-xs text-[#94A3B8]">Salva os PDFs de todos os RDOs de todas as obras do Diário de Obra no Google Drive (roda sozinho todo dia às 9h também)</p>
+          <p className="text-xs text-[#94A3B8]">Salva os PDFs de todos os RDOs de todas as obras do Diário de Obra no Google Drive. Roda em lotes até terminar tudo — deixe a aba aberta até a mensagem parar de mudar. Também roda sozinho todo dia às 9h.</p>
         </div>
       </div>
 
@@ -434,7 +444,7 @@ function SecaoDiarioObra() {
       )}
       {erro && (
         <p className="text-xs text-red-600 mt-3">
-          Erro: {erro} — se tiver muitos relatórios pra baixar, isso costuma ser só um timeout de conexão; o backup continua rodando no servidor mesmo assim. Espere um pouco e clique de novo pra continuar de onde parou (RDOs já salvos não são duplicados).
+          Erro: {erro} — pode clicar de novo, ele continua de onde parou (RDOs já salvos não são duplicados).
         </p>
       )}
     </section>
