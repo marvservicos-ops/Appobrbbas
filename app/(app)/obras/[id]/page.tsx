@@ -1132,7 +1132,7 @@ export default function ObraDetailPage() {
                           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
                           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
                           <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
-                          <th className="px-4 py-3 w-24" />
+                          <th className="px-4 py-3 w-36" />
                         </tr>
                       </thead>
                       <tbody>
@@ -1143,10 +1143,10 @@ export default function ObraDetailPage() {
                               {r.data ? new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}
                             </td>
                             <td className="px-4 py-3 text-sm text-[#64748B]">{r.status_descricao ?? '—'}</td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
                               {r.drive_file_url && (
                                 <a href={r.drive_file_url} target="_blank" rel="noopener noreferrer"
-                                  className="text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1 rounded transition-colors">
+                                  className="inline-block text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1.5 rounded transition-colors whitespace-nowrap">
                                   Abrir no Drive
                                 </a>
                               )}
