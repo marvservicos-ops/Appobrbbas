@@ -432,7 +432,11 @@ function SecaoDiarioObra() {
       {resultado && (
         <p className="text-xs text-[#64748B] mt-3">{resultado.obras} obra(s) verificada(s). {resultado.resumo}</p>
       )}
-      {erro && <p className="text-xs text-red-600 mt-3">Erro: {erro}</p>}
+      {erro && (
+        <p className="text-xs text-red-600 mt-3">
+          Erro: {erro} — se tiver muitos relatórios pra baixar, isso costuma ser só um timeout de conexão; o backup continua rodando no servidor mesmo assim. Espere um pouco e clique de novo pra continuar de onde parou (RDOs já salvos não são duplicados).
+        </p>
+      )}
     </section>
   )
 }
