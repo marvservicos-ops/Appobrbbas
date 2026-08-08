@@ -401,15 +401,24 @@ function SecaoDiarioObra() {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limite: 20 }),
         })
         const json = await res.json()
-        if (!res.ok || !json.ok) { setErro(json.error ?? 'falha desconhecida'); break }
+        if (!res.ok || !json.ok) {
+          const detalhe = [json.errorType, json.error, json.errorStack].filter(Boolean).join(' — ')
+          setErro(detalhe || 'falha desconhecida')
+          break
+        }
 
         const resultados = json.resultados as Record<string, any>
         totalImportados += Object.values(resultados).reduce((s: number, r: any) => s + (r.importados ?? 0), 0)
         totalIgnorados += Object.values(resultados).reduce((s: number, r: any) => s + (r.ignorados ?? 0), 0)
-        totalComErro += Object.values(resultados).filter((r: any) => r.erro || (r.erros && r.erros.length > 0)).length
+        const obrasComErro = Object.entries(resultados).filter(([, r]: [string, any]) => r.erro || (r.erros && r.erros.length > 0))
+        totalComErro += obrasComErro.length
+        if (obrasComErro.length > 0) {
+          const detalhesErro = obrasComErro.map(([nome, r]: [string, any]) => `${nome}: ${r.erro ?? r.erros.join('; ')}`).join(' | ')
+          console.warn('Erros de backup por obra:', detalhesErro)
+        }
 
         let resumo = `${totalImportados} RDO(s) novo(s) salvo(s) no Drive, ${totalIgnorados} já existiam.`
-        if (totalComErro > 0) resumo += ` ${totalComErro} obra(s) com algum erro.`
+        if (totalComErro > 0) resumo += ` ${totalComErro} obra(s) com algum erro (veja o console).`
         if (!json.completo) resumo += ` Continuando (rodada ${rodadas})...`
         setResultado({ obras: json.obras, resumo })
 
@@ -417,7 +426,8 @@ function SecaoDiarioObra() {
         if (rodadas >= 300) { setErro('Muitas rodadas — parando por segurança. Clique de novo pra continuar.'); break }
       }
     } catch (e) {
-      setErro(e instanceof Error ? e.message : String(e))
+      const nome = e instanceof Error ? e.constructor.name : typeof e
+      setErro(`${nome}: ${e instanceof Error ? e.message : String(e)} (falhou na rodada ${rodadas}, do lado do navegador)`)
     }
     setRodando(false)
   }
