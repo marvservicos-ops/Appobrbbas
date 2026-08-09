@@ -4169,10 +4169,12 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
   const [mensagem, setMensagem] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [assinaturaHtml, setAssinaturaHtml] = useState('')
 
   useEffect(() => {
     createClient().from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
       .then(({ data }) => setTemThread(Boolean(data)))
+    createClient().auth.getUser().then(({ data }) => setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? ''))
   }, [obraId])
 
   useEffect(() => {
@@ -4203,6 +4205,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
           destinatarios: emails,
           assunto: assunto.trim(),
           mensagem,
+          assinaturaHtml,
         }),
       })
       const data = await res.json()
@@ -4292,10 +4295,12 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
   const [mensagem, setMensagem] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [assinaturaHtml, setAssinaturaHtml] = useState('')
 
   useEffect(() => {
     createClient().from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
       .then(({ data }) => setTemThread(Boolean(data)))
+    createClient().auth.getUser().then(({ data }) => setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? ''))
   }, [obraId])
 
   useEffect(() => {
@@ -4326,6 +4331,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
           destinatarios: emails,
           assunto: assunto.trim(),
           mensagem,
+          assinaturaHtml,
         }),
       })
       const data = await res.json()

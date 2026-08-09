@@ -306,8 +306,13 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
+  const [assinaturaHtml, setAssinaturaHtml] = useState('')
 
   const obra = obras.find(o => o.id === obraId)
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data }) => setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? ''))
+  }, [])
 
   useEffect(() => {
     setRdos([])
@@ -367,6 +372,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
           destinatarios: emails,
           assunto: assunto.trim(),
           mensagem,
+          assinaturaHtml,
         }),
       })
       const data = await res.json()

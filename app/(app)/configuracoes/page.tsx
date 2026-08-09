@@ -585,8 +585,18 @@ const EMPRESA_PADRAO = {
   endereco: 'Rua Cândido Benício, nº 2326, Loja — Praça Seca, Jacarepaguá — RJ, CEP 22733-001',
 }
 
+function assinaturaPadrao(nome: string, cargo: string) {
+  return `<p>Atenciosamente,</p>
+<p><strong>${nome || 'Seu Nome'}</strong><br>${cargo || 'Seu cargo'}</p>
+<p>Tel. (21) 2435-6773<br>Cel. (21) 98905-0030</p>
+<p>Rua Cândido Benício 2326 Loja<br>Praça Seca - Jacarepaguá - RJ</p>
+<p>____________________________________________</p>
+<p><img src="https://app.marvservicos.com.br/marv-logo.png" alt="MARV" style="max-height:50px" /></p>`
+}
+
 export default function ConfiguracoesPage() {
   const [perfil, setPerfil] = useState({ nome: '', email: '', cargo: '' })
+  const [assinaturaEmail, setAssinaturaEmail] = useState('')
   const [empresa, setEmpresa] = useState(EMPRESA_PADRAO)
   const [salvandoEmpresa, setSalvandoEmpresa] = useState(false)
   const [savedEmpresa, setSavedEmpresa] = useState(false)
@@ -608,6 +618,7 @@ export default function ConfiguracoesPage() {
           nome: user.user_metadata?.nome ?? user.user_metadata?.full_name ?? '',
           cargo: user.user_metadata?.cargo ?? '',
         }))
+        setAssinaturaEmail(user.user_metadata?.assinatura_email ?? '')
       }
       if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
       setLoading(false)
@@ -620,7 +631,7 @@ export default function ConfiguracoesPage() {
     setSalvando(true)
     const supabase = createClient()
     await supabase.auth.updateUser({
-      data: { nome: perfil.nome, cargo: perfil.cargo }
+      data: { nome: perfil.nome, cargo: perfil.cargo, assinatura_email: assinaturaEmail }
     })
     setSalvando(false)
     setSaved(true)
@@ -674,6 +685,17 @@ export default function ConfiguracoesPage() {
               <label className="block text-sm font-medium text-[#374151] mb-1.5">E-mail</label>
               <input className="field bg-[#F8FAFC] text-[#94A3B8] cursor-not-allowed" value={perfil.email} readOnly />
               <p className="text-xs text-[#94A3B8] mt-1">O e-mail não pode ser alterado aqui.</p>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-[#374151]">Assinatura de e-mail</label>
+                {!assinaturaEmail && (
+                  <button type="button" onClick={() => setAssinaturaEmail(assinaturaPadrao(perfil.nome, perfil.cargo))}
+                    className="text-xs text-[#4F7CFF] hover:underline">Usar modelo padrão</button>
+                )}
+              </div>
+              <RichTextEditor value={assinaturaEmail} onChange={setAssinaturaEmail} placeholder="Assinatura que aparece no fim dos e-mails enviados pelo sistema (ex: relatórios de obra)" />
+              <p className="text-xs text-[#94A3B8] mt-1">Aparece automaticamente no fim de todo e-mail que você enviar pelo sistema (relatórios de obra, etc.).</p>
             </div>
             <div className="flex justify-end">
               <button type="submit" disabled={salvando} className="btn-primary flex items-center gap-2">

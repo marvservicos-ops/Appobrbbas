@@ -11,7 +11,7 @@ const MAX_POR_ENVIO = 10
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
-  const { obraId, relatorioIds, destinatarios, assunto, mensagem } = await req.json()
+  const { obraId, relatorioIds, destinatarios, assunto, mensagem, assinaturaHtml } = await req.json()
 
   if (!obraId || !Array.isArray(relatorioIds) || relatorioIds.length === 0 || !Array.isArray(destinatarios) || destinatarios.length === 0 || !assunto) {
     return NextResponse.json({ error: 'Campos obrigatórios: obraId, relatorioIds, destinatarios, assunto' }, { status: 400 })
@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
     headers['References'] = thread.ultimo_message_id
   }
 
-  const html = String(mensagem ?? '').split('\n').map((l: string) => l || '&nbsp;').join('<br>')
+  const corpo = String(mensagem ?? '').split('\n').map((l: string) => l || '&nbsp;').join('<br>')
+  const html = assinaturaHtml ? `${corpo}<br><br>${assinaturaHtml}` : corpo
 
   const { data, error } = await resend.emails.send({
     from: `MARV Serviços <${FROM}>`,
