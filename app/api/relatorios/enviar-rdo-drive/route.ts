@@ -11,7 +11,7 @@ const MAX_POR_ENVIO = 10
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
-  const { obraId, relatorioIds, destinatarios, assunto, mensagem, assinaturaHtml } = await req.json()
+  const { obraId, relatorioIds, destinatarios, assunto, mensagem, assinaturaHtml, remetenteNome, remetenteEmail } = await req.json()
 
   if (!obraId || !Array.isArray(relatorioIds) || relatorioIds.length === 0 || !Array.isArray(destinatarios) || destinatarios.length === 0 || !assunto) {
     return NextResponse.json({ error: 'Campos obrigatórios: obraId, relatorioIds, destinatarios, assunto' }, { status: 400 })
@@ -62,8 +62,12 @@ export async function POST(req: NextRequest) {
   const corpo = String(mensagem ?? '').split('\n').map((l: string) => l || '&nbsp;').join('<br>')
   const html = assinaturaHtml ? `${corpo}<br><br>${assinaturaHtml}` : corpo
 
+  // Manda do e-mail de quem está enviando (domínio verificado no Resend), não sempre do mesmo remetente fixo
+  const emailValido = typeof remetenteEmail === 'string' && remetenteEmail.endsWith('@marvservicos.com.br')
+  const from = emailValido ? `${remetenteNome || 'MARV Serviços'} <${remetenteEmail}>` : `MARV Serviços <${FROM}>`
+
   const { data, error } = await resend.emails.send({
-    from: `MARV Serviços <${FROM}>`,
+    from,
     to: destinatarios,
     subject: assunto,
     html,
