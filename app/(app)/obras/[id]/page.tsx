@@ -211,6 +211,8 @@ export default function ObraDetailPage() {
   const [docs, setDocs] = useState<Documento[]>([])
   const [pastas, setPastas] = useState<DocPasta[]>([])
   const [rdos, setRdos] = useState<RDO[]>([])
+  const [selecionadosRdo, setSelecionadosRdo] = useState<Set<string>>(new Set())
+  const [showEnviarRdo, setShowEnviarRdo] = useState(false)
   const [diarioRelatorios, setDiarioRelatorios] = useState<DiarioObraRelatorio[]>([])
   const [sincronizandoDiario, setSincronizandoDiario] = useState(false)
   const [msgSincronizacao, setMsgSincronizacao] = useState('')
@@ -1034,6 +1036,12 @@ export default function ObraDetailPage() {
                 <p className="text-xs text-[#64748B] mt-0.5">RDO — registre o que aconteceu em cada dia de obra</p>
               </div>
               <div className="flex items-center gap-2">
+                {selecionadosRdo.size > 0 && (
+                  <button onClick={() => setShowEnviarRdo(true)}
+                    className="flex items-center gap-1.5 text-sm px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white rounded-lg transition-colors">
+                    <Mail size={14} /> Enviar por E-mail ({selecionadosRdo.size})
+                  </button>
+                )}
                 <Link href={`/obras/${id}/modelos`}
                   className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors">
                   <Settings size={14} /> <span className="hidden sm:inline">Personalizar</span>
@@ -1060,6 +1068,7 @@ export default function ObraDetailPage() {
                 <table className="w-full min-w-[680px]">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                      <th className="px-4 py-3 w-8" />
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
@@ -1072,6 +1081,11 @@ export default function ObraDetailPage() {
                       const statusLabel = rdo.status === 'aprovado' ? 'Aprovado' : rdo.status === 'revisando' ? 'Revisando' : 'Preenchendo'
                       return (
                         <tr key={rdo.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
+                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={selecionadosRdo.has(rdo.id)}
+                              onChange={() => setSelecionadosRdo(s => { const n = new Set(s); n.has(rdo.id) ? n.delete(rdo.id) : n.add(rdo.id); return n })}
+                              className="rounded" />
+                          </td>
                           <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{rdo.numero}</td>
                           <td className="px-4 py-3 text-sm text-[#374151]">
                             {new Date(rdo.data + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
@@ -1246,6 +1260,17 @@ export default function ObraDetailPage() {
           <AbaEquipe obraId={id} />
         )}
       </div>
+
+      {/* Modal Enviar RDO por e-mail */}
+      {showEnviarRdo && obra && (
+        <ModalEnviarRdo
+          obraId={id}
+          obraTitulo={obra.titulo}
+          rdos={rdos.filter(r => selecionadosRdo.has(r.id))}
+          onClose={() => setShowEnviarRdo(false)}
+          onSent={() => { setShowEnviarRdo(false); setSelecionadosRdo(new Set()) }}
+        />
+      )}
 
       {/* Modal Email */}
       {emailModal && (
@@ -4100,6 +4125,128 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal: Enviar RDO(s) por e-mail ────────────────────
+function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
+  obraId: string; obraTitulo: string; rdos: RDO[]; onClose: () => void; onSent: () => void
+}) {
+  const [temThread, setTemThread] = useState<boolean | null>(null)
+  const [destinatarios, setDestinatarios] = useState('')
+  const [assunto, setAssunto] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    createClient().from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
+      .then(({ data }) => setTemThread(Boolean(data)))
+  }, [obraId])
+
+  useEffect(() => {
+    const ordenados = [...rdos].sort((a, b) => a.numero - b.numero)
+    const datas = ordenados.map(r => new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR')).join(', ')
+    setAssunto(`RDO ${obraTitulo} — ${datas}`)
+    setMensagem(
+      ordenados.length === 1
+        ? `Bom dia,\n\nSegue em anexo o relatório do dia ${datas} da obra ${obraTitulo}.\n\nQualquer dúvida, estamos à disposição.`
+        : `Bom dia,\n\nSeguem em anexo os relatórios dos dias ${datas} da obra ${obraTitulo}.\n\nQualquer dúvida, estamos à disposição.`
+    )
+  }, [rdos, obraTitulo])
+
+  async function enviar() {
+    const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    if (emails.length === 0) { setErro('Informe pelo menos um e-mail de destino.'); return }
+    if (!assunto.trim()) { setErro('Informe o assunto.'); return }
+
+    setEnviando(true)
+    setErro('')
+    try {
+      const res = await fetch('/api/relatorios/enviar-rdo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          obraId,
+          rdoIds: rdos.map(r => r.id),
+          destinatarios: emails,
+          assunto: assunto.trim(),
+          mensagem,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErro(data.error ?? 'Falha ao enviar.'); setEnviando(false); return }
+      onSent()
+    } catch {
+      setErro('Falha de conexão ao enviar.')
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[560px] flex flex-col max-h-[90dvh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-[#EEF2FF] rounded-lg flex items-center justify-center">
+              <Mail size={15} className="text-[#4F7CFF]" />
+            </div>
+            <div>
+              <h2 className="font-syne font-semibold text-[#0F172A]">Enviar Relatório por E-mail</h2>
+              <p className="text-xs text-[#94A3B8]">{rdos.length} relatório{rdos.length > 1 ? 's' : ''} selecionado{rdos.length > 1 ? 's' : ''}</p>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={enviando} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
+            <X size={16} className="text-[#64748B]" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4 overflow-y-auto">
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
+            <input className="field" placeholder="cliente@exemplo.com, outro@exemplo.com"
+              value={destinatarios} onChange={e => setDestinatarios(e.target.value)} />
+            <p className="text-xs text-[#94A3B8] mt-1">Separe múltiplos e-mails por vírgula.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
+            <input className="field" value={assunto} onChange={e => setAssunto(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Mensagem</label>
+            <textarea className="field resize-none" rows={6} value={mensagem} onChange={e => setMensagem(e.target.value)} />
+          </div>
+
+          {temThread !== null && (
+            <p className="text-xs text-[#94A3B8]">
+              {temThread
+                ? 'Este e-mail vai responder ao último relatório enviado desta obra, mantendo o histórico na mesma conversa.'
+                : 'Este será o primeiro e-mail de relatório desta obra — os próximos vão responder este.'}
+            </p>
+          )}
+
+          {erro && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2.5">
+              <span className="flex-1">{erro}</span>
+              <button onClick={() => setErro('')}><X size={12} /></button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 px-6 py-4 border-t border-[#F1F5F9]">
+          <button type="button" onClick={onClose} disabled={enviando}
+            className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            Cancelar
+          </button>
+          <button onClick={enviar} disabled={enviando}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+            {enviando ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            {enviando ? 'Gerando PDF e enviando...' : 'Enviar'}
+          </button>
+        </div>
+        {enviando && <p className="text-xs text-[#94A3B8] text-center pb-4">Isso pode levar até 30-40 segundos para gerar o PDF do relatório.</p>}
       </div>
     </div>
   )
