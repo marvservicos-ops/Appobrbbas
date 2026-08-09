@@ -332,7 +332,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
     if (!obra || selecionados.size === 0) { setAssunto(''); setMensagem(''); return }
     const escolhidos = rdos.filter(r => selecionados.has(r.id)).sort((a, b) => a.numero - b.numero)
     const datas = escolhidos.map(r => new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR')).join(', ')
-    setAssunto(`RDO ${obra.titulo} — ${datas}`)
+    setAssunto(`RDO — ${obra.titulo}`)
     setMensagem(
       escolhidos.length === 1
         ? `Bom dia,\n\nSegue em anexo o relatório do dia ${datas} da obra ${obra.titulo}.\n\nQualquer dúvida, estamos à disposição.`
@@ -438,6 +438,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
           <input className="field" value={assunto} onChange={e => setAssunto(e.target.value)} placeholder="Selecione um relatório para preencher automaticamente" />
+          <p className="text-xs text-[#94A3B8] mt-1">Evite mudar o assunto entre envios — o Gmail só agrupa e-mails da mesma conversa quando o assunto é idêntico.</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Mensagem</label>

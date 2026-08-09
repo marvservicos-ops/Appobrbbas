@@ -4178,7 +4178,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
   useEffect(() => {
     const ordenados = [...rdos].sort((a, b) => a.numero - b.numero)
     const datas = ordenados.map(r => new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR')).join(', ')
-    setAssunto(`RDO ${obraTitulo} — ${datas}`)
+    setAssunto(`RDO — ${obraTitulo}`)
     setMensagem(
       ordenados.length === 1
         ? `Bom dia,\n\nSegue em anexo o relatório do dia ${datas} da obra ${obraTitulo}.\n\nQualquer dúvida, estamos à disposição.`
@@ -4242,6 +4242,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
             <input className="field" value={assunto} onChange={e => setAssunto(e.target.value)} />
+            <p className="text-xs text-[#94A3B8] mt-1">Evite mudar o assunto entre envios — o Gmail só agrupa e-mails da mesma conversa quando o assunto é idêntico.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Mensagem</label>
@@ -4291,7 +4292,6 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
   const [mensagem, setMensagem] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
-  const [debug, setDebug] = useState<any>(null)
 
   useEffect(() => {
     createClient().from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
@@ -4301,7 +4301,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
   useEffect(() => {
     const ordenados = [...relatorios].sort((a, b) => (a.numero ?? 0) - (b.numero ?? 0))
     const datas = ordenados.map(r => r.data ? new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—').join(', ')
-    setAssunto(`RDO ${obraTitulo} — ${datas}`)
+    setAssunto(`RDO — ${obraTitulo}`)
     setMensagem(
       ordenados.length === 1
         ? `Bom dia,\n\nSegue em anexo o relatório do dia ${datas} da obra ${obraTitulo}.\n\nQualquer dúvida, estamos à disposição.`
@@ -4330,8 +4330,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Falha ao enviar.'); setEnviando(false); return }
-      setDebug(data.debug ?? null)
-      setEnviando(false)
+      onSent()
     } catch {
       setErro('Falha de conexão ao enviar.')
       setEnviando(false)
@@ -4356,12 +4355,6 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
           </button>
         </div>
 
-        {debug && (
-          <div className="mx-6 mt-4 p-3 bg-[#0F172A] text-[#4ADE80] text-[10px] font-mono rounded-lg overflow-x-auto whitespace-pre">
-            {JSON.stringify(debug, null, 2)}
-          </div>
-        )}
-
         <div className="p-6 space-y-4 overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
@@ -4372,6 +4365,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
             <input className="field" value={assunto} onChange={e => setAssunto(e.target.value)} />
+            <p className="text-xs text-[#94A3B8] mt-1">Evite mudar o assunto entre envios — o Gmail só agrupa e-mails da mesma conversa quando o assunto é idêntico.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Mensagem</label>
@@ -4395,21 +4389,15 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
         </div>
 
         <div className="flex gap-3 px-6 py-4 border-t border-[#F1F5F9]">
-          {debug ? (
-            <button onClick={onSent} className="flex-1 btn-primary py-2.5">Fechar</button>
-          ) : (
-            <>
-              <button type="button" onClick={onClose} disabled={enviando}
-                className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
-                Cancelar
-              </button>
-              <button onClick={enviar} disabled={enviando}
-                className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
-                {enviando ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                {enviando ? 'Baixando PDF e enviando...' : 'Enviar'}
-              </button>
-            </>
-          )}
+          <button type="button" onClick={onClose} disabled={enviando}
+            className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            Cancelar
+          </button>
+          <button onClick={enviar} disabled={enviando}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+            {enviando ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            {enviando ? 'Baixando PDF e enviando...' : 'Enviar'}
+          </button>
         </div>
       </div>
     </div>
