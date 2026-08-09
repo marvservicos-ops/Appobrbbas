@@ -57,6 +57,16 @@ function driveClient() {
   return google.drive({ version: 'v3', auth })
 }
 
+// Baixa os bytes de um arquivo já existente no Drive (ex.: PDF de RDO já sincronizado)
+export async function baixarArquivoDrive(fileId: string): Promise<Buffer> {
+  const drive = driveClient()
+  const res = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'arraybuffer' }
+  )
+  return Buffer.from(res.data as ArrayBuffer)
+}
+
 async function pastaObra(obraTitulo: string): Promise<string> {
   const rootId = process.env.GOOGLE_DRIVE_RDOS_ROOT_FOLDER_ID
   if (!rootId) throw new Error('GOOGLE_DRIVE_RDOS_ROOT_FOLDER_ID não configurado')
