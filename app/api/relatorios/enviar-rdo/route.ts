@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
 
   // O Resend gera o próprio Message-ID — só sabemos o valor real consultando depois do envio
   if (data?.id) {
-    const messageId = await buscarMessageIdReal(data.id)
+    const { messageId } = await buscarMessageIdReal(data.id)
     if (messageId) {
       await supabase.from('relatorio_email_threads').upsert({
         obra_id: obraId,

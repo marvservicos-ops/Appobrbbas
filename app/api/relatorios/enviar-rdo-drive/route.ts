@@ -74,8 +74,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  let messageId: string | null = null
+  let debugBusca: unknown = null
   if (data?.id) {
-    const messageId = await buscarMessageIdReal(data.id)
+    const resultado = await buscarMessageIdReal(data.id)
+    messageId = resultado.messageId
+    debugBusca = resultado.debug
     if (messageId) {
       await supabase.from('relatorio_email_threads').upsert({
         obra_id: obraId,
@@ -86,5 +90,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, id: data?.id })
+  return NextResponse.json({
+    ok: true,
+    id: data?.id,
+    debug: {
+      threadAnterior: thread?.ultimo_message_id ?? null,
+      headersEnviados: headers,
+      messageIdNovoEncontrado: messageId,
+      buscaMessageId: debugBusca,
+    },
+  })
 }

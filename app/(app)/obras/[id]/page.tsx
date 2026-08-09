@@ -4291,6 +4291,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
   const [mensagem, setMensagem] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
+  const [debug, setDebug] = useState<any>(null)
 
   useEffect(() => {
     createClient().from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
@@ -4329,7 +4330,8 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Falha ao enviar.'); setEnviando(false); return }
-      onSent()
+      setDebug(data.debug ?? null)
+      setEnviando(false)
     } catch {
       setErro('Falha de conexão ao enviar.')
       setEnviando(false)
@@ -4353,6 +4355,12 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
             <X size={16} className="text-[#64748B]" />
           </button>
         </div>
+
+        {debug && (
+          <div className="mx-6 mt-4 p-3 bg-[#0F172A] text-[#4ADE80] text-[10px] font-mono rounded-lg overflow-x-auto whitespace-pre">
+            {JSON.stringify(debug, null, 2)}
+          </div>
+        )}
 
         <div className="p-6 space-y-4 overflow-y-auto">
           <div>
@@ -4387,15 +4395,21 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
         </div>
 
         <div className="flex gap-3 px-6 py-4 border-t border-[#F1F5F9]">
-          <button type="button" onClick={onClose} disabled={enviando}
-            className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
-            Cancelar
-          </button>
-          <button onClick={enviar} disabled={enviando}
-            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
-            {enviando ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-            {enviando ? 'Baixando PDF e enviando...' : 'Enviar'}
-          </button>
+          {debug ? (
+            <button onClick={onSent} className="flex-1 btn-primary py-2.5">Fechar</button>
+          ) : (
+            <>
+              <button type="button" onClick={onClose} disabled={enviando}
+                className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+                Cancelar
+              </button>
+              <button onClick={enviar} disabled={enviando}
+                className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+                {enviando ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                {enviando ? 'Baixando PDF e enviando...' : 'Enviar'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
