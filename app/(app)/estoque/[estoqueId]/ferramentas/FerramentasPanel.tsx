@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Wrench, Building2, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText, Briefcase } from 'lucide-react'
+import { Plus, Wrench, Building2, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText, Briefcase, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem } from '@/lib/types'
 import ModalNovaFerramenta from './ModalNovaFerramenta'
@@ -96,6 +96,31 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
     baixada: ferramentas.filter(f => f.status === 'baixada').length,
   }
 
+  function exportarCsv() {
+    const headers = ['Nome', 'Código interno', 'Marca', 'Modelo', 'Nº de série', 'Categoria', 'Status', 'Valor de aquisição', 'Data de aquisição', 'Observações']
+    const linhas = ferramentas.map(f => [
+      f.nome,
+      f.codigo_interno ?? '',
+      f.marca ?? '',
+      f.modelo ?? '',
+      f.numero_serie ?? '',
+      f.categoria ?? '',
+      STATUS_LABEL[f.status] ?? f.status,
+      f.valor_aquisicao != null ? String(f.valor_aquisicao).replace('.', ',') : '',
+      f.data_aquisicao ?? '',
+      f.observacoes ?? '',
+    ])
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const csv = '﻿' + [headers, ...linhas].map(row => row.map(escape).join(';')).join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ferramentas-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (loading) return (
     <div className="flex items-center justify-center h-48">
       <Loader2 size={24} className="animate-spin text-[#4F7CFF]" />
@@ -168,6 +193,10 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
             </button>
           </>
         )}
+        <button onClick={exportarCsv}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
+          <Download size={14} /> Exportar
+        </button>
         <button onClick={() => setShowNova(true)} className="btn-primary flex items-center gap-1.5 text-sm px-3 py-2">
           <Plus size={14} /> {modoPatrimonio ? 'Novo Item' : 'Nova Ferramenta'}
         </button>
