@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@sparticuz/chromium-min": "^149.0.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.1",
     "@tiptap/extension-color": "^3.29.1",
@@ -27,6 +28,7 @@
     "lucide-react": "^1.17.0",
     "next": "14.2.35",
     "pdf-parse": "^2.4.5",
+    "puppeteer-core": "^25.5.0",
     "react": "^18",
     "react-dom": "^18",
     "resend": "^6.18.0",

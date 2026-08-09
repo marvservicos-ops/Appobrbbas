@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BarChart2, Wrench, Package, AlertTriangle, CheckCircle2, Clock, TrendingDown, Users, FileText, Printer } from 'lucide-react'
+import { BarChart2, Wrench, Package, AlertTriangle, CheckCircle2, Clock, TrendingDown, Users, FileText, Printer, Mail, Send, Loader2, Check, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
@@ -41,7 +41,7 @@ export default function RelatoriosPage() {
   const [criticos, setCriticos] = useState<ProdutoCritico[]>([])
   const [registros, setRegistros] = useState<RegistroRecente[]>([])
   const [loading, setLoading] = useState(true)
-  const [aba, setAba] = useState<'obras' | 'estoque' | 'epi'>('obras')
+  const [aba, setAba] = useState<'obras' | 'estoque' | 'epi' | 'enviar'>('obras')
 
   useEffect(() => {
     async function load() {
@@ -157,7 +157,7 @@ export default function RelatoriosPage() {
 
         {/* Abas */}
         <div className="flex gap-1 mb-5 bg-[#F1F5F9] p-1 rounded-xl w-fit">
-          {([['obras', 'Obras', Wrench], ['estoque', 'Estoque Crítico', Package], ['epi', 'Registros Recentes', FileText]] as const).map(([id, label, Icon]) => (
+          {([['obras', 'Obras', Wrench], ['estoque', 'Estoque Crítico', Package], ['epi', 'Registros Recentes', FileText], ['enviar', 'Enviar RDO', Mail]] as const).map(([id, label, Icon]) => (
             <button key={id} onClick={() => setAba(id as any)}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-all ${aba === id ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#374151]'}`}>
               <Icon size={14} />{label}
@@ -277,8 +277,190 @@ export default function RelatoriosPage() {
                 </table>
               </div>
             )}
+            {/* Aba Enviar RDO */}
+            {aba === 'enviar' && <EnviarRdoTab obras={obras} />}
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Enviar RDO por e-mail ──────────────────────────────
+interface RdoResumo {
+  id: string
+  numero: number
+  data: string
+  status: string
+}
+
+function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
+  const [obraId, setObraId] = useState('')
+  const [rdos, setRdos] = useState<RdoResumo[]>([])
+  const [loadingRdos, setLoadingRdos] = useState(false)
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [temThread, setTemThread] = useState<boolean | null>(null)
+  const [destinatarios, setDestinatarios] = useState('')
+  const [assunto, setAssunto] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState('')
+  const [sucesso, setSucesso] = useState(false)
+
+  const obra = obras.find(o => o.id === obraId)
+
+  useEffect(() => {
+    setRdos([])
+    setSelecionados(new Set())
+    setTemThread(null)
+    setSucesso(false)
+    setErro('')
+    if (!obraId) return
+    setLoadingRdos(true)
+    const supabase = createClient()
+    Promise.all([
+      supabase.from('rdos').select('id, numero, data, status').eq('obra_id', obraId).order('numero', { ascending: false }).limit(30),
+      supabase.from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle(),
+    ]).then(([rdosRes, threadRes]) => {
+      setRdos((rdosRes.data ?? []) as RdoResumo[])
+      setTemThread(Boolean(threadRes.data))
+      setLoadingRdos(false)
+    })
+  }, [obraId])
+
+  useEffect(() => {
+    if (!obra || selecionados.size === 0) { setAssunto(''); setMensagem(''); return }
+    const escolhidos = rdos.filter(r => selecionados.has(r.id)).sort((a, b) => a.numero - b.numero)
+    const datas = escolhidos.map(r => new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR')).join(', ')
+    setAssunto(`RDO ${obra.titulo} — ${datas}`)
+    setMensagem(
+      escolhidos.length === 1
+        ? `Bom dia,\n\nSegue em anexo o relatório do dia ${datas} da obra ${obra.titulo}.\n\nQualquer dúvida, estamos à disposição.`
+        : `Bom dia,\n\nSeguem em anexo os relatórios dos dias ${datas} da obra ${obra.titulo}.\n\nQualquer dúvida, estamos à disposição.`
+    )
+  }, [selecionados, obra, rdos])
+
+  function toggleRdo(id: string) {
+    setSelecionados(s => {
+      const next = new Set(s)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  async function enviar() {
+    const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    if (emails.length === 0) { setErro('Informe pelo menos um e-mail de destino.'); return }
+    if (selecionados.size === 0) { setErro('Selecione pelo menos um relatório.'); return }
+    if (!assunto.trim()) { setErro('Informe o assunto.'); return }
+
+    setEnviando(true)
+    setErro('')
+    setSucesso(false)
+    try {
+      const res = await fetch('/api/relatorios/enviar-rdo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          obraId,
+          rdoIds: Array.from(selecionados),
+          destinatarios: emails,
+          assunto: assunto.trim(),
+          mensagem,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErro(data.error ?? 'Falha ao enviar.'); setEnviando(false); return }
+      setSucesso(true)
+      setTemThread(true)
+      setSelecionados(new Set())
+      setDestinatarios('')
+    } catch {
+      setErro('Falha de conexão ao enviar.')
+    }
+    setEnviando(false)
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* Coluna esquerda: obra + seleção de RDOs */}
+      <div className="card space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Obra</label>
+          <select className="field" value={obraId} onChange={e => setObraId(e.target.value)}>
+            <option value="">Selecione uma obra...</option>
+            {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+          </select>
+        </div>
+
+        {obraId && (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-sm font-medium text-[#374151]">Relatórios (RDO)</label>
+              {selecionados.size > 0 && <span className="text-xs text-[#4F7CFF] font-medium">{selecionados.size} selecionado{selecionados.size > 1 ? 's' : ''}</span>}
+            </div>
+            {loadingRdos ? (
+              <div className="py-8 flex justify-center"><Loader2 size={18} className="animate-spin text-[#4F7CFF]" /></div>
+            ) : rdos.length === 0 ? (
+              <p className="text-sm text-[#94A3B8] py-4 text-center">Nenhum RDO cadastrado nesta obra.</p>
+            ) : (
+              <div className="border border-[#E2E8F0] rounded-lg divide-y divide-[#F1F5F9] max-h-72 overflow-y-auto">
+                {rdos.map(r => (
+                  <label key={r.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-[#F8FAFC] transition-colors">
+                    <input type="checkbox" checked={selecionados.has(r.id)} onChange={() => toggleRdo(r.id)} className="rounded" />
+                    <div className="flex-1 flex items-center gap-2 text-sm">
+                      <span className="font-mono text-xs font-semibold text-[#64748B]">#{String(r.numero).padStart(3, '0')}</span>
+                      <span className="text-[#0F172A]">{new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+            {temThread !== null && (
+              <p className="text-xs text-[#94A3B8] mt-2">
+                {temThread
+                  ? 'Este e-mail vai responder ao último relatório enviado desta obra, mantendo o histórico na mesma conversa.'
+                  : 'Este será o primeiro e-mail de relatório desta obra — os próximos vão responder este.'}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Coluna direita: composição do e-mail */}
+      <div className="card space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
+          <input className="field" placeholder="cliente@exemplo.com, outro@exemplo.com"
+            value={destinatarios} onChange={e => setDestinatarios(e.target.value)} />
+          <p className="text-xs text-[#94A3B8] mt-1">Separe múltiplos e-mails por vírgula.</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
+          <input className="field" value={assunto} onChange={e => setAssunto(e.target.value)} placeholder="Selecione um relatório para preencher automaticamente" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Mensagem</label>
+          <textarea className="field" rows={7} value={mensagem} onChange={e => setMensagem(e.target.value)} placeholder="Selecione um relatório para preencher automaticamente" />
+        </div>
+
+        {erro && (
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2.5">
+            <span className="flex-1">{erro}</span>
+            <button onClick={() => setErro('')}><X size={12} /></button>
+          </div>
+        )}
+        {sucesso && (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-lg px-3 py-2.5">
+            <Check size={14} /> E-mail enviado com sucesso!
+          </div>
+        )}
+
+        <button onClick={enviar} disabled={enviando || !obraId} className="btn-primary w-full flex items-center justify-center gap-2">
+          {enviando ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+          {enviando ? 'Gerando PDF e enviando...' : 'Enviar Relatório'}
+        </button>
+        {enviando && <p className="text-xs text-[#94A3B8] text-center">Isso pode levar até 30-40 segundos para gerar o PDF do relatório.</p>}
       </div>
     </div>
   )
