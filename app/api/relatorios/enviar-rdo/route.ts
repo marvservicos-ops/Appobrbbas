@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase/service'
 import { gerarPdfsDeUrls } from '@/lib/pdf'
+import { buscarMessageIdReal } from '@/lib/emailThread'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM = process.env.EMAIL_FROM ?? 'joaovictor@marvservicos.com.br'
@@ -47,8 +48,7 @@ export async function POST(req: NextRequest) {
     .eq('tipo', 'rdo')
     .maybeSingle()
 
-  const novoMessageId = `<rdo-${crypto.randomUUID()}@marvservicos.com.br>`
-  const headers: Record<string, string> = { 'Message-ID': novoMessageId }
+  const headers: Record<string, string> = {}
   if (thread?.ultimo_message_id) {
     headers['In-Reply-To'] = thread.ultimo_message_id
     headers['References'] = thread.ultimo_message_id
@@ -69,12 +69,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  await supabase.from('relatorio_email_threads').upsert({
-    obra_id: obraId,
-    tipo: 'rdo',
-    ultimo_message_id: novoMessageId,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'obra_id,tipo' })
+  // O Resend gera o próprio Message-ID — só sabemos o valor real consultando depois do envio
+  if (data?.id) {
+    const messageId = await buscarMessageIdReal(data.id)
+    if (messageId) {
+      await supabase.from('relatorio_email_threads').upsert({
+        obra_id: obraId,
+        tipo: 'rdo',
+        ultimo_message_id: messageId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'obra_id,tipo' })
+    }
+  }
 
   return NextResponse.json({ ok: true, id: data?.id })
 }
