@@ -151,6 +151,10 @@ function ModalAdicionarMaterialMala({ malaId, estoqueId, jaRastreados, onClose, 
   const [produtoId, setProdutoId] = useState('')
   const [quantidadeMinima, setQuantidadeMinima] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [modoNovo, setModoNovo] = useState(false)
+  const [novoNome, setNovoNome] = useState('')
+  const [novaUnidade, setNovaUnidade] = useState('un')
 
   useEffect(() => {
     createClient().from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome')
@@ -160,11 +164,27 @@ function ModalAdicionarMaterialMala({ malaId, estoqueId, jaRastreados, onClose, 
   const disponiveis = catalogo.filter(p => !jaRastreados.includes(p.id))
 
   async function salvar() {
-    if (!produtoId) return
+    setError('')
+    let idFinal = produtoId
     setSaving(true)
-    await createClient().from('mala_estoque_produtos').insert({
-      mala_id: malaId, produto_id: produtoId, quantidade_minima: parseFloat(quantidadeMinima) || 0,
+    const sb = createClient()
+
+    if (modoNovo) {
+      if (!novoNome.trim()) { setError('Informe o nome do material.'); setSaving(false); return }
+      const { data: novo, error: err } = await sb.from('estoque_produtos').insert({
+        estoque_id: estoqueId, nome: novoNome.trim(), unidade: novaUnidade.trim() || 'un',
+        quantidade_atual: 0, quantidade_minima: 0, ativo: true,
+      }).select().single()
+      if (err || !novo) { setError(err?.message ?? 'Falha ao criar material.'); setSaving(false); return }
+      idFinal = novo.id
+    }
+
+    if (!idFinal) { setError('Selecione ou cadastre um material.'); setSaving(false); return }
+
+    const { error: err2 } = await sb.from('mala_estoque_produtos').insert({
+      mala_id: malaId, produto_id: idFinal, quantidade_minima: parseFloat(quantidadeMinima) || 0,
     })
+    if (err2) { setError(err2.message); setSaving(false); return }
     setSaving(false)
     onSaved()
   }
@@ -177,21 +197,42 @@ function ModalAdicionarMaterialMala({ malaId, estoqueId, jaRastreados, onClose, 
           <button onClick={onClose}><X size={18} className="text-[#94A3B8]" /></button>
         </div>
         <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-[#64748B] block mb-1">Material do catálogo *</label>
-            <select className="field text-sm" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
-              <option value="">Selecione...</option>
-              {disponiveis.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
-            </select>
-          </div>
+          {!modoNovo ? (
+            <div>
+              <label className="text-xs font-medium text-[#64748B] block mb-1">Material do catálogo *</label>
+              <select className="field text-sm" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
+                <option value="">Selecione...</option>
+                {disponiveis.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+              </select>
+              <button type="button" onClick={() => { setModoNovo(true); setProdutoId('') }}
+                className="text-xs text-[#4F7CFF] hover:underline mt-1.5">+ Cadastrar novo material</button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-[#64748B] block mb-1">Nome do material *</label>
+                  <input className="field text-sm" value={novoNome} onChange={e => setNovoNome(e.target.value)} placeholder="Ex: Fita isolante" autoFocus />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-[#64748B] block mb-1">Unidade</label>
+                  <input className="field text-sm" value={novaUnidade} onChange={e => setNovaUnidade(e.target.value)} placeholder="un" />
+                </div>
+              </div>
+              <button type="button" onClick={() => setModoNovo(false)} className="text-xs text-[#4F7CFF] hover:underline">← Usar material já cadastrado</button>
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-[#64748B] block mb-1">Quantidade mínima</label>
             <input type="number" min="0" step="any" className="field text-sm" value={quantidadeMinima} onChange={e => setQuantidadeMinima(e.target.value)} placeholder="0" />
           </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
-          <button onClick={salvar} disabled={!produtoId || saving} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">Adicionar</button>
+          <button onClick={salvar} disabled={saving || (!modoNovo && !produtoId)} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">
+            {saving ? 'Salvando...' : 'Adicionar'}
+          </button>
         </div>
       </div>
     </div>
