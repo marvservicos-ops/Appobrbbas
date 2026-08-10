@@ -22,6 +22,18 @@ const CORES = ['#4F7CFF', '#F59E0B', '#2DD4BF', '#8B5CF6', '#06B6D4', '#EF4444',
 
 type Tab = 'registros' | 'produtos' | 'configurar'
 
+function destinoLabel(reg: EstoqueRegistro): string {
+  if (reg.tipo === 'entrada') return '—'
+  if (reg.destino_tipo === 'obra' && reg.obra?.titulo) return `Obra: ${reg.obra.titulo}`
+  if (reg.destino_tipo === 'manutencao' && reg.manutencao) {
+    const nomeCliente = reg.manutencao.empresa?.apelido || reg.manutencao.empresa?.razao_social
+    return `Manutenção: ${reg.manutencao.numero_contrato ?? ''}${nomeCliente ? ` — ${nomeCliente}` : ''}`.trim()
+  }
+  if (reg.destino_tipo === 'uso_interno') return 'Uso interno'
+  if (reg.funcionario?.nome) return `Funcionário: ${reg.funcionario.nome}`
+  return '—'
+}
+
 export default function EstoqueDetalhe() {
   const { estoqueId } = useParams<{ estoqueId: string }>()
   const [estoque, setEstoque] = useState<Estoque | null>(null)
@@ -34,6 +46,7 @@ export default function EstoqueDetalhe() {
   const [showEdit, setShowEdit] = useState(false)
   const [editandoProduto, setEditandoProduto] = useState<EstoqueProduto | null>(null)
   const [devolvendoRegistro, setDevolvendoRegistro] = useState<EstoqueRegistro | null>(null)
+  const [detalheRegistro, setDetalheRegistro] = useState<EstoqueRegistro | null>(null)
   const [destacado, setDestacado] = useState<string | null>(null)
   const { lightboxUrl, openLightbox, closeLightbox } = usePhotoLightbox()
 
@@ -54,7 +67,9 @@ export default function EstoqueDetalhe() {
       supabase.from('estoques').select('*').eq('id', estoqueId).single(),
       supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
       supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
-      supabase.from('estoque_registros').select('*, valores:estoque_registro_valores(*)').eq('estoque_id', estoqueId).order('data', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('estoque_registros')
+        .select('*, valores:estoque_registro_valores(*), obra:obras(titulo), funcionario:funcionarios(nome), manutencao:contratos_manutencao(numero_contrato, empresa:empresas(razao_social, apelido))')
+        .eq('estoque_id', estoqueId).order('data', { ascending: false }).order('created_at', { ascending: false }),
     ])
     setEstoque(est)
     setCampos(cam ?? [])
@@ -277,6 +292,7 @@ export default function EstoqueDetalhe() {
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Tipo</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Produto</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Qtd</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Destino</th>
                       {campos.map(c => (
                         <th key={c.id} className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">{c.nome}</th>
                       ))}
@@ -293,7 +309,7 @@ export default function EstoqueDetalhe() {
                       return (
                         <tr key={reg.id} id={`reg-${reg.id}`}
                           className={`border-b border-[#F1F5F9] transition-colors group cursor-pointer ${destacado === reg.id ? 'bg-amber-50' : selec ? 'bg-[#F5F7FF]' : 'hover:bg-[#F8FAFC]'}`}
-                          onClick={() => toggleSelecionado(reg.id)}>
+                          onClick={() => setDetalheRegistro(reg)}>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             <button onClick={() => toggleSelecionado(reg.id)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
                               {selec ? <CheckSquare size={16} className="text-[#4F7CFF]" /> : <Square size={16} />}
@@ -322,6 +338,7 @@ export default function EstoqueDetalhe() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-sm text-[#374151]">{reg.quantidade} {reg.unidade ?? ''}</td>
+                          <td className="px-4 py-3 text-sm text-[#374151]">{destinoLabel(reg)}</td>
                           {campos.map(c => {
                             const val = reg.valores?.find(v => v.campo_id === c.id)
                             return <td key={c.id} className="px-4 py-3 text-sm text-[#374151]">{val?.valor ?? '—'}</td>
@@ -492,6 +509,15 @@ export default function EstoqueDetalhe() {
           produtos={produtos}
           onClose={() => setDevolvendoRegistro(null)}
           onSaved={() => { setDevolvendoRegistro(null); load() }}
+        />
+      )}
+
+      {/* Modal detalhe do registro */}
+      {detalheRegistro && (
+        <ModalDetalheRegistro
+          registro={detalheRegistro}
+          estoqueIcone={estoque?.icone ?? ''}
+          onClose={() => setDetalheRegistro(null)}
         />
       )}
 
@@ -1023,6 +1049,71 @@ function ConfigurarCampos({ estoqueId, campos, onUpdated }: { estoqueId: string;
             <Plus size={14} /> Adicionar campo
           </button>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Modal detalhe do registro ──────────────────────────
+function ModalDetalheRegistro({ registro, estoqueIcone, onClose }: {
+  registro: EstoqueRegistro; estoqueIcone: string; onClose: () => void
+}) {
+  const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  const podeImprimir = (estoqueIcone === 'shield' || estoqueIcone === 'shirt') && registro.tipo === 'saida'
+  const linkImprimir = registro.lote_id ? `/print/epi-lote/${registro.lote_id}` : `/print/epi/${registro.id}`
+
+  const linhas: { label: string; valor: React.ReactNode }[] = [
+    { label: 'Data', valor: new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR') },
+    { label: 'Tipo', valor: registro.tipo === 'saida' ? 'Saída' : 'Entrada' },
+    { label: 'Produto', valor: registro.produto_nome },
+    { label: 'Quantidade', valor: `${registro.quantidade} ${registro.unidade ?? ''}` },
+    { label: 'Destino', valor: destinoLabel(registro) },
+    { label: 'Responsável', valor: registro.responsavel },
+  ]
+  if (registro.preco_unitario_custo) linhas.push({ label: 'Preço unitário (CMP)', valor: moeda(registro.preco_unitario_custo) })
+  if (registro.valor_total) linhas.push({ label: 'Valor total', valor: moeda(registro.valor_total) })
+  if (registro.observacoes) linhas.push({ label: 'Observações', valor: registro.observacoes })
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[480px] max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <h3 className="font-syne font-semibold text-[#0F172A]">Detalhe do Registro</h3>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {linhas.map(l => (
+            <div key={l.label} className="flex items-start justify-between gap-4 text-sm">
+              <span className="text-[#64748B] shrink-0">{l.label}</span>
+              <span className="text-[#0F172A] font-medium text-right">{l.valor}</span>
+            </div>
+          ))}
+          {registro.valores && registro.valores.length > 0 && (
+            <div className="pt-2 border-t border-[#F1F5F9] space-y-2">
+              {registro.valores.map(v => (
+                <div key={v.id} className="flex items-start justify-between gap-4 text-sm">
+                  <span className="text-[#64748B] shrink-0">Campo</span>
+                  <span className="text-[#0F172A] font-medium text-right">{v.valor}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {registro.assinatura_url && (
+            <div className="pt-3 border-t border-[#F1F5F9]">
+              <p className="text-xs text-[#64748B] mb-1.5">Assinatura</p>
+              <img src={registro.assinatura_url} alt="assinatura" className="h-16 object-contain border border-[#E2E8F0] rounded-lg" />
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-[#F1F5F9]">
+          {podeImprimir && (
+            <a href={linkImprimir} target="_blank" rel="noreferrer"
+              className="px-4 py-2 text-sm font-medium text-[#4F7CFF] border border-[#4F7CFF] rounded-lg hover:bg-[#EEF2FF] transition-colors">
+              Ver termo/contrato
+            </a>
+          )}
+          <button onClick={onClose} className="btn-primary">Fechar</button>
+        </div>
       </div>
     </div>
   )

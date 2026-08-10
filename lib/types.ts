@@ -228,6 +228,9 @@ export interface EstoqueRegistro {
   registro_origem_id?: string | null
   created_at: string
   valores?: EstoqueRegistroValor[]
+  obra?: { titulo: string } | null
+  funcionario?: { nome: string } | null
+  manutencao?: { numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string | null } | null } | null
 }
 // ──────────────────────────────────────────────────────
 
