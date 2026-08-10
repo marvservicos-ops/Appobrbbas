@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, CheckSquare, Square, Wrench } from 'lucide-react'
+import { X, Loader2, CheckSquare, Square, Wrench, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta } from '@/lib/types'
 
@@ -15,6 +15,7 @@ export default function ModalNovoEmprestimo({ ferramentasDisponiveis, onClose, o
   const [dataPrevista, setDataPrevista] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
+  const [busca, setBusca] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -30,6 +31,12 @@ export default function ModalNovoEmprestimo({ ferramentasDisponiveis, onClose, o
     }
     load()
   }, [])
+
+  const ferramentasFiltradas = ferramentasDisponiveis.filter(f => {
+    if (!busca.trim()) return true
+    const q = busca.toLowerCase()
+    return f.nome.toLowerCase().includes(q) || (f.codigo_interno ?? '').toLowerCase().includes(q)
+  })
 
   function toggle(id: string) {
     setSelecionadas(s => {
@@ -105,10 +112,17 @@ export default function ModalNovoEmprestimo({ ferramentasDisponiveis, onClose, o
             <label className="block text-sm font-medium text-[#374151] mb-2">
               Ferramentas * <span className="text-[#94A3B8] font-normal">({selecionadas.size} selecionada{selecionadas.size !== 1 ? 's' : ''})</span>
             </label>
+            <div className="relative mb-2">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+              <input className="field pl-8 text-sm" placeholder="Buscar por nome ou código..."
+                value={busca} onChange={e => setBusca(e.target.value)} />
+            </div>
             <div className="border border-[#E2E8F0] rounded-xl divide-y divide-[#F1F5F9] max-h-56 overflow-y-auto">
               {ferramentasDisponiveis.length === 0 ? (
                 <p className="text-sm text-[#94A3B8] px-3 py-4 text-center">Nenhuma ferramenta disponível.</p>
-              ) : ferramentasDisponiveis.map(f => {
+              ) : ferramentasFiltradas.length === 0 ? (
+                <p className="text-sm text-[#94A3B8] px-3 py-4 text-center">Nenhuma ferramenta encontrada para &quot;{busca}&quot;.</p>
+              ) : ferramentasFiltradas.map(f => {
                 const sel = selecionadas.has(f.id)
                 return (
                   <button type="button" key={f.id} onClick={() => toggle(f.id)}
