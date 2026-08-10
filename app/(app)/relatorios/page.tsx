@@ -301,6 +301,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [temThread, setTemThread] = useState<boolean | null>(null)
   const [destinatarios, setDestinatarios] = useState('')
+  const [cc, setCc] = useState('')
   const [assunto, setAssunto] = useState('')
   const [mensagem, setMensagem] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -308,6 +309,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
   const [sucesso, setSucesso] = useState(false)
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [remetente, setRemetente] = useState<{ nome: string; email: string }>({ nome: '', email: '' })
+  const [contatos, setContatos] = useState<{ gestor?: { nome: string; email: string }; comprador?: { nome: string; email: string } }>({})
 
   const obra = obras.find(o => o.id === obraId)
 
@@ -324,18 +326,44 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
     setTemThread(null)
     setSucesso(false)
     setErro('')
+    setDestinatarios('')
+    setCc('')
+    setContatos({})
     if (!obraId) return
     setLoadingRdos(true)
     const supabase = createClient()
     Promise.all([
       supabase.from('rdos').select('id, numero, data, status').eq('obra_id', obraId).order('numero', { ascending: false }).limit(30),
-      supabase.from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle(),
-    ]).then(([rdosRes, threadRes]) => {
+      supabase.from('relatorio_email_threads').select('id, ultimo_destinatarios, ultimo_cc').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle(),
+      supabase.from('obras').select('gestor_id, comprador_id').eq('id', obraId).single(),
+    ]).then(async ([rdosRes, threadRes, obraRes]) => {
       setRdos((rdosRes.data ?? []) as RdoResumo[])
       setTemThread(Boolean(threadRes.data))
+      if (threadRes.data?.ultimo_destinatarios?.length) setDestinatarios(threadRes.data.ultimo_destinatarios.join(', '))
+      if (threadRes.data?.ultimo_cc?.length) setCc(threadRes.data.ultimo_cc.join(', '))
       setLoadingRdos(false)
+
+      const obraRow = obraRes.data
+      if (obraRow) {
+        const [gestorRes, compradorRes] = await Promise.all([
+          obraRow.gestor_id ? supabase.from('clientes').select('nome, email').eq('id', obraRow.gestor_id).single() : Promise.resolve({ data: null }),
+          obraRow.comprador_id ? supabase.from('clientes').select('nome, email').eq('id', obraRow.comprador_id).single() : Promise.resolve({ data: null }),
+        ])
+        setContatos({
+          gestor: gestorRes.data?.email ? gestorRes.data : undefined,
+          comprador: compradorRes.data?.email ? compradorRes.data : undefined,
+        })
+      }
     })
   }, [obraId])
+
+  function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
+    const set = campo === 'destinatarios' ? destinatarios : cc
+    const setter = campo === 'destinatarios' ? setDestinatarios : setCc
+    const atuais = set.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    if (atuais.includes(email)) return
+    setter([...atuais, email].join(', '))
+  }
 
   useEffect(() => {
     if (!obra || selecionados.size === 0) { setAssunto(''); setMensagem(''); return }
@@ -359,6 +387,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
 
   async function enviar() {
     const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    const emailsCc = cc.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
     if (emails.length === 0) { setErro('Informe pelo menos um e-mail de destino.'); return }
     if (selecionados.size === 0) { setErro('Selecione pelo menos um relatório.'); return }
     if (!assunto.trim()) { setErro('Informe o assunto.'); return }
@@ -374,6 +403,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
           obraId,
           rdoIds: Array.from(selecionados),
           destinatarios: emails,
+          cc: emailsCc,
           assunto: assunto.trim(),
           mensagem,
           assinaturaHtml,
@@ -386,7 +416,6 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
       setSucesso(true)
       setTemThread(true)
       setSelecionados(new Set())
-      setDestinatarios('')
     } catch {
       setErro('Falha de conexão ao enviar.')
     }
@@ -441,11 +470,33 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
 
       {/* Coluna direita: composição do e-mail */}
       <div className="card space-y-4">
+        {(contatos.gestor || contatos.comprador) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-[#94A3B8]">Adicionar:</span>
+            {contatos.gestor && (
+              <button type="button" onClick={() => adicionarContato('destinatarios', contatos.gestor!.email)}
+                className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
+                + {contatos.gestor.nome} (gestor)
+              </button>
+            )}
+            {contatos.comprador && (
+              <button type="button" onClick={() => adicionarContato('destinatarios', contatos.comprador!.email)}
+                className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
+                + {contatos.comprador.nome} (comprador)
+              </button>
+            )}
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
           <input className="field" placeholder="cliente@exemplo.com, outro@exemplo.com"
             value={destinatarios} onChange={e => setDestinatarios(e.target.value)} />
           <p className="text-xs text-[#94A3B8] mt-1">Separe múltiplos e-mails por vírgula.</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#374151] mb-1.5">Cc</label>
+          <input className="field" placeholder="opcional, separado por vírgula"
+            value={cc} onChange={e => setCc(e.target.value)} />
         </div>
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>

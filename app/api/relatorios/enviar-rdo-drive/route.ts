@@ -11,7 +11,7 @@ const MAX_POR_ENVIO = 10
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
-  const { obraId, relatorioIds, destinatarios, assunto, mensagem, assinaturaHtml, remetenteNome, remetenteEmail } = await req.json()
+  const { obraId, relatorioIds, destinatarios, cc, assunto, mensagem, assinaturaHtml, remetenteNome, remetenteEmail } = await req.json()
 
   if (!obraId || !Array.isArray(relatorioIds) || relatorioIds.length === 0 || !Array.isArray(destinatarios) || destinatarios.length === 0 || !assunto) {
     return NextResponse.json({ error: 'Campos obrigatórios: obraId, relatorioIds, destinatarios, assunto' }, { status: 400 })
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
   const { data: thread } = await supabase
     .from('relatorio_email_threads')
-    .select('ultimo_message_id')
+    .select('ultimo_message_id, ultimo_destinatarios, ultimo_cc')
     .eq('obra_id', obraId)
     .eq('tipo', 'rdo')
     .maybeSingle()
@@ -66,9 +66,12 @@ export async function POST(req: NextRequest) {
   const emailValido = typeof remetenteEmail === 'string' && remetenteEmail.endsWith('@marvservicos.com.br')
   const from = emailValido ? `${remetenteNome || 'MARV Serviços'} <${remetenteEmail}>` : `MARV Serviços <${FROM}>`
 
+  const ccLimpo = Array.isArray(cc) ? cc.filter(Boolean) : []
+
   const { data, error } = await resend.emails.send({
     from,
     to: destinatarios,
+    ...(ccLimpo.length > 0 ? { cc: ccLimpo } : {}),
     subject: assunto,
     html,
     attachments,
@@ -79,17 +82,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  let messageId: string | null = thread?.ultimo_message_id ?? null
   if (data?.id) {
-    const { messageId } = await buscarMessageIdReal(data.id)
-    if (messageId) {
-      await supabase.from('relatorio_email_threads').upsert({
-        obra_id: obraId,
-        tipo: 'rdo',
-        ultimo_message_id: messageId,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'obra_id,tipo' })
-    }
+    const resultado = await buscarMessageIdReal(data.id)
+    if (resultado.messageId) messageId = resultado.messageId
   }
+  await supabase.from('relatorio_email_threads').upsert({
+    obra_id: obraId,
+    tipo: 'rdo',
+    ultimo_message_id: messageId,
+    ultimo_destinatarios: destinatarios,
+    ultimo_cc: ccLimpo,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'obra_id,tipo' })
 
   return NextResponse.json({ ok: true, id: data?.id })
 }

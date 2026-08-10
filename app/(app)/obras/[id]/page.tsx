@@ -4165,19 +4165,37 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
 }) {
   const [temThread, setTemThread] = useState<boolean | null>(null)
   const [destinatarios, setDestinatarios] = useState('')
+  const [cc, setCc] = useState('')
   const [assunto, setAssunto] = useState('')
   const [mensagem, setMensagem] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [remetente, setRemetente] = useState<{ nome: string; email: string }>({ nome: '', email: '' })
+  const [contatos, setContatos] = useState<{ gestor?: { nome: string; email: string }; comprador?: { nome: string; email: string } }>({})
 
   useEffect(() => {
-    createClient().from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
-      .then(({ data }) => setTemThread(Boolean(data)))
-    createClient().auth.getUser().then(({ data }) => {
+    const supabase = createClient()
+    supabase.from('relatorio_email_threads').select('id, ultimo_destinatarios, ultimo_cc').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
+      .then(({ data }) => {
+        setTemThread(Boolean(data))
+        if (data?.ultimo_destinatarios?.length) setDestinatarios(data.ultimo_destinatarios.join(', '))
+        if (data?.ultimo_cc?.length) setCc(data.ultimo_cc.join(', '))
+      })
+    supabase.auth.getUser().then(({ data }) => {
       setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? '')
       setRemetente({ nome: data.user?.user_metadata?.nome ?? '', email: data.user?.email ?? '' })
+    })
+    supabase.from('obras').select('gestor_id, comprador_id').eq('id', obraId).single().then(async ({ data: obra }) => {
+      if (!obra) return
+      const [gestorRes, compradorRes] = await Promise.all([
+        obra.gestor_id ? supabase.from('clientes').select('nome, email').eq('id', obra.gestor_id).single() : Promise.resolve({ data: null }),
+        obra.comprador_id ? supabase.from('clientes').select('nome, email').eq('id', obra.comprador_id).single() : Promise.resolve({ data: null }),
+      ])
+      setContatos({
+        gestor: gestorRes.data?.email ? gestorRes.data : undefined,
+        comprador: compradorRes.data?.email ? compradorRes.data : undefined,
+      })
     })
   }, [obraId])
 
@@ -4192,8 +4210,17 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
     )
   }, [rdos, obraTitulo])
 
+  function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
+    const set = campo === 'destinatarios' ? destinatarios : cc
+    const setter = campo === 'destinatarios' ? setDestinatarios : setCc
+    const atuais = set.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    if (atuais.includes(email)) return
+    setter([...atuais, email].join(', '))
+  }
+
   async function enviar() {
     const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    const emailsCc = cc.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
     if (emails.length === 0) { setErro('Informe pelo menos um e-mail de destino.'); return }
     if (!assunto.trim()) { setErro('Informe o assunto.'); return }
 
@@ -4207,6 +4234,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
           obraId,
           rdoIds: rdos.map(r => r.id),
           destinatarios: emails,
+          cc: emailsCc,
           assunto: assunto.trim(),
           mensagem,
           assinaturaHtml,
@@ -4242,11 +4270,33 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto">
+          {(contatos.gestor || contatos.comprador) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-[#94A3B8]">Adicionar:</span>
+              {contatos.gestor && (
+                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.gestor!.email)}
+                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
+                  + {contatos.gestor.nome} (gestor)
+                </button>
+              )}
+              {contatos.comprador && (
+                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.comprador!.email)}
+                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
+                  + {contatos.comprador.nome} (comprador)
+                </button>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
             <input className="field" placeholder="cliente@exemplo.com, outro@exemplo.com"
               value={destinatarios} onChange={e => setDestinatarios(e.target.value)} />
             <p className="text-xs text-[#94A3B8] mt-1">Separe múltiplos e-mails por vírgula.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Cc</label>
+            <input className="field" placeholder="opcional, separado por vírgula"
+              value={cc} onChange={e => setCc(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
@@ -4297,19 +4347,37 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
 }) {
   const [temThread, setTemThread] = useState<boolean | null>(null)
   const [destinatarios, setDestinatarios] = useState('')
+  const [cc, setCc] = useState('')
   const [assunto, setAssunto] = useState('')
   const [mensagem, setMensagem] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [remetente, setRemetente] = useState<{ nome: string; email: string }>({ nome: '', email: '' })
+  const [contatos, setContatos] = useState<{ gestor?: { nome: string; email: string }; comprador?: { nome: string; email: string } }>({})
 
   useEffect(() => {
-    createClient().from('relatorio_email_threads').select('id').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
-      .then(({ data }) => setTemThread(Boolean(data)))
-    createClient().auth.getUser().then(({ data }) => {
+    const supabase = createClient()
+    supabase.from('relatorio_email_threads').select('id, ultimo_destinatarios, ultimo_cc').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle()
+      .then(({ data }) => {
+        setTemThread(Boolean(data))
+        if (data?.ultimo_destinatarios?.length) setDestinatarios(data.ultimo_destinatarios.join(', '))
+        if (data?.ultimo_cc?.length) setCc(data.ultimo_cc.join(', '))
+      })
+    supabase.auth.getUser().then(({ data }) => {
       setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? '')
       setRemetente({ nome: data.user?.user_metadata?.nome ?? '', email: data.user?.email ?? '' })
+    })
+    supabase.from('obras').select('gestor_id, comprador_id').eq('id', obraId).single().then(async ({ data: obra }) => {
+      if (!obra) return
+      const [gestorRes, compradorRes] = await Promise.all([
+        obra.gestor_id ? supabase.from('clientes').select('nome, email').eq('id', obra.gestor_id).single() : Promise.resolve({ data: null }),
+        obra.comprador_id ? supabase.from('clientes').select('nome, email').eq('id', obra.comprador_id).single() : Promise.resolve({ data: null }),
+      ])
+      setContatos({
+        gestor: gestorRes.data?.email ? gestorRes.data : undefined,
+        comprador: compradorRes.data?.email ? compradorRes.data : undefined,
+      })
     })
   }, [obraId])
 
@@ -4324,8 +4392,17 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
     )
   }, [relatorios, obraTitulo])
 
+  function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
+    const set = campo === 'destinatarios' ? destinatarios : cc
+    const setter = campo === 'destinatarios' ? setDestinatarios : setCc
+    const atuais = set.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    if (atuais.includes(email)) return
+    setter([...atuais, email].join(', '))
+  }
+
   async function enviar() {
     const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
+    const emailsCc = cc.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
     if (emails.length === 0) { setErro('Informe pelo menos um e-mail de destino.'); return }
     if (!assunto.trim()) { setErro('Informe o assunto.'); return }
 
@@ -4339,6 +4416,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
           obraId,
           relatorioIds: relatorios.map(r => r.id),
           destinatarios: emails,
+          cc: emailsCc,
           assunto: assunto.trim(),
           mensagem,
           assinaturaHtml,
@@ -4374,11 +4452,33 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto">
+          {(contatos.gestor || contatos.comprador) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-[#94A3B8]">Adicionar:</span>
+              {contatos.gestor && (
+                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.gestor!.email)}
+                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
+                  + {contatos.gestor.nome} (gestor)
+                </button>
+              )}
+              {contatos.comprador && (
+                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.comprador!.email)}
+                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
+                  + {contatos.comprador.nome} (comprador)
+                </button>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
             <input className="field" placeholder="cliente@exemplo.com, outro@exemplo.com"
               value={destinatarios} onChange={e => setDestinatarios(e.target.value)} />
             <p className="text-xs text-[#94A3B8] mt-1">Separe múltiplos e-mails por vírgula.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Cc</label>
+            <input className="field" placeholder="opcional, separado por vírgula"
+              value={cc} onChange={e => setCc(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
