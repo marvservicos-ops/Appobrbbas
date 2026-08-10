@@ -137,6 +137,8 @@ export default function EmprestimoPrintPage() {
               <th style={s.th}>Ferramenta</th>
               <th style={s.th}>Marca / Modelo</th>
               <th style={s.th}>Nº de série</th>
+              <th style={{ ...s.th, width: 90 }}>Data devolução</th>
+              <th style={{ ...s.th, width: 130 }}>Assinatura na devolução</th>
             </tr>
           </thead>
           <tbody>
@@ -146,10 +148,15 @@ export default function EmprestimoPrintPage() {
                 <td style={s.td}>{it.ferramenta?.nome ?? '—'}</td>
                 <td style={s.td}>{[it.ferramenta?.marca, it.ferramenta?.modelo].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={s.td}>{it.ferramenta?.numero_serie ?? '—'}</td>
+                <td style={{ ...s.td, height: 32 }}></td>
+                <td style={{ ...s.td, height: 32 }}></td>
               </tr>
             ))}
           </tbody>
         </table>
+        <p style={{ fontSize: 9, color: '#94A3B8', marginTop: 4 }}>
+          Preencher as colunas "Data devolução" e "Assinatura" no momento em que cada ferramenta for devolvida.
+        </p>
 
         <p style={{ fontSize: 11, color: '#374151', marginTop: 24, lineHeight: 1.6 }}>
           Declaro ter recebido as ferramentas e/ou máquinas listadas acima em bom estado de conservação e funcionamento,
