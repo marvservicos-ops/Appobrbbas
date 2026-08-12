@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, ChevronRight, X, Loader2 } from 'lucide-react'
+import { Plus, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, ChevronRight, X, Loader2, ClipboardList } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque } from '@/lib/types'
 import Link from 'next/link'
@@ -53,9 +53,14 @@ export default function EstoquePage() {
           <h1 className="font-syne font-bold text-xl md:text-2xl text-[#0F172A]">Estoques</h1>
           <p className="hidden sm:block text-sm text-[#64748B] mt-1">Gerencie cada estoque separadamente</p>
         </div>
-        <button onClick={() => setShowNovo(true)} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Novo Estoque
-        </button>
+        <div className="flex items-center gap-2">
+          <Link href="/estoque/necessidade-compra" className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#E2E8F0] text-sm font-medium text-[#374151] hover:bg-[#F1F5F9] transition-colors">
+            <ClipboardList size={16} /> Necessidade de Compra
+          </Link>
+          <button onClick={() => setShowNovo(true)} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Novo Estoque
+          </button>
+        </div>
       </div>
 
       {loading ? (
