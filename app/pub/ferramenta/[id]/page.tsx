@@ -6,7 +6,6 @@ import { FileText } from 'lucide-react'
 function fmtDate(d?: string | null) {
   return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
 }
-function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 
 function statusLabelMap(modoPatrimonio: boolean): Record<string, string> {
   return modoPatrimonio
@@ -154,12 +153,6 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
               <div>
                 <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>Nº de série</p>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{f.numero_serie}</p>
-              </div>
-            )}
-            {f.valor_aquisicao != null && (
-              <div>
-                <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>Valor de aquisição</p>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{fmt(f.valor_aquisicao)}</p>
               </div>
             )}
           </div>
