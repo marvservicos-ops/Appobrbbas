@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Search, Bell, Building2, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, Mail, Send, Cloud, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO, Empresa, DiarioObraRelatorio } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
@@ -1866,7 +1867,7 @@ function ModalAddDoc({ obraId, pastaInicialId, pastas, onClose, onCreated }: {
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       setProgresso(Math.round(((i) / files.length) * 100))
-      const path = `${obraId}/${Date.now()}_${file.name}`
+      const path = `${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
       const { error: uploadError } = await supabase.storage.from('documentos').upload(path, file)
       if (uploadError) { setError(uploadError.message); setLoading(false); return }
       const { data: urlData } = supabase.storage.from('documentos').getPublicUrl(path)
@@ -2791,7 +2792,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
   async function uploadNF(file: File) {
     setUploadingNf(true)
     const supabase = createClient()
-    const path = `nf/${obraId}/${Date.now()}_${file.name}`
+    const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
 
     // Parse NFe PDF in parallel with upload (only PDFs)
     const parsePromise = file.type === 'application/pdf' ? (async () => {
@@ -2827,7 +2828,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
   async function uploadNfPagamento(file: File) {
     setUploadingNfPag(true)
     const supabase = createClient()
-    const path = `nf-pagamento/${obraId}/${Date.now()}_${file.name}`
+    const path = `nf-pagamento/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     await supabase.storage.from('documentos').upload(path, file, { upsert: true })
     const { data } = supabase.storage.from('documentos').getPublicUrl(path)
     setNfPagamentoUrl(data.publicUrl)
@@ -3252,7 +3253,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
   async function uploadOrc(file: File) {
     setUploadingNf(true)
     const supabase = createClient()
-    const path = `nf/${obraId}/${Date.now()}_${file.name}`
+    const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     await supabase.storage.from('documentos').upload(path, file, { upsert: true })
     const { data } = supabase.storage.from('documentos').getPublicUrl(path)
     setNfUrl(data.publicUrl); setNfPath(path)
@@ -3262,7 +3263,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
   async function uploadNfPag(file: File) {
     setUploadingNfPag(true)
     const supabase = createClient()
-    const path = `nf-pagamento/${obraId}/${Date.now()}_${file.name}`
+    const path = `nf-pagamento/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     await supabase.storage.from('documentos').upload(path, file, { upsert: true })
     const { data } = supabase.storage.from('documentos').getPublicUrl(path)
     setNfPagamentoUrl(data.publicUrl); setNfPagamentoPath(path)
@@ -3469,7 +3470,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
   async function uploadNF(file: File) {
     setUploadingNf(true)
     const supabase = createClient()
-    const path = `nf/${obraId}/${Date.now()}_${file.name}`
+    const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     await supabase.storage.from('documentos').upload(path, file, { upsert: true })
     const { data } = supabase.storage.from('documentos').getPublicUrl(path)
     setNfUrl(data.publicUrl)

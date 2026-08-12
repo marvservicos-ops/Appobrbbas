@@ -6,6 +6,7 @@ import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTr
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Equipamento, ManutencaoHistorico } from '@/lib/types'
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
@@ -265,7 +266,7 @@ export default function EquipamentoPage() {
     if (erro) { setErroManual(erro); return }
     setUploadingManual(true)
     setErroManual('')
-    const path = `equipamentos/${equipId}_manual_${Date.now()}_${file.name}`
+    const path = `equipamentos/${equipId}_manual_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const sb = createClient()
     const { error: err } = await sb.storage.from('marv-manutencao').upload(path, file, { upsert: true })
     if (!err) {

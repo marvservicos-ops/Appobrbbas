@@ -5,6 +5,7 @@ import { X, Loader2, Upload, Wrench, Building2, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 
 export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatrimonio = false, onClose, onCreated }: {
   estoqueId: string; malaIdPadrao?: string; modoPatrimonio?: boolean; onClose: () => void; onCreated: () => void
@@ -56,7 +57,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
     setUploadingFoto(true)
     const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
-    const path = `ferramentas/${estoqueId}/${Date.now()}_${file.name}`
+    const path = `ferramentas/${estoqueId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
     if (!err) {
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)
@@ -69,7 +70,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
     setUploadingFoto2(true)
     const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
-    const path = `ferramentas/${estoqueId}/${Date.now()}_${file.name}`
+    const path = `ferramentas/${estoqueId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
     if (!err) {
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)
@@ -84,7 +85,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
     setUploadingManual(true)
     setError('')
     const supabase = createClient()
-    const path = `ferramentas/${estoqueId}/manual_${Date.now()}_${file.name}`
+    const path = `ferramentas/${estoqueId}/manual_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
     if (!err) {
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)

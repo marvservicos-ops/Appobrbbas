@@ -5,6 +5,7 @@ import { X, Loader2, Upload, Wrench, Building2, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Ferramenta } from '@/lib/types'
 
 export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = false, onClose, onSaved }: {
@@ -46,7 +47,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
     setUploadingFoto(true)
     const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
-    const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${file.name}`
+    const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
     if (!err) {
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)
@@ -59,7 +60,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
     setUploadingFoto2(true)
     const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
-    const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${file.name}`
+    const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
     if (!err) {
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)
@@ -74,7 +75,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
     setUploadingManual(true)
     setError('')
     const supabase = createClient()
-    const path = `ferramentas/${ferramenta.estoque_id}/manual_${Date.now()}_${file.name}`
+    const path = `ferramentas/${ferramenta.estoque_id}/manual_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
     if (!err) {
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)

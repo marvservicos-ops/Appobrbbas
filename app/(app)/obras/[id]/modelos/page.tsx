@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, X, Loader2, Upload, Check, ChevronDown, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import Link from 'next/link'
 
 interface RDOModelo {
@@ -109,7 +110,7 @@ export default function ModelosPage() {
     setUploadingLogo(campo)
     const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
-    const path = `modelos/${obraId}/${campo}_${Date.now()}_${file.name}`
+    const path = `modelos/${obraId}/${campo}_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
     if (!error) {
       const { data } = supabase.storage.from('documentos').getPublicUrl(path)

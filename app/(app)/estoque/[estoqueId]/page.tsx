@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkl
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
 import Link from 'next/link'
 import FerramentasPanel from './ferramentas/FerramentasPanel'
@@ -569,7 +570,7 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
     setUploadingFoto(true)
     const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
-    const path = `produtos/${produto.id}/${Date.now()}_${file.name}`
+    const path = `produtos/${produto.id}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
     const { error } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
     if (!error) {
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)

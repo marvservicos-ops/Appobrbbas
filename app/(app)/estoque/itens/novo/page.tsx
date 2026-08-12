@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Upload, Package, Scan } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { EstoqueCategoria } from '@/lib/types'
 
 const unidades = ['un', 'm', 'kg', 'L', 'm²', 'par', 'cx', 'rolo', 'peça', 'conjunto']
@@ -58,7 +59,7 @@ export default function NovoItemPage() {
     let foto_path = null
 
     if (foto) {
-      const path = `itens/${Date.now()}_${foto.name}`
+      const path = `itens/${Date.now()}_${sanitizarNomeArquivo(foto.name)}`
       const { error: uploadError } = await supabase.storage.from('estoque').upload(path, foto)
       if (uploadError) { setError(uploadError.message); setLoading(false); return }
       foto_path = path

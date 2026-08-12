@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, X, Loader2, Camera, Check, Pencil, Upload, Printer, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
+import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Obra, RDO, RDOClima, RDOMaoObra, RDOEquipamento, RDOAtividade, RDOOcorrencia, RDOComentario, RDOFoto, RDOAssinatura } from '@/lib/types'
 import Link from 'next/link'
 
@@ -176,7 +177,7 @@ export default function RDOPage() {
     const supabase = createClient()
     for (const fileOriginal of Array.from(files)) {
       const file = await converterSeForHeic(fileOriginal)
-      const path = `${rdoId}/${Date.now()}_${file.name}`
+      const path = `${rdoId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
       const { error } = await supabase.storage.from('rdo-fotos').upload(path, file)
       if (!error) {
         const { data: urlData } = supabase.storage.from('rdo-fotos').getPublicUrl(path)
