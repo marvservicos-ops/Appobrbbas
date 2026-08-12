@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, X, Loader2, Upload, Check, ChevronDown, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { converterSeForHeic } from '@/lib/utils/heic'
 import Link from 'next/link'
 
 interface RDOModelo {
@@ -104,8 +105,9 @@ export default function ModelosPage() {
     setModelos(prev => prev.filter(m => m.id !== id))
   }
 
-  async function uploadLogo(campo: 'empresa' | 'relatorio' | 'relatorio2', file: File, modelo: RDOModelo, setModelo: (m: RDOModelo) => void) {
+  async function uploadLogo(campo: 'empresa' | 'relatorio' | 'relatorio2', fileOriginal: File, modelo: RDOModelo, setModelo: (m: RDOModelo) => void) {
     setUploadingLogo(campo)
+    const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
     const path = `modelos/${obraId}/${campo}_${Date.now()}_${file.name}`
     const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
@@ -295,7 +297,7 @@ function ModeloForm({ inicial, obraId, saving, uploadingLogo, onSalvar, onCancel
                         </div>
                   }
                 </div>
-                <input type="file" accept="image/*" className="hidden"
+                <input type="file" accept="image/*,.heic,.heif" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) onUploadLogo(campo, f, modelo, setModelo) }} />
               </label>
             )

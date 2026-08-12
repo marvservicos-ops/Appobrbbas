@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, X, Loader2, Camera, Check, Pencil, Upload, Printer, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { converterSeForHeic } from '@/lib/utils/heic'
 import { Obra, RDO, RDOClima, RDOMaoObra, RDOEquipamento, RDOAtividade, RDOOcorrencia, RDOComentario, RDOFoto, RDOAssinatura } from '@/lib/types'
 import Link from 'next/link'
 
@@ -173,7 +174,8 @@ export default function RDOPage() {
   // ── FOTOS ─────────────────────────────────────────────
   async function uploadFotos(files: FileList) {
     const supabase = createClient()
-    for (const file of Array.from(files)) {
+    for (const fileOriginal of Array.from(files)) {
+      const file = await converterSeForHeic(fileOriginal)
       const path = `${rdoId}/${Date.now()}_${file.name}`
       const { error } = await supabase.storage.from('rdo-fotos').upload(path, file)
       if (!error) {
@@ -459,7 +461,7 @@ export default function RDOPage() {
             <div className="space-y-3">
               <label className="flex items-center gap-2 w-fit cursor-pointer px-3 py-2 border border-dashed border-[#CBD5E1] rounded-lg hover:bg-[#EEF2FF] hover:border-[#4F7CFF] transition-colors text-sm text-[#64748B]">
                 <Upload size={15} /> Adicionar fotos
-                <input type="file" multiple accept="image/*" className="hidden" onChange={e => { if (e.target.files) uploadFotos(e.target.files); e.target.value = '' }} />
+                <input type="file" multiple accept="image/*,.heic,.heif" className="hidden" onChange={e => { if (e.target.files) uploadFotos(e.target.files); e.target.value = '' }} />
               </label>
               {fotos.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -626,7 +628,8 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemo
     setTemDesenho(false)
   }
 
-  async function handleImagem(file: File) {
+  async function handleImagem(fileOriginal: File) {
+    const file = await converterSeForHeic(fileOriginal)
     const blob = new Blob([await file.arrayBuffer()], { type: file.type })
     await onSalvarBlob(tipo, nome, blob)
     setShowMenu(false)
@@ -668,7 +671,7 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemo
                 className="w-full text-left px-3 py-2 hover:bg-[#F8FAFC] text-[#374151]">✏️ Assinatura em tela</button>
               <label className="w-full text-left px-3 py-2 hover:bg-[#F8FAFC] text-[#374151] flex items-center cursor-pointer">
                 🖼️ Selecionar imagem
-                <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImagem(f) }} />
+                <input type="file" accept="image/*,.heic,.heif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImagem(f) }} />
               </label>
               {assinado && (
                 <button onClick={() => { onRemover(tipo); setModo('idle'); setShowMenu(false) }}

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2 } from 'lucide-react'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
+import { converterSeForHeic } from '@/lib/utils/heic'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
 import Link from 'next/link'
 import FerramentasPanel from './ferramentas/FerramentasPanel'
@@ -561,8 +562,9 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
   const [motivoAjuste, setMotivoAjuste] = useState('')
   const qtdOriginal = produto.quantidade_atual
 
-  async function uploadFoto(file: File) {
+  async function uploadFoto(fileOriginal: File) {
     setUploadingFoto(true)
+    const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
     const path = `produtos/${produto.id}/${Date.now()}_${file.name}`
     const { error } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
@@ -683,7 +685,7 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
               <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                 {uploadingFoto ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {uploadingFoto ? 'Enviando...' : fotoUrl ? 'Trocar foto' : 'Adicionar foto'}
-                <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto}
+                <input type="file" accept="image/*,.heic,.heif" className="hidden" disabled={uploadingFoto}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
               </label>
               {fotoUrl && (

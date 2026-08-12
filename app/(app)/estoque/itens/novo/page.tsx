@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Upload, Package, Scan } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { converterSeForHeic } from '@/lib/utils/heic'
 import { EstoqueCategoria } from '@/lib/types'
 
 const unidades = ['un', 'm', 'kg', 'L', 'm²', 'par', 'cx', 'rolo', 'peça', 'conjunto']
@@ -39,11 +40,12 @@ export default function NovoItemPage() {
     setForm(f => ({ ...f, [field]: value }))
   }
 
-  function handleFoto(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setFoto(file)
-    setFotoPreview(URL.createObjectURL(file))
+    const convertido = await converterSeForHeic(file)
+    setFoto(convertido)
+    setFotoPreview(URL.createObjectURL(convertido))
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -110,9 +112,9 @@ export default function NovoItemPage() {
                 <label className="btn-secondary cursor-pointer">
                   <Upload size={16} />
                   {fotoPreview ? 'Trocar foto' : 'Enviar foto'}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleFoto} />
+                  <input type="file" accept="image/*,.heic,.heif" className="hidden" onChange={handleFoto} />
                 </label>
-                <p className="text-xs text-[#94A3B8] mt-2">JPG, PNG ou WebP. Máximo 5MB.</p>
+                <p className="text-xs text-[#94A3B8] mt-2">JPG, PNG, WebP ou HEIC. Máximo 5MB.</p>
               </div>
             </div>
           </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { X, Loader2, Upload, Wrench, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { converterSeForHeic } from '@/lib/utils/heic'
 import { Ferramenta } from '@/lib/types'
 
 export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = false, onClose, onSaved }: {
@@ -37,8 +38,9 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
     carregarMalas()
   }, [ferramenta.estoque_id, ferramenta.id])
 
-  async function uploadFoto(file: File) {
+  async function uploadFoto(fileOriginal: File) {
     setUploadingFoto(true)
+    const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
     const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${file.name}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
@@ -49,8 +51,9 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
     setUploadingFoto(false)
   }
 
-  async function uploadFoto2(file: File) {
+  async function uploadFoto2(fileOriginal: File) {
     setUploadingFoto2(true)
+    const file = await converterSeForHeic(fileOriginal)
     const supabase = createClient()
     const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${file.name}`
     const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
@@ -170,7 +173,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
               <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                 {uploadingFoto ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {uploadingFoto ? 'Enviando...' : fotoUrl ? 'Trocar foto' : 'Adicionar foto'}
-                <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto}
+                <input type="file" accept="image/*,.heic,.heif" className="hidden" disabled={uploadingFoto}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
               </label>
               {fotoUrl && (
@@ -193,7 +196,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
                 <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
                   {uploadingFoto2 ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploadingFoto2 ? 'Enviando...' : fotoUrl2 ? 'Trocar foto' : 'Adicionar foto'}
-                  <input type="file" accept="image/*" className="hidden" disabled={uploadingFoto2}
+                  <input type="file" accept="image/*,.heic,.heif" className="hidden" disabled={uploadingFoto2}
                     onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto2(f) }} />
                 </label>
                 {fotoUrl2 && (

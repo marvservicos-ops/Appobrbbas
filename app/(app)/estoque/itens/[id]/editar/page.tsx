@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, Upload, Package, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { converterSeForHeic } from '@/lib/utils/heic'
 import { EstoqueCategoria, EstoqueItem } from '@/lib/types'
 
 const unidades = ['un', 'm', 'kg', 'L', 'm²', 'par', 'cx', 'rolo', 'peça', 'conjunto']
@@ -53,11 +54,12 @@ export default function EditarItemPage() {
 
   function set(field: string, value: string) { setForm(f => ({ ...f, [field]: value })) }
 
-  function handleFoto(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setFoto(file)
-    setFotoPreview(URL.createObjectURL(file))
+    const convertido = await converterSeForHeic(file)
+    setFoto(convertido)
+    setFotoPreview(URL.createObjectURL(convertido))
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -122,7 +124,7 @@ export default function EditarItemPage() {
               </div>
               <label className="btn-secondary cursor-pointer">
                 <Upload size={16} /> {fotoPreview ? 'Trocar foto' : 'Enviar foto'}
-                <input type="file" accept="image/*" className="hidden" onChange={handleFoto} />
+                <input type="file" accept="image/*,.heic,.heif" className="hidden" onChange={handleFoto} />
               </label>
             </div>
           </div>

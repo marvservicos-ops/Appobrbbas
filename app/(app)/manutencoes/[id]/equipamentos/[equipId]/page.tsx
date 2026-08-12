@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { converterSeForHeic } from '@/lib/utils/heic'
 import { Equipamento, ManutencaoHistorico } from '@/lib/types'
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
@@ -243,8 +244,9 @@ export default function EquipamentoPage() {
 
   useEffect(() => { load() }, [equipId])
 
-  async function uploadFoto(file: File) {
+  async function uploadFoto(fileOriginal: File) {
     setUploadingFoto(true)
+    const file = await converterSeForHeic(fileOriginal)
     const ext = file.name.split('.').pop()
     const path = `equipamentos/${equipId}.${ext}`
     const sb = createClient()
@@ -319,7 +321,7 @@ export default function EquipamentoPage() {
             )}
             <label className="absolute bottom-2 right-2 flex items-center gap-1.5 text-xs text-[#4F7CFF] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow cursor-pointer hover:bg-white transition-colors">
               {uploadingFoto ? 'Enviando...' : <><Upload size={12} /> {equip.foto_url ? 'Trocar foto' : 'Adicionar foto'}</>}
-              <input type="file" className="hidden" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
+              <input type="file" className="hidden" accept="image/*,.heic,.heif" onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
             </label>
           </div>
 
