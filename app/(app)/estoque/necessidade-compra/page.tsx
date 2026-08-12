@@ -10,6 +10,7 @@ interface FuncionarioTamanhos {
   nome: string
   tamanho_camisa: string | null
   tamanho_calca: string | null
+  tamanho_calca_brim: string | null
   tamanho_bota: string | null
 }
 
@@ -19,13 +20,16 @@ interface ProdutoTamanho {
   quantidade_atual: number
 }
 
-type Peca = 'camisa' | 'calca' | 'bota'
+type Peca = 'camisa' | 'calca_jeans' | 'calca_brim' | 'bota'
 
 const PECA_LABEL: Record<Peca, string> = {
   camisa: 'Camisa',
-  calca: 'Calça',
+  calca_jeans: 'Calça Jeans',
+  calca_brim: 'Calça de Brim',
   bota: 'Bota',
 }
+
+const PECAS: Peca[] = ['camisa', 'calca_jeans', 'calca_brim', 'bota']
 
 function normalizar(s: string) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -34,9 +38,17 @@ function normalizar(s: string) {
 function classificarProduto(nome: string): Peca | null {
   const n = normalizar(nome)
   if (n.includes('camisa') || n.includes('jaleco')) return 'camisa'
-  if (n.includes('calca')) return 'calca'
   if (n.includes('bota')) return 'bota'
+  if (n.includes('brim')) return 'calca_brim'
+  if (n.includes('calca')) return 'calca_jeans'
   return null
+}
+
+function tamanhoFuncionario(f: FuncionarioTamanhos, peca: Peca): string | null {
+  if (peca === 'camisa') return f.tamanho_camisa
+  if (peca === 'calca_jeans') return f.tamanho_calca
+  if (peca === 'calca_brim') return f.tamanho_calca_brim
+  return f.tamanho_bota
 }
 
 export default function NecessidadeCompraPage() {
@@ -48,7 +60,7 @@ export default function NecessidadeCompraPage() {
     async function load() {
       const supabase = createClient()
       const [{ data: func }, { data: prod }] = await Promise.all([
-        supabase.from('funcionarios').select('id, nome, tamanho_camisa, tamanho_calca, tamanho_bota').eq('ativo', true),
+        supabase.from('funcionarios').select('id, nome, tamanho_camisa, tamanho_calca, tamanho_calca_brim, tamanho_bota').eq('ativo', true),
         supabase.from('estoque_produtos').select('nome, tamanho, quantidade_atual').eq('ativo', true),
       ])
       setFuncionarios(func ?? [])
@@ -59,16 +71,12 @@ export default function NecessidadeCompraPage() {
   }, [])
 
   const relatorio = useMemo(() => {
-    const necessario: Record<Peca, Record<string, string[]>> = { camisa: {}, calca: {}, bota: {} }
-    const disponivel: Record<Peca, Record<string, number>> = { camisa: {}, calca: {}, bota: {} }
+    const necessario: Record<Peca, Record<string, string[]>> = { camisa: {}, calca_jeans: {}, calca_brim: {}, bota: {} }
+    const disponivel: Record<Peca, Record<string, number>> = { camisa: {}, calca_jeans: {}, calca_brim: {}, bota: {} }
 
     for (const f of funcionarios) {
-      const pares: [Peca, string | null][] = [
-        ['camisa', f.tamanho_camisa],
-        ['calca', f.tamanho_calca],
-        ['bota', f.tamanho_bota],
-      ]
-      for (const [peca, tamanho] of pares) {
+      for (const peca of PECAS) {
+        const tamanho = tamanhoFuncionario(f, peca)
         if (!tamanho || !tamanho.trim()) continue
         const t = tamanho.trim()
         necessario[peca][t] = necessario[peca][t] ?? []
@@ -83,8 +91,7 @@ export default function NecessidadeCompraPage() {
       disponivel[peca][t] = (disponivel[peca][t] ?? 0) + (p.quantidade_atual ?? 0)
     }
 
-    const pecas: Peca[] = ['camisa', 'calca', 'bota']
-    return pecas.map(peca => {
+    return PECAS.map(peca => {
       const tamanhos = Array.from(new Set([...Object.keys(necessario[peca]), ...Object.keys(disponivel[peca])])).sort()
       const linhas = tamanhos.map(tamanho => {
         const nomes = necessario[peca][tamanho] ?? []
@@ -94,7 +101,7 @@ export default function NecessidadeCompraPage() {
         return { tamanho, necessarioQtd, disponivelQtd, falta, nomes }
       })
       const semTamanho = funcionarios.filter(f => {
-        const campo = peca === 'camisa' ? f.tamanho_camisa : peca === 'calca' ? f.tamanho_calca : f.tamanho_bota
+        const campo = tamanhoFuncionario(f, peca)
         return !campo || !campo.trim()
       })
       return { peca, linhas, semTamanho }
@@ -159,7 +166,7 @@ export default function NecessidadeCompraPage() {
             </div>
           ))}
           <p className="text-xs text-[#94A3B8]">
-            Peças são identificadas pelo nome do produto no estoque (contendo &quot;camisa&quot;, &quot;jaleco&quot;, &quot;calça&quot; ou &quot;bota&quot;), e o tamanho precisa ser digitado de forma idêntica entre o funcionário e o produto (ex: &quot;M&quot; com &quot;M&quot;, &quot;38&quot; com &quot;38&quot;) para o cruzamento funcionar.
+            Peças são identificadas pelo nome do produto no estoque (contendo &quot;camisa&quot;, &quot;jaleco&quot;, &quot;brim&quot;, &quot;calça&quot; ou &quot;bota&quot;), e o tamanho precisa ser digitado de forma idêntica entre o funcionário e o produto (ex: &quot;M&quot; com &quot;M&quot;, &quot;38&quot; com &quot;38&quot;) para o cruzamento funcionar.
           </p>
         </div>
       )}

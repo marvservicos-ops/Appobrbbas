@@ -27,6 +27,7 @@ interface Funcionario {
   responsavel_entrega: boolean
   tamanho_camisa: string | null
   tamanho_calca: string | null
+  tamanho_calca_brim: string | null
   tamanho_bota: string | null
   salario_bruto: number | null
   horas_dia: number | null
@@ -97,6 +98,7 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   const [responsavelEntrega, setResponsavelEntrega] = useState(funcionario?.responsavel_entrega ?? false)
   const [tamanhoCamisa, setTamanhoCamisa] = useState(funcionario?.tamanho_camisa ?? '')
   const [tamanhoCalca, setTamanhoCalca] = useState(funcionario?.tamanho_calca ?? '')
+  const [tamanhoCalcaBrim, setTamanhoCalcaBrim] = useState(funcionario?.tamanho_calca_brim ?? '')
   const [tamanhoBota, setTamanhoBota] = useState(funcionario?.tamanho_bota ?? '')
   const [dataAdmissao, setDataAdmissao] = useState(funcionario?.data_admissao ?? '')
   const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario?.acordo_rescisorio ?? false)
@@ -158,6 +160,7 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
       responsavel_entrega: responsavelEntrega,
       tamanho_camisa: tamanhoCamisa.trim() || null,
       tamanho_calca: tamanhoCalca.trim() || null,
+      tamanho_calca_brim: tamanhoCalcaBrim.trim() || null,
       tamanho_bota: tamanhoBota.trim() || null,
       data_admissao: dataAdmissao || null,
       acordo_rescisorio: acordoRescisorio,
@@ -233,18 +236,22 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
               <label className="block text-xs font-medium text-[#374151] mb-1.5">E-mail</label>
               <input type="email" className="field" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@exemplo.com" />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Camisa</label>
                 <input className="field" value={tamanhoCamisa} onChange={e => setTamanhoCamisa(e.target.value)} placeholder="P, M, G..." />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça</label>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Bota</label>
+                <input className="field" value={tamanhoBota} onChange={e => setTamanhoBota(e.target.value)} placeholder="40, 41..." />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça Jeans</label>
                 <input className="field" value={tamanhoCalca} onChange={e => setTamanhoCalca(e.target.value)} placeholder="38, 40..." />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Bota</label>
-                <input className="field" value={tamanhoBota} onChange={e => setTamanhoBota(e.target.value)} placeholder="40, 41..." />
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça de Brim</label>
+                <input className="field" value={tamanhoCalcaBrim} onChange={e => setTamanhoCalcaBrim(e.target.value)} placeholder="P, M, G, GG..." />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
