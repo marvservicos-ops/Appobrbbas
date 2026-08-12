@@ -22,6 +22,9 @@ interface Funcionario {
   id: string
   nome: string
   cargo: string | null
+  tamanho_camisa: string | null
+  tamanho_calca: string | null
+  tamanho_bota: string | null
   salario_bruto: number | null
   horas_dia: number | null
   dias_mes: number | null
@@ -542,6 +545,9 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
 }) {
   const [nome, setNome] = useState(funcionario.nome)
   const [cargo, setCargo] = useState(funcionario.cargo ?? '')
+  const [tamanhoCamisa, setTamanhoCamisa] = useState(funcionario.tamanho_camisa ?? '')
+  const [tamanhoCalca, setTamanhoCalca] = useState(funcionario.tamanho_calca ?? '')
+  const [tamanhoBota, setTamanhoBota] = useState(funcionario.tamanho_bota ?? '')
   const [dataAdmissao, setDataAdmissao] = useState(funcionario.data_admissao ?? '')
   const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario.acordo_rescisorio ?? false)
   const [salarioBruto, setSalarioBruto] = useState(funcionario.salario_bruto ? String(funcionario.salario_bruto) : '')
@@ -589,6 +595,9 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
     const supabase = createClient()
     const { error: err } = await supabase.from('funcionarios').update({
       nome: nome.trim(), cargo: cargo.trim() || null,
+      tamanho_camisa: tamanhoCamisa.trim() || null,
+      tamanho_calca: tamanhoCalca.trim() || null,
+      tamanho_bota: tamanhoBota.trim() || null,
       data_admissao: dataAdmissao || null,
       acordo_rescisorio: acordoRescisorio,
       salario_bruto: salNum || null, horas_dia: horasNum, dias_mes: diasNum,
@@ -635,6 +644,20 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
             <div>
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
               <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Camisa</label>
+                <input className="field" value={tamanhoCamisa} onChange={e => setTamanhoCamisa(e.target.value)} placeholder="P, M, G..." />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça</label>
+                <input className="field" value={tamanhoCalca} onChange={e => setTamanhoCalca(e.target.value)} placeholder="38, 40..." />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Bota</label>
+                <input className="field" value={tamanhoBota} onChange={e => setTamanhoBota(e.target.value)} placeholder="40, 41..." />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
