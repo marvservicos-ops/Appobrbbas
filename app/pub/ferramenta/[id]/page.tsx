@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { FileText } from 'lucide-react'
 
 function fmtDate(d?: string | null) {
   return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -79,6 +80,14 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
               </div>
             )}
           </div>
+        )}
+
+        {/* Manual de instruções */}
+        {f.manual_url && (
+          <a href={f.manual_url} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', borderRadius: 16, padding: '14px 20px', boxShadow: '0 1px 4px #0001', color: '#4F7CFF', textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>
+            <FileText size={16} /> {f.manual_nome || 'Ver manual de instruções (PDF)'}
+          </a>
         )}
 
         {/* Pertence a uma mala */}

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { Wrench, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
+import { Wrench, CheckCircle2, XCircle, AlertTriangle, FileText } from 'lucide-react'
 
 function fmtDate(d?: string | null) {
   return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -58,6 +58,14 @@ export default async function PubEquipamentoPage({ params }: { params: { equipId
           <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001' }}>
             <img src={(equip as any).foto_url} alt={(equip as any).nome} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
           </div>
+        )}
+
+        {/* Manual de instruções */}
+        {(equip as any).manual_url && (
+          <a href={(equip as any).manual_url} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', borderRadius: 16, padding: '14px 20px', boxShadow: '0 1px 4px #0001', color: '#4F7CFF', textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>
+            <FileText size={16} /> {(equip as any).manual_nome || 'Ver manual de instruções (PDF)'}
+          </a>
         )}
 
         {/* Dados técnicos */}
