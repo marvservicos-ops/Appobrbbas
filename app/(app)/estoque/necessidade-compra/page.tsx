@@ -139,7 +139,7 @@ export default function NecessidadeCompraPage() {
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Tamanho</th>
-                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Necessário</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Nº Funcionários</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Em estoque</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Falta comprar</th>
                     </tr>
