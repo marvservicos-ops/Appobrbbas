@@ -435,6 +435,7 @@ export default function EstoqueDetalhe() {
                     <th className="px-3 py-3 w-10 hidden sm:table-cell" />
                     <th className="text-left text-xs font-semibold text-[#64748B] px-3 py-3">Produto</th>
                     <th className="hidden md:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Código</th>
+                    <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Tam.</th>
                     <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Unidade</th>
                     <th className="text-left text-xs font-semibold text-[#64748B] px-3 py-3">Qtd</th>
                     <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Mín.</th>
@@ -467,6 +468,7 @@ export default function EstoqueDetalhe() {
                           </div>
                         </td>
                         <td className="hidden md:table-cell px-3 py-3 text-sm text-[#64748B]">{p.codigo ?? '—'}</td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.tamanho ?? '—'}</td>
                         <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.unidade}</td>
                         <td className={`px-3 py-3 text-sm font-semibold ${negativo ? 'text-red-600' : abaixoMin ? 'text-amber-700' : 'text-[#374151]'}`}>
                           {p.quantidade_atual}
@@ -551,6 +553,7 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
   const [nome, setNome] = useState(produto.nome)
   const [codigo, setCodigo] = useState(produto.codigo ?? '')
   const [codigoBarras, setCodigoBarras] = useState(produto.codigo_barras ?? '')
+  const [tamanho, setTamanho] = useState(produto.tamanho ?? '')
   const [unidade, setUnidade] = useState(produto.unidade)
   const [qtdAtual, setQtdAtual] = useState(String(produto.quantidade_atual))
   const [qtdMin, setQtdMin] = useState(String(produto.quantidade_minima))
@@ -585,6 +588,7 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
       nome: nome.trim(),
       codigo: codigo.trim() || null,
       codigo_barras: codigoBarras.trim() || null,
+      tamanho: tamanho.trim() || null,
       unidade: unidade.trim() || 'un',
       quantidade_atual: novaQtd,
       quantidade_minima: parseFloat(qtdMin) || 0,
@@ -629,6 +633,10 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Unidade</label>
               <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Tamanho</label>
+            <input className="field" value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="Ex: M, 38..." />
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Código de Barras / QR Code</label>
@@ -902,6 +910,7 @@ function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: str
   const [nome, setNome] = useState('')
   const [codigo, setCodigo] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
+  const [tamanho, setTamanho] = useState('')
   const [unidade, setUnidade] = useState('un')
   const [qtdMin, setQtdMin] = useState('0')
   const [loading, setLoading] = useState(false)
@@ -915,9 +924,10 @@ function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: str
       estoque_id: estoqueId, nome: nome.trim(),
       codigo: codigo || null,
       codigo_barras: codigoBarras || null,
+      tamanho: tamanho.trim() || null,
       unidade, quantidade_minima: parseFloat(qtdMin) || 0,
     })
-    setNome(''); setCodigo(''); setCodigoBarras(''); setUnidade('un'); setQtdMin('0')
+    setNome(''); setCodigo(''); setCodigoBarras(''); setTamanho(''); setUnidade('un'); setQtdMin('0')
     setShow(false); setLoading(false)
     onAdded()
   }
@@ -938,6 +948,10 @@ function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: str
         <div className="w-32">
           <label className="block text-xs font-medium text-[#64748B] mb-1">{estoqueIcone === 'shield' ? 'Código / Nº CA' : 'Inf. Adicionais'}</label>
           <input className="field text-sm" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder={estoqueIcone === 'shield' ? 'Ex: CA-12345' : 'Opcional'} />
+        </div>
+        <div className="w-24">
+          <label className="block text-xs font-medium text-[#64748B] mb-1">Tamanho</label>
+          <input className="field text-sm" value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="M, 38..." />
         </div>
         <div className="w-24">
           <label className="block text-xs font-medium text-[#64748B] mb-1">Unidade</label>

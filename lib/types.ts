@@ -190,6 +190,7 @@ export interface EstoqueProduto {
   nome: string
   codigo?: string
   codigo_barras?: string
+  tamanho?: string | null
   unidade: string
   quantidade_atual: number
   quantidade_minima: number
