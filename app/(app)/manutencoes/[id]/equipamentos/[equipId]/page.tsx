@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode } from 'lucide-react'
+import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
+import { validarPdf } from '@/lib/utils/pdf'
 import { Equipamento, ManutencaoHistorico } from '@/lib/types'
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
@@ -222,6 +223,8 @@ export default function EquipamentoPage() {
   const [historico, setHistorico] = useState<ManutencaoHistorico[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadingFoto, setUploadingFoto] = useState(false)
+  const [uploadingManual, setUploadingManual] = useState(false)
+  const [erroManual, setErroManual] = useState('')
 
   const [showForm, setShowForm] = useState(false)
   const [fComp, setFComp] = useState('')
@@ -255,6 +258,24 @@ export default function EquipamentoPage() {
     await sb.from('equipamentos').update({ foto_url: data.publicUrl }).eq('id', equipId)
     setUploadingFoto(false)
     load()
+  }
+
+  async function uploadManual(file: File) {
+    const erro = validarPdf(file)
+    if (erro) { setErroManual(erro); return }
+    setUploadingManual(true)
+    setErroManual('')
+    const path = `equipamentos/${equipId}_manual_${Date.now()}_${file.name}`
+    const sb = createClient()
+    const { error: err } = await sb.storage.from('marv-manutencao').upload(path, file, { upsert: true })
+    if (!err) {
+      const { data } = sb.storage.from('marv-manutencao').getPublicUrl(path)
+      await sb.from('equipamentos').update({ manual_url: data.publicUrl, manual_nome: file.name }).eq('id', equipId)
+      load()
+    } else {
+      setErroManual(err.message)
+    }
+    setUploadingManual(false)
   }
 
   async function salvarManutencao() {
@@ -322,6 +343,27 @@ export default function EquipamentoPage() {
             <label className="absolute bottom-2 right-2 flex items-center gap-1.5 text-xs text-[#4F7CFF] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow cursor-pointer hover:bg-white transition-colors">
               {uploadingFoto ? 'Enviando...' : <><Upload size={12} /> {equip.foto_url ? 'Trocar foto' : 'Adicionar foto'}</>}
               <input type="file" className="hidden" accept="image/*,.heic,.heif" onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
+            </label>
+          </div>
+
+          {/* Manual de instruções */}
+          <div className="card flex flex-col justify-between">
+            <div>
+              <h3 className="font-syne font-semibold text-[#0F172A] text-sm mb-3">Manual de Instruções</h3>
+              {equip.manual_url ? (
+                <a href={equip.manual_url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg hover:bg-[#E0E7FF] transition-colors">
+                  <FileText size={15} className="shrink-0" /> <span className="truncate">{equip.manual_nome || 'Ver manual (PDF)'}</span>
+                </a>
+              ) : (
+                <p className="text-sm text-[#94A3B8]">Nenhum manual anexado</p>
+              )}
+              {erroManual && <p className="text-xs text-red-500 mt-2">{erroManual}</p>}
+            </div>
+            <label className="mt-3 flex items-center justify-center gap-1.5 text-xs text-[#64748B] border border-[#E2E8F0] px-3 py-2 rounded-lg cursor-pointer hover:bg-[#F8FAFC] transition-colors">
+              {uploadingManual ? 'Enviando...' : <><Upload size={12} /> {equip.manual_url ? 'Trocar PDF' : 'Adicionar PDF'}</>}
+              <input type="file" className="hidden" accept="application/pdf,.pdf" disabled={uploadingManual}
+                onChange={e => { const f = e.target.files?.[0]; if (f) uploadManual(f) }} />
             </label>
           </div>
 

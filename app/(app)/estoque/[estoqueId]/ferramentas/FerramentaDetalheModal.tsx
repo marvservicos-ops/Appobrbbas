@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2, Search, Package, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
+import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2, Search, Package, ArrowDownCircle, ArrowUpCircle, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito, CampoTecnico, FerramentaDado, EstoqueProduto, MalaEstoqueProduto, MalaEstoqueRegistro } from '@/lib/types'
 import ModalDevolverItem from './ModalDevolverItem'
@@ -574,6 +574,13 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
                 <div><p className="text-xs text-[#94A3B8]">Nº de série</p><p className="text-[#374151]">{ferramenta.numero_serie || '—'}</p></div>
                 <div><p className="text-xs text-[#94A3B8]">Valor de aquisição</p><p className="text-[#374151]">{ferramenta.valor_aquisicao ? moeda(ferramenta.valor_aquisicao) : '—'}</p></div>
               </div>
+
+              {ferramenta.manual_url && (
+                <a href={ferramenta.manual_url} target="_blank" rel="noopener noreferrer"
+                  className="w-full flex items-center gap-2 text-sm text-[#4F7CFF] bg-[#EEF2FF] px-3 py-2 rounded-lg hover:bg-[#E0E7FF] transition-colors">
+                  <FileText size={15} /> {ferramenta.manual_nome || 'Ver manual de instruções (PDF)'}
+                </a>
+              )}
 
               {/* Ações */}
               <div className="flex flex-wrap gap-2">

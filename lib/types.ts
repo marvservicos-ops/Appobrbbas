@@ -365,6 +365,8 @@ export interface Equipamento {
   localizacao?: string | null
   data_instalacao?: string | null
   foto_url?: string | null
+  manual_url?: string | null
+  manual_nome?: string | null
   ativo: boolean
   created_at: string
 }
@@ -500,6 +502,8 @@ export interface Ferramenta {
   data_aquisicao?: string | null
   foto_url?: string | null
   foto_url_2?: string | null
+  manual_url?: string | null
+  manual_nome?: string | null
   status: FerramentaStatus
   observacoes?: string | null
   eh_mala: boolean

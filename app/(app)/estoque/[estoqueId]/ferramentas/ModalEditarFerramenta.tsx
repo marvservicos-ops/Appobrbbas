@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Loader2, Upload, Wrench, Building2 } from 'lucide-react'
+import { X, Loader2, Upload, Wrench, Building2, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
+import { validarPdf } from '@/lib/utils/pdf'
 import { Ferramenta } from '@/lib/types'
 
 export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = false, onClose, onSaved }: {
@@ -23,8 +24,11 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
   const [observacoes, setObservacoes] = useState(ferramenta.observacoes ?? '')
   const [fotoUrl, setFotoUrl] = useState(ferramenta.foto_url ?? '')
   const [fotoUrl2, setFotoUrl2] = useState(ferramenta.foto_url_2 ?? '')
+  const [manualUrl, setManualUrl] = useState(ferramenta.manual_url ?? '')
+  const [manualNome, setManualNome] = useState(ferramenta.manual_nome ?? '')
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [uploadingFoto2, setUploadingFoto2] = useState(false)
+  const [uploadingManual, setUploadingManual] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -64,6 +68,24 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
     setUploadingFoto2(false)
   }
 
+  async function uploadManual(file: File) {
+    const erro = validarPdf(file)
+    if (erro) { setError(erro); return }
+    setUploadingManual(true)
+    setError('')
+    const supabase = createClient()
+    const path = `ferramentas/${ferramenta.estoque_id}/manual_${Date.now()}_${file.name}`
+    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
+    if (!err) {
+      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
+      setManualUrl(data.publicUrl)
+      setManualNome(file.name)
+    } else {
+      setError(err.message)
+    }
+    setUploadingManual(false)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) return
@@ -83,6 +105,8 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
       foto_url_2: fotoUrl2 || null,
+      manual_url: manualUrl || null,
+      manual_nome: manualNome || null,
       eh_mala: ehMala,
       mala_id: !ehMala && malaId ? malaId : null,
       updated_at: new Date().toISOString(),
@@ -207,6 +231,28 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
               </div>
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Manual de instruções (PDF)</label>
+            <div className="flex items-center gap-3">
+              {manualUrl
+                ? <a href={manualUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-[#4F7CFF] hover:underline truncate max-w-[160px]">
+                    <FileText size={14} className="shrink-0" /> <span className="truncate">{manualNome || 'Ver manual'}</span>
+                  </a>
+                : <span className="text-sm text-[#94A3B8]">Nenhum arquivo</span>}
+              <label className="flex-1 cursor-pointer flex items-center gap-2 px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] text-sm text-[#64748B] transition-colors">
+                {uploadingManual ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {uploadingManual ? 'Enviando...' : manualUrl ? 'Trocar PDF' : 'Adicionar PDF'}
+                <input type="file" accept="application/pdf,.pdf" className="hidden" disabled={uploadingManual}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadManual(f) }} />
+              </label>
+              {manualUrl && (
+                <button type="button" onClick={() => { setManualUrl(''); setManualNome('') }} className="text-[#94A3B8] hover:text-red-500 transition-colors">
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+          </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
