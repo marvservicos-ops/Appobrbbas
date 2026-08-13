@@ -55,7 +55,7 @@ export default function RegistrarPage() {
   const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
   const [funcionarioId, setFuncionarioId] = useState('')
   const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string; responsavel_entrega?: boolean }[]>([])
-  const [destinoTipo, setDestinoTipo] = useState<'obra' | 'manutencao' | 'uso_interno' | 'funcionario'>('obra')
+  const [destinoTipo, setDestinoTipo] = useState<'obra' | 'manutencao' | 'uso_interno'>('obra')
   const [manutencaoId, setManutencaoId] = useState('')
   const [manutencoes, setManutencoes] = useState<{ id: string; numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string } | null }[]>([])
   const [precoEntrada, setPrecoEntrada] = useState('')
@@ -163,8 +163,8 @@ export default function RegistrarPage() {
       if (isLimpeza && destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
       if (isLimpeza && destinoTipo === 'manutencao' && !manutencaoId) { setError('Selecione o contrato de manutenção de destino.'); return }
       if (isLimpeza && destinoTipo === 'manutencao' && (!produtoId || produtoId === '__outro__')) { setError('Para destino Manutenção, selecione um produto do catálogo.'); return }
+      if (isDestinoMultiplo && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
       if (isDestinoMultiplo && destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
-      if (isDestinoMultiplo && destinoTipo === 'funcionario' && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
       if (isDestinoMultiplo && destinoTipo === 'manutencao' && !manutencaoId) { setError('Selecione o contrato de manutenção de destino.'); return }
       if (isDestinoMultiplo && destinoTipo === 'manutencao' && (!produtoId || produtoId === '__outro__')) { setError('Para destino Manutenção, selecione um produto do catálogo.'); return }
     }
@@ -193,12 +193,12 @@ export default function RegistrarPage() {
     const preco_unitario_custo = tipo === 'entrada' ? precoEntradaNum : cmpAtual
     const valor_total = qtd * preco_unitario_custo
     const destinoFinal = isCopa ? 'uso_interno' : destinoTipo
-    // Estoques com seletor de múltiplos destinos (obra/funcionário/manutenção/uso interno) só devem
-    // gravar o id do destino efetivamente escolhido — senão um id de uma aba anterior "gruda" no
-    // registro e contamina relatórios que filtram por obra_id/funcionario_id (ex.: financeiro da obra).
+    // Estoques com abas de destino (obra/manutenção/uso interno) só devem gravar o id do destino
+    // efetivamente escolhido — senão um id de uma aba anterior "gruda" no registro e contamina
+    // relatórios que filtram por obra_id (ex.: financeiro da obra).
     const hasMultiDestino = tipo === 'saida' && (isDestinoMultiplo || (isLimpeza && !isCopa))
     const obraIdFinal = isCopa ? null : hasMultiDestino ? (destinoFinal === 'obra' ? (obraId || null) : null) : (obraId || null)
-    const funcionarioIdFinal = needsFuncionario ? (funcionarioId || null) : hasMultiDestino ? (destinoFinal === 'funcionario' ? (funcionarioId || null) : null) : (funcionarioId || null)
+    const funcionarioIdFinal = funcionarioId || null
     const manutencaoIdFinal = hasMultiDestino && destinoFinal === 'manutencao' ? (manutencaoId || null) : null
 
     const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
@@ -654,39 +654,42 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          <label className="block text-sm font-medium text-[#374151]">Destino *</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {(['obra', 'funcionario', 'uso_interno', 'manutencao'] as const).map(d => (
-              <button key={d} type="button"
-                onClick={() => setDestinoTipo(d)}
-                className={`py-2 rounded-lg text-xs font-medium border-2 transition-all ${destinoTipo === d ? 'border-[#4F7CFF] bg-[#EEF2FF] text-[#4F7CFF]' : 'border-[#E2E8F0] text-[#64748B]'}`}>
-                {d === 'obra' ? 'Obra' : d === 'funcionario' ? 'Funcionário' : d === 'manutencao' ? 'Manutenção' : 'Uso Interno'}
-              </button>
-            ))}
-          </div>
-          {destinoTipo === 'obra' && (
-            <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
-              <option value="">Selecione a obra...</option>
-              {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
-            </select>
-          )}
-          {destinoTipo === 'funcionario' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Funcionário de Destino *</label>
             <select className="field" value={funcionarioId} onChange={e => setFuncionarioId(e.target.value)} required>
               <option value="">Selecione o funcionário...</option>
               {funcionarios.map((f: any) => <option key={f.id} value={f.id}>{f.nome}</option>)}
             </select>
-          )}
-          {destinoTipo === 'manutencao' && (
-            <select className="field" value={manutencaoId} onChange={e => setManutencaoId(e.target.value)} required>
-              <option value="">Selecione o contrato de manutenção...</option>
-              {manutencoes.map((m: any) => (
-                <option key={m.id} value={m.id}>
-                  {(m.empresa?.apelido || m.empresa?.razao_social || 'Sem empresa')}{m.numero_contrato ? ` · ${m.numero_contrato}` : ''}
-                </option>
+          </div>
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-[#374151]">Destino *</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['obra', 'uso_interno', 'manutencao'] as const).map(d => (
+                <button key={d} type="button"
+                  onClick={() => setDestinoTipo(d)}
+                  className={`py-2 rounded-lg text-xs font-medium border-2 transition-all ${destinoTipo === d ? 'border-[#4F7CFF] bg-[#EEF2FF] text-[#4F7CFF]' : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                  {d === 'obra' ? 'Obra' : d === 'manutencao' ? 'Manutenção' : 'Uso Interno'}
+                </button>
               ))}
-            </select>
-          )}
+            </div>
+            {destinoTipo === 'obra' && (
+              <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
+                <option value="">Selecione a obra...</option>
+                {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+              </select>
+            )}
+            {destinoTipo === 'manutencao' && (
+              <select className="field" value={manutencaoId} onChange={e => setManutencaoId(e.target.value)} required>
+                <option value="">Selecione o contrato de manutenção...</option>
+                {manutencoes.map((m: any) => (
+                  <option key={m.id} value={m.id}>
+                    {(m.empresa?.apelido || m.empresa?.razao_social || 'Sem empresa')}{m.numero_contrato ? ` · ${m.numero_contrato}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
       )}
 
