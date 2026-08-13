@@ -10,6 +10,36 @@ function formatarData(data: string) {
   return new Date(data + 'T12:00:00').toLocaleDateString('pt-BR')
 }
 
+function adicionarDias(data: Date, dias: number): Date {
+  const d = new Date(data)
+  d.setDate(d.getDate() + dias)
+  return d
+}
+
+function formatarDataObj(d: Date): string {
+  return d.toLocaleDateString('pt-BR')
+}
+
+// Distribui o período total (dataInicio a dataTermino) em 5 blocos de 7 dias:
+// Inicial + 4 Prorrogações. O último bloco é truncado na data término.
+function calcularPeriodosAssinatura(dataInicioStr: string, dataTerminoStr: string): { inicio: Date; fim: Date }[] | null {
+  if (!dataInicioStr || !dataTerminoStr) return null
+  const inicio = new Date(dataInicioStr + 'T12:00:00')
+  const termino = new Date(dataTerminoStr + 'T12:00:00')
+  if (termino < inicio) return null
+
+  const periodos: { inicio: Date; fim: Date }[] = []
+  let cursor = inicio
+  for (let i = 0; i < 5; i++) {
+    const inicioBloco = cursor > termino ? termino : cursor
+    const fimCalculado = adicionarDias(inicioBloco, 6)
+    const fimBloco = fimCalculado > termino ? termino : fimCalculado
+    periodos.push({ inicio: inicioBloco, fim: fimBloco })
+    cursor = adicionarDias(fimBloco, 1)
+  }
+  return periodos
+}
+
 const th: React.CSSProperties = { border: '1px solid #999', padding: '4px 6px', background: '#F1F1F1', fontWeight: 700, fontSize: 9, textAlign: 'left' }
 const td: React.CSSProperties = { border: '1px solid #999', padding: '4px 6px', fontSize: 9, verticalAlign: 'top' }
 const label: React.CSSProperties = { border: '1px solid #999', padding: '4px 6px', fontSize: 9, fontWeight: 700, background: '#FAFAFA', whiteSpace: 'nowrap' }
@@ -69,6 +99,8 @@ function BlocoAssinaturas({ titulo }: { titulo?: string }) {
 }
 
 export default function PtDocument({ data }: { data: DocumentoSegurancaFormData }) {
+  const periodos = calcularPeriodosAssinatura(data.dataInicio, data.dataTermino)
+
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', color: '#111', fontSize: 9 }}>
       {/* ── Cabeçalho ── */}
@@ -246,9 +278,14 @@ export default function PtDocument({ data }: { data: DocumentoSegurancaFormData 
 
       {/* ── Assinaturas ── */}
       <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 4 }}>Assinaturas</div>
-      <BlocoAssinaturas titulo={`Inicial: ${formatarData(data.dataInicio)} A ${formatarData(data.dataTermino)}`} />
-      {['1°', '2°', '3°', '4°'].map(n => (
-        <BlocoAssinaturas key={n} titulo={`${n} Prorrogação: ____/____/______ a ____/____/______`} />
+      <BlocoAssinaturas
+        titulo={periodos ? `Inicial: ${formatarDataObj(periodos[0].inicio)} A ${formatarDataObj(periodos[0].fim)}` : 'Inicial: ____/____/______ A ____/____/______'}
+      />
+      {['1°', '2°', '3°', '4°'].map((n, idx) => (
+        <BlocoAssinaturas
+          key={n}
+          titulo={periodos ? `${n} Prorrogação: ${formatarDataObj(periodos[idx + 1].inicio)} a ${formatarDataObj(periodos[idx + 1].fim)}` : `${n} Prorrogação: ____/____/______ a ____/____/______`}
+        />
       ))}
     </div>
   )
