@@ -61,10 +61,10 @@ function ItemChecklist({ texto, marcado }: { texto: string; marcado: boolean }) 
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, fontSize: 8, lineHeight: 1.3, padding: '1px 0' }}>
       <span>{texto}</span>
       <span style={{
-        width: 8, height: 8, border: '1px solid #333', flexShrink: 0, display: 'inline-flex',
-        alignItems: 'center', justifyContent: 'center', background: marcado ? '#0F172A' : 'white',
+        width: 9, height: 9, border: '1.2px solid #000', flexShrink: 0, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', background: 'white',
       }}>
-        {marcado && <span style={{ color: 'white', fontSize: 6.5, lineHeight: 1 }}>✓</span>}
+        {marcado && <span style={{ color: '#000', fontWeight: 900, fontSize: 8.5, lineHeight: 1 }}>✓</span>}
       </span>
     </div>
   )

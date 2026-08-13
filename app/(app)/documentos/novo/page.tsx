@@ -233,7 +233,7 @@ export default function NovoDocumentoSegurancaPage() {
         }
         @media print {
           @page { size: A4; margin: 0; }
-          html, body { margin: 0; padding: 0; }
+          html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           #documento-preview { box-shadow: none !important; margin: 0 !important; max-width: none !important; }
         }
       `}</style>
