@@ -7,15 +7,17 @@ import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import AprDocument from '@/components/documentos/AprDocument'
 import PtDocument from '@/components/documentos/PtDocument'
-import ModalGerenciarModelosPt from '@/components/documentos/ModalGerenciarModelosPt'
+import ModalGerenciarModelos from '@/components/documentos/ModalGerenciarModelos'
 import {
-  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem, MembroEquipe, ModeloPt, EmpresaEmissora,
+  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem, MembroEquipe, ModeloPt, ModeloApr, EmpresaEmissora,
   AGENTES_FATALIDADE_GRUPOS, RISCOS_ASSOCIADOS_COL1, RISCOS_ASSOCIADOS_COL2,
   PRECAUCOES_COL1, PRECAUCOES_COL2, EPI_COL1, EPI_COL2, EPI_COL3, EMPRESAS_EMISSORAS,
-  novoRiscoItem, novoMembroEquipe, criarFormDataInicial, extrairDadosModelo, normalizarDadosModelo,
+  novoRiscoItem, novoMembroEquipe, criarFormDataInicial,
+  extrairDadosModelo, normalizarDadosModelo, extrairDadosModeloApr, normalizarDadosModeloApr,
 } from '@/components/documentos/types'
 
 type ListaBooleana = 'riscosAssociadosCol1' | 'riscosAssociadosCol2' | 'precaucoesCol1' | 'precaucoesCol2' | 'epiCol1' | 'epiCol2' | 'epiCol3'
+type CampoEquipe = 'equipeExecucao' | 'participantesApr'
 
 function ChecklistColuna({ titulo, itens, marcados, onToggle }: { titulo?: string; itens: readonly string[]; marcados: boolean[]; onToggle: (i: number) => void }) {
   return (
@@ -29,6 +31,153 @@ function ChecklistColuna({ titulo, itens, marcados, onToggle }: { titulo?: strin
           </label>
         ))}
       </div>
+    </div>
+  )
+}
+
+interface FuncionarioOpcao {
+  id: string
+  nome: string
+  cargo: string | null
+}
+
+interface EquipeCardProps {
+  titulo: string
+  membros: MembroEquipe[]
+  mostrarAptidao: boolean
+  funcionarios: FuncionarioOpcao[]
+  funcionariosSelecionados: string[]
+  buscaFuncionario: string
+  onBuscaChange: (v: string) => void
+  onToggleFuncionario: (id: string) => void
+  onAdicionarSelecionados: () => void
+  onAtualizarMembro: (id: string, campo: keyof MembroEquipe, valor: string | boolean) => void
+  onAdicionarEmBranco: () => void
+  onRemoverMembro: (id: string) => void
+}
+
+function EquipeCard({
+  titulo, membros, mostrarAptidao, funcionarios, funcionariosSelecionados, buscaFuncionario,
+  onBuscaChange, onToggleFuncionario, onAdicionarSelecionados, onAtualizarMembro, onAdicionarEmBranco, onRemoverMembro,
+}: EquipeCardProps) {
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-syne text-sm font-semibold text-[#0F172A]">{titulo}</h3>
+        <button onClick={onAdicionarEmBranco} className="btn-secondary text-xs px-3 py-1.5 min-h-0">
+          <Plus size={14} /> Adicionar em branco
+        </button>
+      </div>
+
+      <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
+        <p className="text-xs font-semibold text-[#64748B]">Adicionar funcionários cadastrados</p>
+        <input
+          className="field text-sm"
+          placeholder="Buscar por nome…"
+          value={buscaFuncionario}
+          onChange={e => onBuscaChange(e.target.value)}
+        />
+        <div className="max-h-48 overflow-y-auto space-y-0.5 bg-white border border-[#E2E8F0] rounded-lg p-1.5">
+          {funcionarios
+            .filter(f => f.nome.toLowerCase().includes(buscaFuncionario.toLowerCase()))
+            .map(f => (
+              <label key={f.id} className="flex items-center gap-2 text-xs text-[#374151] px-1.5 py-1 rounded hover:bg-[#F8FAFC] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={funcionariosSelecionados.includes(f.id)}
+                  onChange={() => onToggleFuncionario(f.id)}
+                  className="w-3.5 h-3.5 accent-[#4F7CFF] shrink-0"
+                />
+                <span>{f.nome}{f.cargo ? ` — ${f.cargo}` : ''}</span>
+              </label>
+            ))}
+          {funcionarios.length === 0 && <p className="text-xs text-[#94A3B8] px-1.5 py-1">Nenhum funcionário cadastrado.</p>}
+        </div>
+        <button
+          onClick={onAdicionarSelecionados}
+          disabled={funcionariosSelecionados.length === 0}
+          className="btn-primary text-xs px-3 py-1.5 min-h-0 disabled:opacity-50"
+        >
+          <Plus size={14} /> Adicionar {funcionariosSelecionados.length > 0 ? `${funcionariosSelecionados.length} selecionado(s)` : 'selecionados'}
+        </button>
+      </div>
+
+      {membros.map((m, idx) => (
+        <div key={m.id} className="border border-[#E2E8F0] rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#94A3B8]">Membro {idx + 1}</span>
+            {membros.length > 1 && (
+              <button onClick={() => onRemoverMembro(m.id)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-red-400">
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+          <input className="field text-sm" placeholder="Nome" value={m.nome} onChange={e => onAtualizarMembro(m.id, 'nome', e.target.value)} />
+          <input className="field text-sm" placeholder="Cargo" value={m.cargo} onChange={e => onAtualizarMembro(m.id, 'cargo', e.target.value)} />
+          {mostrarAptidao && (
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 text-xs text-[#374151] cursor-pointer">
+                <input type="checkbox" checked={m.nr35} onChange={e => onAtualizarMembro(m.id, 'nr35', e.target.checked)} className="w-3.5 h-3.5 accent-[#4F7CFF]" />
+                Apto NR 35
+              </label>
+              <label className="flex items-center gap-2 text-xs text-[#374151] cursor-pointer">
+                <input type="checkbox" checked={m.nr12} onChange={e => onAtualizarMembro(m.id, 'nr12', e.target.checked)} className="w-3.5 h-3.5 accent-[#4F7CFF]" />
+                Apto NR 12
+              </label>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface ModeloCardProps {
+  descricao: string
+  modelos: { id: string; nome: string }[]
+  modeloSelecionadoId: string
+  nomeNovoModelo: string
+  salvando: boolean
+  onSelecionar: (id: string) => void
+  onNomeChange: (v: string) => void
+  onSalvarNovo: () => void
+  onAtualizar: () => void
+  onGerenciar: () => void
+}
+
+function ModeloCard({
+  descricao, modelos, modeloSelecionadoId, nomeNovoModelo, salvando,
+  onSelecionar, onNomeChange, onSalvarNovo, onAtualizar, onGerenciar,
+}: ModeloCardProps) {
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Modelo de Atividade</h3>
+        <button onClick={onGerenciar} className="text-xs text-[#4F7CFF] hover:underline flex items-center gap-1">
+          <Settings size={12} /> Gerenciar
+        </button>
+      </div>
+      <p className="text-xs text-[#94A3B8] -mt-1">{descricao}</p>
+      <select className="field" value={modeloSelecionadoId} onChange={e => onSelecionar(e.target.value)}>
+        <option value="">Nenhum modelo (preencher do zero)</option>
+        {modelos.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+      </select>
+      <div className="flex gap-2">
+        <input
+          className="field text-sm flex-1"
+          placeholder="Nome do novo modelo"
+          value={nomeNovoModelo}
+          onChange={e => onNomeChange(e.target.value)}
+        />
+        <button onClick={onSalvarNovo} disabled={!nomeNovoModelo.trim() || salvando} className="btn-secondary text-xs px-3 min-h-0 disabled:opacity-50 shrink-0">
+          <Save size={14} /> Salvar
+        </button>
+      </div>
+      {modeloSelecionadoId && (
+        <button onClick={onAtualizar} disabled={salvando} className="text-xs text-[#4F7CFF] hover:underline disabled:opacity-50">
+          Atualizar &quot;{modelos.find(m => m.id === modeloSelecionadoId)?.nome}&quot; com os dados atuais
+        </button>
+      )}
     </div>
   )
 }
@@ -49,12 +198,6 @@ interface ClienteOpcao {
   empresa_id?: string | null
 }
 
-interface FuncionarioOpcao {
-  id: string
-  nome: string
-  cargo: string | null
-}
-
 export default function NovoDocumentoSegurancaPage() {
   const [obras, setObras] = useState<ObraOpcao[]>([])
   const [clientesMap, setClientesMap] = useState<Record<string, ClienteOpcao>>({})
@@ -62,15 +205,23 @@ export default function NovoDocumentoSegurancaPage() {
   const [funcionarios, setFuncionarios] = useState<FuncionarioOpcao[]>([])
   const [funcionariosSelecionados, setFuncionariosSelecionados] = useState<string[]>([])
   const [buscaFuncionario, setBuscaFuncionario] = useState('')
+
   const [modelosPt, setModelosPt] = useState<ModeloPt[]>([])
-  const [modeloSelecionadoId, setModeloSelecionadoId] = useState('')
-  const [nomeNovoModelo, setNomeNovoModelo] = useState('')
-  const [salvandoModelo, setSalvandoModelo] = useState(false)
-  const [mostrarGerenciarModelos, setMostrarGerenciarModelos] = useState(false)
+  const [modeloPtSelecionadoId, setModeloPtSelecionadoId] = useState('')
+  const [nomeNovoModeloPt, setNomeNovoModeloPt] = useState('')
+  const [salvandoModeloPt, setSalvandoModeloPt] = useState(false)
+  const [mostrarGerenciarModelosPt, setMostrarGerenciarModelosPt] = useState(false)
+
+  const [modelosApr, setModelosApr] = useState<ModeloApr[]>([])
+  const [modeloAprSelecionadoId, setModeloAprSelecionadoId] = useState('')
+  const [nomeNovoModeloApr, setNomeNovoModeloApr] = useState('')
+  const [salvandoModeloApr, setSalvandoModeloApr] = useState(false)
+  const [mostrarGerenciarModelosApr, setMostrarGerenciarModelosApr] = useState(false)
+
   const [tipo, setTipo] = useState<TipoDocumentoSeguranca>('apr')
   const [form, setForm] = useState<DocumentoSegurancaFormData>(() => criarFormDataInicial())
 
-  async function recarregarModelos(): Promise<ModeloPt[]> {
+  async function recarregarModelosPt(): Promise<ModeloPt[]> {
     const { data, error } = await createClient().from('pt_modelos').select('id,nome,dados').order('nome')
     if (error) { console.error('Erro ao carregar modelos de PT:', error); return modelosPt }
     const lista = (data as ModeloPt[] | null) || []
@@ -78,21 +229,31 @@ export default function NovoDocumentoSegurancaPage() {
     return lista
   }
 
+  async function recarregarModelosApr(): Promise<ModeloApr[]> {
+    const { data, error } = await createClient().from('apr_modelos').select('id,nome,dados').order('nome')
+    if (error) { console.error('Erro ao carregar modelos de APR:', error); return modelosApr }
+    const lista = (data as ModeloApr[] | null) || []
+    setModelosApr(lista)
+    return lista
+  }
+
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [obrasRes, clientesRes, empresasRes, funcionariosRes, modelosRes] = await Promise.all([
+      const [obrasRes, clientesRes, empresasRes, funcionariosRes, modelosPtRes, modelosAprRes] = await Promise.all([
         supabase.from('obras').select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente_id,gestor_id').order('titulo'),
         supabase.from('clientes').select('id,nome,empresa_id'),
         supabase.from('empresas').select('id,razao_social'),
         supabase.from('funcionarios').select('id,nome,cargo').eq('ativo', true).order('nome'),
         supabase.from('pt_modelos').select('id,nome,dados').order('nome'),
+        supabase.from('apr_modelos').select('id,nome,dados').order('nome'),
       ])
       if (obrasRes.error) console.error('Erro ao carregar obras:', obrasRes.error)
       if (clientesRes.error) console.error('Erro ao carregar clientes:', clientesRes.error)
       if (empresasRes.error) console.error('Erro ao carregar empresas:', empresasRes.error)
       if (funcionariosRes.error) console.error('Erro ao carregar funcionários:', funcionariosRes.error)
-      if (modelosRes.error) console.error('Erro ao carregar modelos de PT:', modelosRes.error)
+      if (modelosPtRes.error) console.error('Erro ao carregar modelos de PT:', modelosPtRes.error)
+      if (modelosAprRes.error) console.error('Erro ao carregar modelos de APR:', modelosAprRes.error)
 
       if (obrasRes.data) setObras(obrasRes.data as ObraOpcao[])
       if (clientesRes.data) {
@@ -106,7 +267,8 @@ export default function NovoDocumentoSegurancaPage() {
         setEmpresasMap(map)
       }
       if (funcionariosRes.data) setFuncionarios(funcionariosRes.data as FuncionarioOpcao[])
-      if (modelosRes.data) setModelosPt(modelosRes.data as ModeloPt[])
+      if (modelosPtRes.data) setModelosPt(modelosPtRes.data as ModeloPt[])
+      if (modelosAprRes.data) setModelosApr(modelosAprRes.data as ModeloApr[])
     }
     load()
   }, [])
@@ -162,16 +324,16 @@ export default function NovoDocumentoSegurancaPage() {
     setForm(prev => ({ ...prev, [campo]: prev[campo].map((v, i) => i === index ? !v : v) }))
   }
 
-  function atualizarMembro(id: string, campo: keyof MembroEquipe, valor: string | boolean) {
-    setForm(prev => ({ ...prev, equipeExecucao: prev.equipeExecucao.map(m => m.id === id ? { ...m, [campo]: valor } : m) }))
+  function atualizarMembroDe(campo: CampoEquipe, id: string, subcampo: keyof MembroEquipe, valor: string | boolean) {
+    setForm(prev => ({ ...prev, [campo]: prev[campo].map(m => m.id === id ? { ...m, [subcampo]: valor } : m) }))
   }
 
-  function adicionarMembro() {
-    setForm(prev => ({ ...prev, equipeExecucao: [...prev.equipeExecucao, novoMembroEquipe()] }))
+  function adicionarMembroEmBrancoDe(campo: CampoEquipe) {
+    setForm(prev => ({ ...prev, [campo]: [...prev[campo], novoMembroEquipe()] }))
   }
 
-  function removerMembro(id: string) {
-    setForm(prev => ({ ...prev, equipeExecucao: prev.equipeExecucao.filter(m => m.id !== id) }))
+  function removerMembroDe(campo: CampoEquipe, id: string) {
+    setForm(prev => ({ ...prev, [campo]: prev[campo].filter(m => m.id !== id) }))
   }
 
   function alternarFuncionarioSelecionado(funcionarioId: string) {
@@ -180,22 +342,22 @@ export default function NovoDocumentoSegurancaPage() {
       : [...prev, funcionarioId])
   }
 
-  function adicionarFuncionariosSelecionados() {
+  function adicionarFuncionariosComo(campo: CampoEquipe) {
     if (funcionariosSelecionados.length === 0) return
     const novosMembros: MembroEquipe[] = funcionariosSelecionados.map(id => {
       const f = funcionarios.find(fn => fn.id === id)
       return { id: crypto.randomUUID(), nome: f?.nome || '', cargo: f?.cargo || '', nr35: false, nr12: false }
     })
     setForm(prev => {
-      const membrosPreenchidos = prev.equipeExecucao.filter(m => m.nome.trim() !== '' || m.cargo.trim() !== '')
-      return { ...prev, equipeExecucao: [...membrosPreenchidos, ...novosMembros] }
+      const existentes = prev[campo].filter(m => m.nome.trim() !== '' || m.cargo.trim() !== '')
+      return { ...prev, [campo]: [...existentes, ...novosMembros] }
     })
     setFuncionariosSelecionados([])
     setBuscaFuncionario('')
   }
 
-  function aplicarModelo(modeloId: string) {
-    setModeloSelecionadoId(modeloId)
+  function aplicarModeloPt(modeloId: string) {
+    setModeloPtSelecionadoId(modeloId)
     if (!modeloId) return
     const modelo = modelosPt.find(m => m.id === modeloId)
     if (!modelo) return
@@ -203,26 +365,57 @@ export default function NovoDocumentoSegurancaPage() {
     setForm(prev => ({ ...prev, ...dados }))
   }
 
-  async function salvarComoNovoModelo() {
-    if (!nomeNovoModelo.trim()) return
-    setSalvandoModelo(true)
+  async function salvarComoNovoModeloPt() {
+    if (!nomeNovoModeloPt.trim()) return
+    setSalvandoModeloPt(true)
     const dados = extrairDadosModelo(form)
-    const { data, error } = await createClient().from('pt_modelos').insert({ nome: nomeNovoModelo.trim(), dados }).select('id,nome,dados').single()
-    setSalvandoModelo(false)
+    const { data, error } = await createClient().from('pt_modelos').insert({ nome: nomeNovoModeloPt.trim(), dados }).select('id,nome,dados').single()
+    setSalvandoModeloPt(false)
     if (error) { console.error('Erro ao salvar modelo de PT:', error); return }
-    setNomeNovoModelo('')
-    await recarregarModelos()
-    if (data) setModeloSelecionadoId(data.id)
+    setNomeNovoModeloPt('')
+    await recarregarModelosPt()
+    if (data) setModeloPtSelecionadoId(data.id)
   }
 
-  async function atualizarModeloSelecionado() {
-    if (!modeloSelecionadoId) return
-    setSalvandoModelo(true)
+  async function atualizarModeloPtSelecionado() {
+    if (!modeloPtSelecionadoId) return
+    setSalvandoModeloPt(true)
     const dados = extrairDadosModelo(form)
-    const { error } = await createClient().from('pt_modelos').update({ dados, updated_at: new Date().toISOString() }).eq('id', modeloSelecionadoId)
-    setSalvandoModelo(false)
+    const { error } = await createClient().from('pt_modelos').update({ dados, updated_at: new Date().toISOString() }).eq('id', modeloPtSelecionadoId)
+    setSalvandoModeloPt(false)
     if (error) { console.error('Erro ao atualizar modelo de PT:', error); return }
-    await recarregarModelos()
+    await recarregarModelosPt()
+  }
+
+  function aplicarModeloApr(modeloId: string) {
+    setModeloAprSelecionadoId(modeloId)
+    if (!modeloId) return
+    const modelo = modelosApr.find(m => m.id === modeloId)
+    if (!modelo) return
+    const dados = normalizarDadosModeloApr(modelo.dados)
+    setForm(prev => ({ ...prev, ...dados }))
+  }
+
+  async function salvarComoNovoModeloApr() {
+    if (!nomeNovoModeloApr.trim()) return
+    setSalvandoModeloApr(true)
+    const dados = extrairDadosModeloApr(form)
+    const { data, error } = await createClient().from('apr_modelos').insert({ nome: nomeNovoModeloApr.trim(), dados }).select('id,nome,dados').single()
+    setSalvandoModeloApr(false)
+    if (error) { console.error('Erro ao salvar modelo de APR:', error); return }
+    setNomeNovoModeloApr('')
+    await recarregarModelosApr()
+    if (data) setModeloAprSelecionadoId(data.id)
+  }
+
+  async function atualizarModeloAprSelecionado() {
+    if (!modeloAprSelecionadoId) return
+    setSalvandoModeloApr(true)
+    const dados = extrairDadosModeloApr(form)
+    const { error } = await createClient().from('apr_modelos').update({ dados, updated_at: new Date().toISOString() }).eq('id', modeloAprSelecionadoId)
+    setSalvandoModeloApr(false)
+    if (error) { console.error('Erro ao atualizar modelo de APR:', error); return }
+    await recarregarModelosApr()
   }
 
   return (
@@ -356,6 +549,51 @@ export default function NovoDocumentoSegurancaPage() {
             </div>
           </div>
 
+          <div className="card space-y-2">
+            <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Empresa emissora</h3>
+            <div className="flex gap-2">
+              {(Object.keys(EMPRESAS_EMISSORAS) as EmpresaEmissora[]).map(chave => (
+                <button
+                  key={chave}
+                  onClick={() => selecionarEmpresaEmissora(chave)}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${form.empresaEmissora === chave ? 'bg-[#4F7CFF] text-white border-[#4F7CFF]' : 'bg-white border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]'}`}
+                >
+                  {EMPRESAS_EMISSORAS[chave].nomeExibicao}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {tipo === 'apr' && (
+            <ModeloCard
+              descricao="Aplica a tabela de riscos e observações de um modelo salvo. Você ajusta os participantes e o resto depois."
+              modelos={modelosApr}
+              modeloSelecionadoId={modeloAprSelecionadoId}
+              nomeNovoModelo={nomeNovoModeloApr}
+              salvando={salvandoModeloApr}
+              onSelecionar={aplicarModeloApr}
+              onNomeChange={setNomeNovoModeloApr}
+              onSalvarNovo={salvarComoNovoModeloApr}
+              onAtualizar={atualizarModeloAprSelecionado}
+              onGerenciar={() => setMostrarGerenciarModelosApr(true)}
+            />
+          )}
+
+          {tipo === 'pt' && (
+            <ModeloCard
+              descricao="Aplica os checklists (agentes, riscos, precauções, EPI) de um modelo salvo. Você ajusta a equipe e o resto depois."
+              modelos={modelosPt}
+              modeloSelecionadoId={modeloPtSelecionadoId}
+              nomeNovoModelo={nomeNovoModeloPt}
+              salvando={salvandoModeloPt}
+              onSelecionar={aplicarModeloPt}
+              onNomeChange={setNomeNovoModeloPt}
+              onSalvarNovo={salvarComoNovoModeloPt}
+              onAtualizar={atualizarModeloPtSelecionado}
+              onGerenciar={() => setMostrarGerenciarModelosPt(true)}
+            />
+          )}
+
           {tipo === 'apr' && (
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
@@ -396,53 +634,21 @@ export default function NovoDocumentoSegurancaPage() {
             </div>
           )}
 
-          {tipo === 'pt' && (
-            <div className="card space-y-2">
-              <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Empresa emissora</h3>
-              <div className="flex gap-2">
-                {(Object.keys(EMPRESAS_EMISSORAS) as EmpresaEmissora[]).map(chave => (
-                  <button
-                    key={chave}
-                    onClick={() => selecionarEmpresaEmissora(chave)}
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${form.empresaEmissora === chave ? 'bg-[#4F7CFF] text-white border-[#4F7CFF]' : 'bg-white border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]'}`}
-                  >
-                    {EMPRESAS_EMISSORAS[chave].nomeExibicao}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {tipo === 'pt' && (
-            <div className="card space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Modelo de Atividade</h3>
-                <button onClick={() => setMostrarGerenciarModelos(true)} className="text-xs text-[#4F7CFF] hover:underline flex items-center gap-1">
-                  <Settings size={12} /> Gerenciar
-                </button>
-              </div>
-              <p className="text-xs text-[#94A3B8] -mt-1">Aplica os checklists (agentes, riscos, precauções, EPI) de um modelo salvo. Você ajusta a equipe e o resto depois.</p>
-              <select className="field" value={modeloSelecionadoId} onChange={e => aplicarModelo(e.target.value)}>
-                <option value="">Nenhum modelo (preencher do zero)</option>
-                {modelosPt.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
-              </select>
-              <div className="flex gap-2">
-                <input
-                  className="field text-sm flex-1"
-                  placeholder="Nome do novo modelo (ex: PT de Solda)"
-                  value={nomeNovoModelo}
-                  onChange={e => setNomeNovoModelo(e.target.value)}
-                />
-                <button onClick={salvarComoNovoModelo} disabled={!nomeNovoModelo.trim() || salvandoModelo} className="btn-secondary text-xs px-3 min-h-0 disabled:opacity-50 shrink-0">
-                  <Save size={14} /> Salvar
-                </button>
-              </div>
-              {modeloSelecionadoId && (
-                <button onClick={atualizarModeloSelecionado} disabled={salvandoModelo} className="text-xs text-[#4F7CFF] hover:underline disabled:opacity-50">
-                  Atualizar &quot;{modelosPt.find(m => m.id === modeloSelecionadoId)?.nome}&quot; com os checkboxes atuais
-                </button>
-              )}
-            </div>
+          {tipo === 'apr' && (
+            <EquipeCard
+              titulo="Participantes"
+              membros={form.participantesApr}
+              mostrarAptidao={false}
+              funcionarios={funcionarios}
+              funcionariosSelecionados={funcionariosSelecionados}
+              buscaFuncionario={buscaFuncionario}
+              onBuscaChange={setBuscaFuncionario}
+              onToggleFuncionario={alternarFuncionarioSelecionado}
+              onAdicionarSelecionados={() => adicionarFuncionariosComo('participantesApr')}
+              onAtualizarMembro={(id, campo, valor) => atualizarMembroDe('participantesApr', id, campo, valor)}
+              onAdicionarEmBranco={() => adicionarMembroEmBrancoDe('participantesApr')}
+              onRemoverMembro={id => removerMembroDe('participantesApr', id)}
+            />
           )}
 
           {tipo === 'pt' && (
@@ -526,72 +732,20 @@ export default function NovoDocumentoSegurancaPage() {
           )}
 
           {tipo === 'pt' && (
-            <div className="card space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Equipe de Execução</h3>
-                <button onClick={adicionarMembro} className="btn-secondary text-xs px-3 py-1.5 min-h-0">
-                  <Plus size={14} /> Adicionar em branco
-                </button>
-              </div>
-
-              <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
-                <p className="text-xs font-semibold text-[#64748B]">Adicionar funcionários cadastrados</p>
-                <input
-                  className="field text-sm"
-                  placeholder="Buscar por nome…"
-                  value={buscaFuncionario}
-                  onChange={e => setBuscaFuncionario(e.target.value)}
-                />
-                <div className="max-h-48 overflow-y-auto space-y-0.5 bg-white border border-[#E2E8F0] rounded-lg p-1.5">
-                  {funcionarios
-                    .filter(f => f.nome.toLowerCase().includes(buscaFuncionario.toLowerCase()))
-                    .map(f => (
-                      <label key={f.id} className="flex items-center gap-2 text-xs text-[#374151] px-1.5 py-1 rounded hover:bg-[#F8FAFC] cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={funcionariosSelecionados.includes(f.id)}
-                          onChange={() => alternarFuncionarioSelecionado(f.id)}
-                          className="w-3.5 h-3.5 accent-[#4F7CFF] shrink-0"
-                        />
-                        <span>{f.nome}{f.cargo ? ` — ${f.cargo}` : ''}</span>
-                      </label>
-                    ))}
-                  {funcionarios.length === 0 && <p className="text-xs text-[#94A3B8] px-1.5 py-1">Nenhum funcionário cadastrado.</p>}
-                </div>
-                <button
-                  onClick={adicionarFuncionariosSelecionados}
-                  disabled={funcionariosSelecionados.length === 0}
-                  className="btn-primary text-xs px-3 py-1.5 min-h-0 disabled:opacity-50"
-                >
-                  <Plus size={14} /> Adicionar {funcionariosSelecionados.length > 0 ? `${funcionariosSelecionados.length} selecionado(s)` : 'selecionados'}
-                </button>
-              </div>
-
-              {form.equipeExecucao.map((m, idx) => (
-                <div key={m.id} className="border border-[#E2E8F0] rounded-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-[#94A3B8]">Membro {idx + 1}</span>
-                    {form.equipeExecucao.length > 1 && (
-                      <button onClick={() => removerMembro(m.id)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-red-400">
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                  <input className="field text-sm" placeholder="Nome" value={m.nome} onChange={e => atualizarMembro(m.id, 'nome', e.target.value)} />
-                  <input className="field text-sm" placeholder="Cargo" value={m.cargo} onChange={e => atualizarMembro(m.id, 'cargo', e.target.value)} />
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 text-xs text-[#374151] cursor-pointer">
-                      <input type="checkbox" checked={m.nr35} onChange={e => atualizarMembro(m.id, 'nr35', e.target.checked)} className="w-3.5 h-3.5 accent-[#4F7CFF]" />
-                      Apto NR 35
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-[#374151] cursor-pointer">
-                      <input type="checkbox" checked={m.nr12} onChange={e => atualizarMembro(m.id, 'nr12', e.target.checked)} className="w-3.5 h-3.5 accent-[#4F7CFF]" />
-                      Apto NR 12
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <EquipeCard
+              titulo="Equipe de Execução"
+              membros={form.equipeExecucao}
+              mostrarAptidao
+              funcionarios={funcionarios}
+              funcionariosSelecionados={funcionariosSelecionados}
+              buscaFuncionario={buscaFuncionario}
+              onBuscaChange={setBuscaFuncionario}
+              onToggleFuncionario={alternarFuncionarioSelecionado}
+              onAdicionarSelecionados={() => adicionarFuncionariosComo('equipeExecucao')}
+              onAtualizarMembro={(id, campo, valor) => atualizarMembroDe('equipeExecucao', id, campo, valor)}
+              onAdicionarEmBranco={() => adicionarMembroEmBrancoDe('equipeExecucao')}
+              onRemoverMembro={id => removerMembroDe('equipeExecucao', id)}
+            />
           )}
         </div>
 
@@ -608,13 +762,28 @@ export default function NovoDocumentoSegurancaPage() {
         </div>
       </div>
 
-      {mostrarGerenciarModelos && (
-        <ModalGerenciarModelosPt
+      {mostrarGerenciarModelosPt && (
+        <ModalGerenciarModelos
+          titulo="Gerenciar Modelos de PT"
+          tabela="pt_modelos"
           modelos={modelosPt}
-          onClose={() => setMostrarGerenciarModelos(false)}
+          onClose={() => setMostrarGerenciarModelosPt(false)}
           onChanged={async () => {
-            const lista = await recarregarModelos()
-            if (!lista.some(m => m.id === modeloSelecionadoId)) setModeloSelecionadoId('')
+            const lista = await recarregarModelosPt()
+            if (!lista.some(m => m.id === modeloPtSelecionadoId)) setModeloPtSelecionadoId('')
+          }}
+        />
+      )}
+
+      {mostrarGerenciarModelosApr && (
+        <ModalGerenciarModelos
+          titulo="Gerenciar Modelos de APR"
+          tabela="apr_modelos"
+          modelos={modelosApr}
+          onClose={() => setMostrarGerenciarModelosApr(false)}
+          onChanged={async () => {
+            const lista = await recarregarModelosApr()
+            if (!lista.some(m => m.id === modeloAprSelecionadoId)) setModeloAprSelecionadoId('')
           }}
         />
       )}

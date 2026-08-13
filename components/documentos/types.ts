@@ -191,6 +191,7 @@ export interface DocumentoSegurancaFormData {
 
   // APR
   riscos: RiscoItem[]
+  participantesApr: MembroEquipe[]
 
   // PT
   agentesFatalidade: boolean[][]
@@ -278,6 +279,30 @@ export function normalizarDadosModelo(dados: Partial<DadosModeloPt> | null | und
   }
 }
 
+// ─── Modelos reutilizáveis de APR (tabela de riscos pré-preenchida por tipo de atividade) ──
+export interface DadosModeloApr {
+  riscos: RiscoItem[]
+  observacoes: string
+}
+
+export interface ModeloApr {
+  id: string
+  nome: string
+  dados: DadosModeloApr
+}
+
+export function extrairDadosModeloApr(form: DocumentoSegurancaFormData): DadosModeloApr {
+  return { riscos: form.riscos, observacoes: form.observacoes }
+}
+
+export function normalizarDadosModeloApr(dados: Partial<DadosModeloApr> | null | undefined): { riscos: RiscoItem[]; observacoes: string } {
+  const riscosSalvos = Array.isArray(dados?.riscos) ? dados.riscos : []
+  const riscos = riscosSalvos.length > 0
+    ? riscosSalvos.map(r => ({ ...novoRiscoItem(), ...r, id: crypto.randomUUID() }))
+    : [novoRiscoItem()]
+  return { riscos, observacoes: dados?.observacoes || '' }
+}
+
 export function criarFormDataInicial(): DocumentoSegurancaFormData {
   return {
     obraId: '',
@@ -296,6 +321,7 @@ export function criarFormDataInicial(): DocumentoSegurancaFormData {
     descricaoAtividades: '',
     observacoes: '',
     riscos: [novoRiscoItem()],
+    participantesApr: [novoMembroEquipe()],
     agentesFatalidade: AGENTES_FATALIDADE_GRUPOS.map(g => g.itens.map(() => false)),
     riscosAssociadosCol1: RISCOS_ASSOCIADOS_COL1.map(() => false),
     riscosAssociadosCol2: RISCOS_ASSOCIADOS_COL2.map(() => false),

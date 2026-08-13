@@ -3,28 +3,34 @@
 import { useState } from 'react'
 import { X, Pencil, Trash2, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { ModeloPt } from './types'
+
+interface ModeloBase {
+  id: string
+  nome: string
+}
 
 interface Props {
-  modelos: ModeloPt[]
+  titulo: string
+  tabela: 'pt_modelos' | 'apr_modelos'
+  modelos: ModeloBase[]
   onClose: () => void
   onChanged: () => void
 }
 
-export default function ModalGerenciarModelosPt({ modelos, onClose, onChanged }: Props) {
+export default function ModalGerenciarModelos({ titulo, tabela, modelos, onClose, onChanged }: Props) {
   const [editId, setEditId] = useState<string | null>(null)
   const [editNome, setEditNome] = useState('')
 
   async function renomear(id: string) {
     if (!editNome.trim()) return
-    await createClient().from('pt_modelos').update({ nome: editNome.trim(), updated_at: new Date().toISOString() }).eq('id', id)
+    await createClient().from(tabela).update({ nome: editNome.trim(), updated_at: new Date().toISOString() }).eq('id', id)
     setEditId(null)
     onChanged()
   }
 
   async function excluir(id: string) {
-    if (!confirm('Excluir este modelo de PT?')) return
-    await createClient().from('pt_modelos').delete().eq('id', id)
+    if (!confirm('Excluir este modelo?')) return
+    await createClient().from(tabela).delete().eq('id', id)
     onChanged()
   }
 
@@ -32,7 +38,7 @@ export default function ModalGerenciarModelosPt({ modelos, onClose, onChanged }:
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-[420px]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
-          <h3 className="font-syne font-semibold text-[#0F172A] text-sm">Gerenciar Modelos de PT</h3>
+          <h3 className="font-syne font-semibold text-[#0F172A] text-sm">{titulo}</h3>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
             <X size={14} className="text-[#64748B]" />
           </button>

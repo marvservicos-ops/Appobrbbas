@@ -1,4 +1,4 @@
-import { DocumentoSegurancaFormData } from './types'
+import { DocumentoSegurancaFormData, EMPRESAS_EMISSORAS } from './types'
 
 const classificacaoCor: Record<string, { bg: string; text: string }> = {
   Baixo: { bg: '#D1FAE5', text: '#065F46' },
@@ -16,11 +16,23 @@ const td: React.CSSProperties = { border: '1px solid #999', padding: '5px 7px', 
 const label: React.CSSProperties = { border: '1px solid #999', padding: '5px 7px', fontSize: 10.5, fontWeight: 700, background: '#FAFAFA', whiteSpace: 'nowrap' }
 
 export default function AprDocument({ data }: { data: DocumentoSegurancaFormData }) {
+  const empresaInfo = EMPRESAS_EMISSORAS[data.empresaEmissora]
+
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', color: '#111', fontSize: 11 }}>
-      <h1 style={{ textAlign: 'center', fontSize: 15, fontWeight: 800, margin: '0 0 14px', letterSpacing: 0.3 }}>
-        Análise Preliminar de Riscos — APR
-      </h1>
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10 }}>
+        <tbody>
+          <tr>
+            <td style={{ border: '1px solid #999', padding: '6px 10px', width: '22%', textAlign: 'center', verticalAlign: 'middle' }}>
+              <img src={empresaInfo.logo} alt={empresaInfo.nomeExibicao} style={{ maxHeight: 34, maxWidth: '100%', objectFit: 'contain' }} />
+            </td>
+            <td style={{ border: '1px solid #999', padding: '6px 10px', textAlign: 'center', verticalAlign: 'middle' }}>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>Análise Preliminar de Riscos — APR</div>
+              <div style={{ fontSize: 10, fontWeight: 600 }}>{empresaInfo.razaoSocial.toUpperCase()}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10 }}>
         <tbody>
@@ -122,10 +134,18 @@ export default function AprDocument({ data }: { data: DocumentoSegurancaFormData
 
       <table style={{ width: '100%', borderCollapse: 'collapse' }} className="print:break-inside-avoid">
         <tbody>
-          <tr><td style={{ ...th, textAlign: 'left' }} colSpan={2}>Assinaturas dos Participantes</td></tr>
-          {[1, 2, 3, 4].map(i => (
-            <tr key={i}>
-              <td style={{ ...td, width: '50%', height: 26 }}>&nbsp;</td>
+          <tr><td style={{ ...th, textAlign: 'left' }} colSpan={3}>Assinaturas dos Participantes</td></tr>
+          <tr>
+            <th style={{ ...th, width: '35%' }}>Nome</th>
+            <th style={{ ...th, width: '25%' }}>Cargo</th>
+            <th style={th}>Assinatura</th>
+          </tr>
+          {data.participantesApr.length === 0 ? (
+            <tr><td style={td} colSpan={3}>Nenhum participante cadastrado.</td></tr>
+          ) : data.participantesApr.map(p => (
+            <tr key={p.id}>
+              <td style={td}>{p.nome || '—'}</td>
+              <td style={td}>{p.cargo || '—'}</td>
               <td style={{ ...td, height: 26 }}>&nbsp;</td>
             </tr>
           ))}
