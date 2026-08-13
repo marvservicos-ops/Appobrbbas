@@ -39,6 +39,7 @@ interface ObraOpcao {
   descricao?: string
   engenheiro_responsavel?: string
   cliente_id?: string | null
+  gestor_id?: string | null
 }
 
 interface ClienteOpcao {
@@ -67,7 +68,7 @@ export default function NovoDocumentoSegurancaPage() {
     async function load() {
       const supabase = createClient()
       const [obrasRes, clientesRes, empresasRes, funcionariosRes] = await Promise.all([
-        supabase.from('obras').select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente_id').order('titulo'),
+        supabase.from('obras').select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente_id,gestor_id').order('titulo'),
         supabase.from('clientes').select('id,nome,empresa_id'),
         supabase.from('empresas').select('id,razao_social'),
         supabase.from('funcionarios').select('id,nome,cargo').eq('ativo', true).order('nome'),
@@ -102,6 +103,7 @@ export default function NovoDocumentoSegurancaPage() {
     if (!obra) { atualizar('obraId', ''); return }
     const cliente = obra.cliente_id ? clientesMap[obra.cliente_id] : undefined
     const nomeCliente = (cliente?.empresa_id && empresasMap[cliente.empresa_id]) || cliente?.nome
+    const gestor = obra.gestor_id ? clientesMap[obra.gestor_id] : undefined
     setForm(prev => ({
       ...prev,
       obraId,
@@ -109,6 +111,7 @@ export default function NovoDocumentoSegurancaPage() {
       local: obra.endereco || prev.local,
       descricaoAtividades: obra.descricao || prev.descricaoAtividades,
       responsavelEmpresa: obra.engenheiro_responsavel || prev.responsavelEmpresa,
+      gestorTvg: gestor?.nome || prev.gestorTvg,
     }))
   }
 
