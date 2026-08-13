@@ -18,22 +18,32 @@ interface ObraOpcao {
   endereco?: string
   descricao?: string
   engenheiro_responsavel?: string
-  cliente?: { nome: string; empresa?: { razao_social: string } | null } | null
+  cliente?: { nome: string; empresa_id?: string | null } | null
 }
 
 export default function NovoDocumentoSegurancaPage() {
   const [obras, setObras] = useState<ObraOpcao[]>([])
+  const [empresasMap, setEmpresasMap] = useState<Record<string, string>>({})
   const [tipo, setTipo] = useState<TipoDocumentoSeguranca>('apr')
   const [form, setForm] = useState<DocumentoSegurancaFormData>(() => criarFormDataInicial())
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const { data } = await supabase
-        .from('obras')
-        .select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente:clientes(nome,empresa:empresas(razao_social))')
-        .order('titulo')
-      if (data) setObras(data as unknown as ObraOpcao[])
+      const [obrasRes, empresasRes] = await Promise.all([
+        supabase
+          .from('obras')
+          .select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente:clientes(nome,empresa_id)')
+          .order('titulo'),
+        supabase.from('empresas').select('id,razao_social'),
+      ])
+      if (obrasRes.error) console.error('Erro ao carregar obras:', obrasRes.error)
+      if (obrasRes.data) setObras(obrasRes.data as unknown as ObraOpcao[])
+      if (empresasRes.data) {
+        const map: Record<string, string> = {}
+        empresasRes.data.forEach((e: { id: string; razao_social: string }) => { map[e.id] = e.razao_social })
+        setEmpresasMap(map)
+      }
     }
     load()
   }, [])
@@ -48,7 +58,7 @@ export default function NovoDocumentoSegurancaPage() {
     setForm(prev => ({
       ...prev,
       obraId,
-      cliente: obra.cliente?.empresa?.razao_social || obra.cliente?.nome || prev.cliente,
+      cliente: (obra.cliente?.empresa_id && empresasMap[obra.cliente.empresa_id]) || obra.cliente?.nome || prev.cliente,
       local: obra.endereco || prev.local,
       descricaoAtividades: obra.descricao || prev.descricaoAtividades,
       responsavelEmpresa: obra.engenheiro_responsavel || prev.responsavelEmpresa,
