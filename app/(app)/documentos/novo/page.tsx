@@ -9,9 +9,9 @@ import AprDocument from '@/components/documentos/AprDocument'
 import PtDocument from '@/components/documentos/PtDocument'
 import ModalGerenciarModelosPt from '@/components/documentos/ModalGerenciarModelosPt'
 import {
-  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem, MembroEquipe, ModeloPt,
+  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem, MembroEquipe, ModeloPt, EmpresaEmissora,
   AGENTES_FATALIDADE_GRUPOS, RISCOS_ASSOCIADOS_COL1, RISCOS_ASSOCIADOS_COL2,
-  PRECAUCOES_COL1, PRECAUCOES_COL2, EPI_COL1, EPI_COL2, EPI_COL3,
+  PRECAUCOES_COL1, PRECAUCOES_COL2, EPI_COL1, EPI_COL2, EPI_COL3, EMPRESAS_EMISSORAS,
   novoRiscoItem, novoMembroEquipe, criarFormDataInicial, extrairDadosModelo, normalizarDadosModelo,
 } from '@/components/documentos/types'
 
@@ -130,6 +130,10 @@ export default function NovoDocumentoSegurancaPage() {
       responsavelEmpresa: obra.engenheiro_responsavel || prev.responsavelEmpresa,
       gestorTvg: gestor?.nome || prev.gestorTvg,
     }))
+  }
+
+  function selecionarEmpresaEmissora(chave: EmpresaEmissora) {
+    setForm(prev => ({ ...prev, empresaEmissora: chave, empresa: EMPRESAS_EMISSORAS[chave].razaoSocial }))
   }
 
   function atualizarRisco(id: string, campo: keyof RiscoItem, valor: string) {
@@ -389,6 +393,23 @@ export default function NovoDocumentoSegurancaPage() {
             <div className="card">
               <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Observações</label>
               <textarea className="field min-h-24" value={form.observacoes} onChange={e => atualizar('observacoes', e.target.value)} />
+            </div>
+          )}
+
+          {tipo === 'pt' && (
+            <div className="card space-y-2">
+              <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Empresa emissora</h3>
+              <div className="flex gap-2">
+                {(Object.keys(EMPRESAS_EMISSORAS) as EmpresaEmissora[]).map(chave => (
+                  <button
+                    key={chave}
+                    onClick={() => selecionarEmpresaEmissora(chave)}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${form.empresaEmissora === chave ? 'bg-[#4F7CFF] text-white border-[#4F7CFF]' : 'bg-white border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]'}`}
+                  >
+                    {EMPRESAS_EMISSORAS[chave].nomeExibicao}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

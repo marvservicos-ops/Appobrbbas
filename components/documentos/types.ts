@@ -1,5 +1,12 @@
 export type TipoDocumentoSeguranca = 'apr' | 'pt'
 
+export type EmpresaEmissora = 'marv' | 'sameiro'
+
+export const EMPRESAS_EMISSORAS: Record<EmpresaEmissora, { nomeExibicao: string; razaoSocial: string; logo: string }> = {
+  marv: { nomeExibicao: 'MARV', razaoSocial: 'MARV Manutenção e Serviços Ltda EPP', logo: '/marv-logo.png' },
+  sameiro: { nomeExibicao: 'Sameiro', razaoSocial: 'Sameiro Manutenções e Serviços Ltda', logo: '/sameiro-logo.jpg' },
+}
+
 export interface RiscoItem {
   id: string
   etapa: string
@@ -168,6 +175,7 @@ export const EPI_COL3: string[] = [
 export interface DocumentoSegurancaFormData {
   obraId: string
   numeroDocumento: string
+  empresaEmissora: EmpresaEmissora
   cliente: string
   empresa: string
   local: string
@@ -274,8 +282,9 @@ export function criarFormDataInicial(): DocumentoSegurancaFormData {
   return {
     obraId: '',
     numeroDocumento: '',
+    empresaEmissora: 'marv',
     cliente: '',
-    empresa: 'MARV Manutenção e Serviços Ltda EPP',
+    empresa: EMPRESAS_EMISSORAS.marv.razaoSocial,
     local: '',
     dataInicio: '',
     dataTermino: '',

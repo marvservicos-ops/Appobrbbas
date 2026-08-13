@@ -1,6 +1,6 @@
 import { Mountain, Zap, FlaskConical, Flame, Weight, Truck, Pickaxe, TriangleAlert, HardHat } from 'lucide-react'
 import {
-  DocumentoSegurancaFormData, AGENTES_FATALIDADE_GRUPOS, GrupoAgenteFatalidade,
+  DocumentoSegurancaFormData, AGENTES_FATALIDADE_GRUPOS, GrupoAgenteFatalidade, EMPRESAS_EMISSORAS,
   RISCOS_ASSOCIADOS_COL1, RISCOS_ASSOCIADOS_COL2, PRECAUCOES_COL1, PRECAUCOES_COL2,
   EPI_COL1, EPI_COL2, EPI_COL3,
 } from './types'
@@ -101,6 +101,8 @@ function BlocoAssinaturas({ titulo }: { titulo?: string }) {
 export default function PtDocument({ data }: { data: DocumentoSegurancaFormData }) {
   const periodos = calcularPeriodosAssinatura(data.dataInicio, data.dataTermino)
 
+  const empresaInfo = EMPRESAS_EMISSORAS[data.empresaEmissora]
+
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', color: '#111', fontSize: 9 }}>
       {/* ── Cabeçalho ── */}
@@ -108,11 +110,11 @@ export default function PtDocument({ data }: { data: DocumentoSegurancaFormData 
         <tbody>
           <tr>
             <td style={{ border: '1px solid #999', padding: '6px 10px', width: '22%', textAlign: 'center', verticalAlign: 'middle' }}>
-              <img src="/marv-logo.png" alt="MARV" style={{ maxHeight: 34, maxWidth: '100%', objectFit: 'contain' }} />
+              <img src={empresaInfo.logo} alt={empresaInfo.nomeExibicao} style={{ maxHeight: 34, maxWidth: '100%', objectFit: 'contain' }} />
             </td>
             <td style={{ border: '1px solid #999', padding: '6px 10px', textAlign: 'center', verticalAlign: 'middle' }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>PERMISSÃO DE TRABALHO SEGURO</div>
-              <div style={{ fontSize: 10, fontWeight: 600 }}>MARV MANUTENÇÃO E SERVIÇOS LTDA EPP</div>
+              <div style={{ fontSize: 10, fontWeight: 600 }}>{empresaInfo.razaoSocial.toUpperCase()}</div>
             </td>
           </tr>
         </tbody>
