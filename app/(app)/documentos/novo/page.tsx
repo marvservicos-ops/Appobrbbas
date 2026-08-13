@@ -47,24 +47,33 @@ interface ClienteOpcao {
   empresa_id?: string | null
 }
 
+interface FuncionarioOpcao {
+  id: string
+  nome: string
+  cargo: string | null
+}
+
 export default function NovoDocumentoSegurancaPage() {
   const [obras, setObras] = useState<ObraOpcao[]>([])
   const [clientesMap, setClientesMap] = useState<Record<string, ClienteOpcao>>({})
   const [empresasMap, setEmpresasMap] = useState<Record<string, string>>({})
+  const [funcionarios, setFuncionarios] = useState<FuncionarioOpcao[]>([])
   const [tipo, setTipo] = useState<TipoDocumentoSeguranca>('apr')
   const [form, setForm] = useState<DocumentoSegurancaFormData>(() => criarFormDataInicial())
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [obrasRes, clientesRes, empresasRes] = await Promise.all([
+      const [obrasRes, clientesRes, empresasRes, funcionariosRes] = await Promise.all([
         supabase.from('obras').select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente_id').order('titulo'),
         supabase.from('clientes').select('id,nome,empresa_id'),
         supabase.from('empresas').select('id,razao_social'),
+        supabase.from('funcionarios').select('id,nome,cargo').eq('ativo', true).order('nome'),
       ])
       if (obrasRes.error) console.error('Erro ao carregar obras:', obrasRes.error)
       if (clientesRes.error) console.error('Erro ao carregar clientes:', clientesRes.error)
       if (empresasRes.error) console.error('Erro ao carregar empresas:', empresasRes.error)
+      if (funcionariosRes.error) console.error('Erro ao carregar funcionários:', funcionariosRes.error)
 
       if (obrasRes.data) setObras(obrasRes.data as ObraOpcao[])
       if (clientesRes.data) {
@@ -77,6 +86,7 @@ export default function NovoDocumentoSegurancaPage() {
         empresasRes.data.forEach((e: { id: string; razao_social: string }) => { map[e.id] = e.razao_social })
         setEmpresasMap(map)
       }
+      if (funcionariosRes.data) setFuncionarios(funcionariosRes.data as FuncionarioOpcao[])
     }
     load()
   }, [])
@@ -136,6 +146,17 @@ export default function NovoDocumentoSegurancaPage() {
 
   function removerMembro(id: string) {
     setForm(prev => ({ ...prev, equipeExecucao: prev.equipeExecucao.filter(m => m.id !== id) }))
+  }
+
+  function selecionarFuncionario(membroId: string, funcionarioId: string) {
+    const funcionario = funcionarios.find(f => f.id === funcionarioId)
+    if (!funcionario) return
+    setForm(prev => ({
+      ...prev,
+      equipeExecucao: prev.equipeExecucao.map(m => m.id === membroId
+        ? { ...m, nome: funcionario.nome, cargo: funcionario.cargo || m.cargo }
+        : m),
+    }))
   }
 
   return (
@@ -407,6 +428,10 @@ export default function NovoDocumentoSegurancaPage() {
                       </button>
                     )}
                   </div>
+                  <select className="field text-sm" value="" onChange={e => selecionarFuncionario(m.id, e.target.value)}>
+                    <option value="">Selecionar funcionário cadastrado…</option>
+                    {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                  </select>
                   <input className="field text-sm" placeholder="Nome" value={m.nome} onChange={e => atualizarMembro(m.id, 'nome', e.target.value)} />
                   <input className="field text-sm" placeholder="Cargo" value={m.cargo} onChange={e => atualizarMembro(m.id, 'cargo', e.target.value)} />
                   <div className="flex gap-4">
