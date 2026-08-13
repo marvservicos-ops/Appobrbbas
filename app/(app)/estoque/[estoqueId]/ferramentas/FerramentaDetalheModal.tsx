@@ -430,6 +430,7 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
   const [showNovoItemMala, setShowNovoItemMala] = useState(false)
   const [buscaMala, setBuscaMala] = useState('')
   const [processando, setProcessando] = useState(false)
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const { lightboxUrl, openLightbox, closeLightbox } = usePhotoLightbox()
 
   async function load() {
@@ -484,6 +485,25 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
     setProcessando(true)
     const supabase = createClient()
     await supabase.from('ferramentas').update({ status: 'baixada' }).eq('id', ferramenta.id)
+    setProcessando(false)
+    load(); onChanged()
+  }
+
+  function toggleSelecionado(id: string) {
+    setSelecionados(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  async function removerSelecionadosDaMala() {
+    if (selecionados.size === 0) return
+    if (!confirm(`Tornar ${selecionados.size} ${selecionados.size === 1 ? 'item avulso' : 'itens avulsos'}, removendo da mala?`)) return
+    setProcessando(true)
+    const supabase = createClient()
+    await supabase.from('ferramentas').update({ mala_id: null }).in('id', Array.from(selecionados))
+    setSelecionados(new Set())
     setProcessando(false)
     load(); onChanged()
   }
@@ -655,19 +675,48 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
                         return itensFiltrados.length === 0 ? (
                           <p className="text-xs text-[#94A3B8]">Nenhum item encontrado.</p>
                         ) : (
-                    <div className="space-y-1.5">
-                      {itensFiltrados.map(item => (
-                        <button key={item.id} onClick={() => abrirFilho(item.id)}
-                          className="w-full flex items-center justify-between text-xs bg-[#F8FAFC] hover:bg-[#F1F5F9] rounded-lg px-3 py-2 transition-colors text-left">
-                          <span className="text-[#374151] font-medium">{item.nome}{item.codigo_interno ? ` · ${item.codigo_interno}` : ''}</span>
-                          {item.status === 'disponivel' ? (
-                            <span className="px-1.5 py-0.5 rounded-full font-semibold bg-[#EEF2FF] text-[#4F7CFF]">Na mala</span>
-                          ) : (
-                            <span className={`px-1.5 py-0.5 rounded-full font-semibold ${STATUS_COLOR[item.status]}`}>{STATUS_LABEL[item.status]}</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      <div className="flex items-center justify-between mb-1.5 px-0.5">
+                        <label className="flex items-center gap-1.5 text-[11px] text-[#64748B] cursor-pointer select-none">
+                          <input type="checkbox"
+                            checked={itensFiltrados.length > 0 && itensFiltrados.every(item => selecionados.has(item.id))}
+                            onChange={e => {
+                              setSelecionados(prev => {
+                                const next = new Set(prev)
+                                if (e.target.checked) itensFiltrados.forEach(item => next.add(item.id))
+                                else itensFiltrados.forEach(item => next.delete(item.id))
+                                return next
+                              })
+                            }} />
+                          Selecionar todos
+                        </label>
+                        {selecionados.size > 0 && (
+                          <button onClick={removerSelecionadosDaMala} disabled={processando}
+                            className="flex items-center gap-1 text-[11px] font-medium text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
+                            {processando ? <Loader2 size={11} className="animate-spin" /> : <Package size={11} />}
+                            Tornar avulsas ({selecionados.size})
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {itensFiltrados.map(item => (
+                          <div key={item.id}
+                            className="w-full flex items-center gap-2 text-xs bg-[#F8FAFC] hover:bg-[#F1F5F9] rounded-lg px-3 py-2 transition-colors">
+                            <input type="checkbox" checked={selecionados.has(item.id)}
+                              onChange={() => toggleSelecionado(item.id)} onClick={e => e.stopPropagation()} />
+                            <button onClick={() => abrirFilho(item.id)}
+                              className="flex-1 flex items-center justify-between text-left min-w-0">
+                              <span className="text-[#374151] font-medium truncate">{item.nome}{item.codigo_interno ? ` · ${item.codigo_interno}` : ''}</span>
+                              {item.status === 'disponivel' ? (
+                                <span className="shrink-0 ml-2 px-1.5 py-0.5 rounded-full font-semibold bg-[#EEF2FF] text-[#4F7CFF]">Na mala</span>
+                              ) : (
+                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded-full font-semibold ${STATUS_COLOR[item.status]}`}>{STATUS_LABEL[item.status]}</span>
+                              )}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                         )
                       })()}
                     </>
