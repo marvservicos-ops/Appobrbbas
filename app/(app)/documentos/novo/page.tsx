@@ -18,11 +18,18 @@ interface ObraOpcao {
   endereco?: string
   descricao?: string
   engenheiro_responsavel?: string
-  cliente?: { nome: string; empresa_id?: string | null } | null
+  cliente_id?: string | null
+}
+
+interface ClienteOpcao {
+  id: string
+  nome: string
+  empresa_id?: string | null
 }
 
 export default function NovoDocumentoSegurancaPage() {
   const [obras, setObras] = useState<ObraOpcao[]>([])
+  const [clientesMap, setClientesMap] = useState<Record<string, ClienteOpcao>>({})
   const [empresasMap, setEmpresasMap] = useState<Record<string, string>>({})
   const [tipo, setTipo] = useState<TipoDocumentoSeguranca>('apr')
   const [form, setForm] = useState<DocumentoSegurancaFormData>(() => criarFormDataInicial())
@@ -30,15 +37,21 @@ export default function NovoDocumentoSegurancaPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [obrasRes, empresasRes] = await Promise.all([
-        supabase
-          .from('obras')
-          .select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente:clientes(nome,empresa_id)')
-          .order('titulo'),
+      const [obrasRes, clientesRes, empresasRes] = await Promise.all([
+        supabase.from('obras').select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente_id').order('titulo'),
+        supabase.from('clientes').select('id,nome,empresa_id'),
         supabase.from('empresas').select('id,razao_social'),
       ])
       if (obrasRes.error) console.error('Erro ao carregar obras:', obrasRes.error)
-      if (obrasRes.data) setObras(obrasRes.data as unknown as ObraOpcao[])
+      if (clientesRes.error) console.error('Erro ao carregar clientes:', clientesRes.error)
+      if (empresasRes.error) console.error('Erro ao carregar empresas:', empresasRes.error)
+
+      if (obrasRes.data) setObras(obrasRes.data as ObraOpcao[])
+      if (clientesRes.data) {
+        const map: Record<string, ClienteOpcao> = {}
+        ;(clientesRes.data as ClienteOpcao[]).forEach(c => { map[c.id] = c })
+        setClientesMap(map)
+      }
       if (empresasRes.data) {
         const map: Record<string, string> = {}
         empresasRes.data.forEach((e: { id: string; razao_social: string }) => { map[e.id] = e.razao_social })
@@ -55,10 +68,12 @@ export default function NovoDocumentoSegurancaPage() {
   function selecionarObra(obraId: string) {
     const obra = obras.find(o => o.id === obraId)
     if (!obra) { atualizar('obraId', ''); return }
+    const cliente = obra.cliente_id ? clientesMap[obra.cliente_id] : undefined
+    const nomeCliente = (cliente?.empresa_id && empresasMap[cliente.empresa_id]) || cliente?.nome
     setForm(prev => ({
       ...prev,
       obraId,
-      cliente: (obra.cliente?.empresa_id && empresasMap[obra.cliente.empresa_id]) || obra.cliente?.nome || prev.cliente,
+      cliente: nomeCliente || prev.cliente,
       local: obra.endereco || prev.local,
       descricaoAtividades: obra.descricao || prev.descricaoAtividades,
       responsavelEmpresa: obra.engenheiro_responsavel || prev.responsavelEmpresa,
@@ -100,18 +115,17 @@ export default function NovoDocumentoSegurancaPage() {
     <div>
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          #documento-preview, #documento-preview * { visibility: visible; }
-          #documento-preview { position: absolute; top: 0; left: 0; width: 210mm; margin: 0 !important; padding: 12mm 15mm !important; box-shadow: none !important; }
           @page { size: A4; margin: 0; }
+          html, body { margin: 0; padding: 0; }
+          #documento-preview { box-shadow: none !important; margin: 0 !important; max-width: none !important; }
         }
       `}</style>
 
-      <div className="no-print">
+      <div className="print:hidden">
         <Topbar searchPlaceholder="Buscar..." />
       </div>
 
-      <div className="no-print p-4 md:p-6 pb-0">
+      <div className="print:hidden p-4 md:p-6 pb-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <Link href="/documentos" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
@@ -141,9 +155,9 @@ export default function NovoDocumentoSegurancaPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-4 md:p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-4 md:p-6 print:block print:p-0 print:gap-0">
         {/* ── Formulário ─────────────────────────────── */}
-        <div className="no-print space-y-5">
+        <div className="print:hidden space-y-5">
           <div className="card">
             <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Obra vinculada</label>
             <select
@@ -306,8 +320,8 @@ export default function NovoDocumentoSegurancaPage() {
         </div>
 
         {/* ── Preview A4 ─────────────────────────────── */}
-        <div className="lg:sticky lg:top-6 self-start">
-          <div className="bg-[#F1F5F9] rounded-xl p-4 md:p-6 flex justify-center">
+        <div className="lg:sticky lg:top-6 self-start print:static">
+          <div className="bg-[#F1F5F9] rounded-xl p-4 md:p-6 flex justify-center print:bg-transparent print:p-0 print:block">
             <div
               id="documento-preview"
               style={{ width: '210mm', maxWidth: '100%', minHeight: '297mm', background: 'white', boxShadow: '0 4px 24px rgba(15,23,42,0.12)', padding: '14mm 12mm' }}
