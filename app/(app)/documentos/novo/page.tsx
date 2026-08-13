@@ -114,6 +114,9 @@ export default function NovoDocumentoSegurancaPage() {
   return (
     <div>
       <style>{`
+        #documento-preview, #documento-preview *, #documento-preview *::before, #documento-preview *::after {
+          box-sizing: border-box;
+        }
         @media print {
           @page { size: A4; margin: 0; }
           html, body { margin: 0; padding: 0; }
@@ -324,7 +327,7 @@ export default function NovoDocumentoSegurancaPage() {
           <div className="bg-[#F1F5F9] rounded-xl p-4 md:p-6 flex justify-center print:bg-transparent print:p-0 print:block">
             <div
               id="documento-preview"
-              style={{ width: '210mm', maxWidth: '100%', minHeight: '297mm', background: 'white', boxShadow: '0 4px 24px rgba(15,23,42,0.12)', padding: '14mm 12mm' }}
+              style={{ width: '210mm', maxWidth: '100%', minHeight: '297mm', background: 'white', boxShadow: '0 4px 24px rgba(15,23,42,0.12)', padding: '14mm 12mm', boxSizing: 'border-box' }}
             >
               {tipo === 'apr' ? <AprDocument data={form} /> : <PtDocument data={form} />}
             </div>
