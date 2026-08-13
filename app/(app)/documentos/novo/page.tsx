@@ -58,6 +58,8 @@ export default function NovoDocumentoSegurancaPage() {
   const [clientesMap, setClientesMap] = useState<Record<string, ClienteOpcao>>({})
   const [empresasMap, setEmpresasMap] = useState<Record<string, string>>({})
   const [funcionarios, setFuncionarios] = useState<FuncionarioOpcao[]>([])
+  const [funcionariosSelecionados, setFuncionariosSelecionados] = useState<string[]>([])
+  const [buscaFuncionario, setBuscaFuncionario] = useState('')
   const [tipo, setTipo] = useState<TipoDocumentoSeguranca>('apr')
   const [form, setForm] = useState<DocumentoSegurancaFormData>(() => criarFormDataInicial())
 
@@ -148,15 +150,24 @@ export default function NovoDocumentoSegurancaPage() {
     setForm(prev => ({ ...prev, equipeExecucao: prev.equipeExecucao.filter(m => m.id !== id) }))
   }
 
-  function selecionarFuncionario(membroId: string, funcionarioId: string) {
-    const funcionario = funcionarios.find(f => f.id === funcionarioId)
-    if (!funcionario) return
-    setForm(prev => ({
-      ...prev,
-      equipeExecucao: prev.equipeExecucao.map(m => m.id === membroId
-        ? { ...m, nome: funcionario.nome, cargo: funcionario.cargo || m.cargo }
-        : m),
-    }))
+  function alternarFuncionarioSelecionado(funcionarioId: string) {
+    setFuncionariosSelecionados(prev => prev.includes(funcionarioId)
+      ? prev.filter(id => id !== funcionarioId)
+      : [...prev, funcionarioId])
+  }
+
+  function adicionarFuncionariosSelecionados() {
+    if (funcionariosSelecionados.length === 0) return
+    const novosMembros: MembroEquipe[] = funcionariosSelecionados.map(id => {
+      const f = funcionarios.find(fn => fn.id === id)
+      return { id: crypto.randomUUID(), nome: f?.nome || '', cargo: f?.cargo || '', nr35: false, nr12: false }
+    })
+    setForm(prev => {
+      const membrosPreenchidos = prev.equipeExecucao.filter(m => m.nome.trim() !== '' || m.cargo.trim() !== '')
+      return { ...prev, equipeExecucao: [...membrosPreenchidos, ...novosMembros] }
+    })
+    setFuncionariosSelecionados([])
+    setBuscaFuncionario('')
   }
 
   return (
@@ -415,9 +426,43 @@ export default function NovoDocumentoSegurancaPage() {
               <div className="flex items-center justify-between">
                 <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Equipe de Execução</h3>
                 <button onClick={adicionarMembro} className="btn-secondary text-xs px-3 py-1.5 min-h-0">
-                  <Plus size={14} /> Adicionar membro
+                  <Plus size={14} /> Adicionar em branco
                 </button>
               </div>
+
+              <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
+                <p className="text-xs font-semibold text-[#64748B]">Adicionar funcionários cadastrados</p>
+                <input
+                  className="field text-sm"
+                  placeholder="Buscar por nome…"
+                  value={buscaFuncionario}
+                  onChange={e => setBuscaFuncionario(e.target.value)}
+                />
+                <div className="max-h-48 overflow-y-auto space-y-0.5 bg-white border border-[#E2E8F0] rounded-lg p-1.5">
+                  {funcionarios
+                    .filter(f => f.nome.toLowerCase().includes(buscaFuncionario.toLowerCase()))
+                    .map(f => (
+                      <label key={f.id} className="flex items-center gap-2 text-xs text-[#374151] px-1.5 py-1 rounded hover:bg-[#F8FAFC] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={funcionariosSelecionados.includes(f.id)}
+                          onChange={() => alternarFuncionarioSelecionado(f.id)}
+                          className="w-3.5 h-3.5 accent-[#4F7CFF] shrink-0"
+                        />
+                        <span>{f.nome}{f.cargo ? ` — ${f.cargo}` : ''}</span>
+                      </label>
+                    ))}
+                  {funcionarios.length === 0 && <p className="text-xs text-[#94A3B8] px-1.5 py-1">Nenhum funcionário cadastrado.</p>}
+                </div>
+                <button
+                  onClick={adicionarFuncionariosSelecionados}
+                  disabled={funcionariosSelecionados.length === 0}
+                  className="btn-primary text-xs px-3 py-1.5 min-h-0 disabled:opacity-50"
+                >
+                  <Plus size={14} /> Adicionar {funcionariosSelecionados.length > 0 ? `${funcionariosSelecionados.length} selecionado(s)` : 'selecionados'}
+                </button>
+              </div>
+
               {form.equipeExecucao.map((m, idx) => (
                 <div key={m.id} className="border border-[#E2E8F0] rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
@@ -428,10 +473,6 @@ export default function NovoDocumentoSegurancaPage() {
                       </button>
                     )}
                   </div>
-                  <select className="field text-sm" value="" onChange={e => selecionarFuncionario(m.id, e.target.value)}>
-                    <option value="">Selecionar funcionário cadastrado…</option>
-                    {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
-                  </select>
                   <input className="field text-sm" placeholder="Nome" value={m.nome} onChange={e => atualizarMembro(m.id, 'nome', e.target.value)} />
                   <input className="field text-sm" placeholder="Cargo" value={m.cargo} onChange={e => atualizarMembro(m.id, 'cargo', e.target.value)} />
                   <div className="flex gap-4">
