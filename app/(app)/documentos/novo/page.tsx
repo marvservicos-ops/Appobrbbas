@@ -8,9 +8,29 @@ import Topbar from '@/components/Topbar'
 import AprDocument from '@/components/documentos/AprDocument'
 import PtDocument from '@/components/documentos/PtDocument'
 import {
-  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem,
-  EPIS_DISPONIVEIS, novoRiscoItem, criarFormDataInicial,
+  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem, MembroEquipe,
+  AGENTES_FATALIDADE_GRUPOS, RISCOS_ASSOCIADOS_COL1, RISCOS_ASSOCIADOS_COL2,
+  PRECAUCOES_COL1, PRECAUCOES_COL2, EPI_COL1, EPI_COL2, EPI_COL3,
+  novoRiscoItem, novoMembroEquipe, criarFormDataInicial,
 } from '@/components/documentos/types'
+
+type ListaBooleana = 'riscosAssociadosCol1' | 'riscosAssociadosCol2' | 'precaucoesCol1' | 'precaucoesCol2' | 'epiCol1' | 'epiCol2' | 'epiCol3'
+
+function ChecklistColuna({ titulo, itens, marcados, onToggle }: { titulo?: string; itens: readonly string[]; marcados: boolean[]; onToggle: (i: number) => void }) {
+  return (
+    <div>
+      {titulo && <p className="text-xs font-semibold text-[#64748B] mb-1">{titulo}</p>}
+      <div className="space-y-0.5">
+        {itens.map((item, i) => (
+          <label key={i} className="flex items-center gap-2 text-xs text-[#374151] px-1.5 py-1 rounded hover:bg-[#F8FAFC] cursor-pointer">
+            <input type="checkbox" checked={!!marcados[i]} onChange={() => onToggle(i)} className="w-3.5 h-3.5 accent-[#4F7CFF] shrink-0" />
+            <span>{item}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 interface ObraOpcao {
   id: string
@@ -95,20 +115,27 @@ export default function NovoDocumentoSegurancaPage() {
     setForm(prev => ({ ...prev, riscos: prev.riscos.filter(r => r.id !== id) }))
   }
 
-  function alternarAgenteFatalidade(chave: keyof DocumentoSegurancaFormData['agentesFatalidade']) {
+  function alternarAgente(grupoIdx: number, itemIdx: number) {
     setForm(prev => ({
       ...prev,
-      agentesFatalidade: { ...prev.agentesFatalidade, [chave]: !prev.agentesFatalidade[chave] },
+      agentesFatalidade: prev.agentesFatalidade.map((grupo, gi) => gi === grupoIdx ? grupo.map((v, ii) => ii === itemIdx ? !v : v) : grupo),
     }))
   }
 
-  function alternarEpi(epi: string) {
-    setForm(prev => ({
-      ...prev,
-      episObrigatorios: prev.episObrigatorios.includes(epi)
-        ? prev.episObrigatorios.filter(e => e !== epi)
-        : [...prev.episObrigatorios, epi],
-    }))
+  function alternarItemLista(campo: ListaBooleana, index: number) {
+    setForm(prev => ({ ...prev, [campo]: prev[campo].map((v, i) => i === index ? !v : v) }))
+  }
+
+  function atualizarMembro(id: string, campo: keyof MembroEquipe, valor: string | boolean) {
+    setForm(prev => ({ ...prev, equipeExecucao: prev.equipeExecucao.map(m => m.id === id ? { ...m, [campo]: valor } : m) }))
+  }
+
+  function adicionarMembro() {
+    setForm(prev => ({ ...prev, equipeExecucao: [...prev.equipeExecucao, novoMembroEquipe()] }))
+  }
+
+  function removerMembro(id: string) {
+    setForm(prev => ({ ...prev, equipeExecucao: prev.equipeExecucao.filter(m => m.id !== id) }))
   }
 
   return (
@@ -283,41 +310,117 @@ export default function NovoDocumentoSegurancaPage() {
           )}
 
           {tipo === 'pt' && (
-            <div className="card space-y-2">
-              <h3 className="font-syne text-sm font-semibold text-[#0F172A] mb-1">Agentes da Fatalidade</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  ['trabalhoAltura', 'Trabalho em Altura'],
-                  ['andaimes', 'Andaimes'],
-                  ['pta', 'PTA'],
-                  ['escadas', 'Escadas'],
-                  ['isolacaoArea', 'Isolação de Área'],
-                  ['bloqueioEletricoLoto', 'Bloqueio Elétrico (LOTO)'],
-                ] as const).map(([chave, texto]) => (
-                  <label key={chave} className="flex items-center gap-2 text-sm text-[#374151] px-2 py-1.5 rounded-lg hover:bg-[#F8FAFC] cursor-pointer">
-                    <input type="checkbox" checked={form.agentesFatalidade[chave]} onChange={() => alternarAgenteFatalidade(chave)} className="w-4 h-4 accent-[#4F7CFF]" />
-                    {texto}
-                  </label>
+            <div className="card space-y-3">
+              <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Inspeção / Responsáveis</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Gestor TVG</label>
+                  <input className="field" value={form.gestorTvg} onChange={e => atualizar('gestorTvg', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Solicitante PTS</label>
+                  <input className="field" value={form.solicitantePts} onChange={e => atualizar('solicitantePts', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Elaborador PTS</label>
+                  <input className="field" value={form.elaboradorPts} onChange={e => atualizar('elaboradorPts', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Data Inspeção</label>
+                  <input type="date" className="field" value={form.dataInspecao} onChange={e => atualizar('dataInspecao', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Data elaboração PTS</label>
+                  <input type="date" className="field" value={form.dataElaboracaoPts} onChange={e => atualizar('dataElaboracaoPts', e.target.value)} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tipo === 'pt' && (
+            <div className="card space-y-3">
+              <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Agentes da Fatalidade</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {AGENTES_FATALIDADE_GRUPOS.map((grupo, grupoIdx) => (
+                  <ChecklistColuna
+                    key={grupo.titulo}
+                    titulo={grupo.titulo}
+                    itens={grupo.itens}
+                    marcados={form.agentesFatalidade[grupoIdx]}
+                    onToggle={i => alternarAgente(grupoIdx, i)}
+                  />
                 ))}
               </div>
             </div>
           )}
 
           {tipo === 'pt' && (
-            <div className="card space-y-2">
-              <h3 className="font-syne text-sm font-semibold text-[#0F172A] mb-1">EPIs Obrigatórios</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {EPIS_DISPONIVEIS.map(epi => (
-                  <label key={epi} className="flex items-center gap-2 text-sm text-[#374151] px-2 py-1.5 rounded-lg hover:bg-[#F8FAFC] cursor-pointer">
-                    <input type="checkbox" checked={form.episObrigatorios.includes(epi)} onChange={() => alternarEpi(epi)} className="w-4 h-4 accent-[#4F7CFF]" />
-                    {epi}
-                  </label>
-                ))}
+            <div className="card space-y-3">
+              <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Riscos Associados ao Trabalho</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ChecklistColuna itens={RISCOS_ASSOCIADOS_COL1} marcados={form.riscosAssociadosCol1} onToggle={i => alternarItemLista('riscosAssociadosCol1', i)} />
+                <ChecklistColuna itens={RISCOS_ASSOCIADOS_COL2} marcados={form.riscosAssociadosCol2} onToggle={i => alternarItemLista('riscosAssociadosCol2', i)} />
+              </div>
+            </div>
+          )}
+
+          {tipo === 'pt' && (
+            <div className="card space-y-3">
+              <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Precauções Obrigatórias</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ChecklistColuna itens={PRECAUCOES_COL1} marcados={form.precaucoesCol1} onToggle={i => alternarItemLista('precaucoesCol1', i)} />
+                <ChecklistColuna itens={PRECAUCOES_COL2} marcados={form.precaucoesCol2} onToggle={i => alternarItemLista('precaucoesCol2', i)} />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#64748B] mb-1.5 mt-2">Outros</label>
-                <input className="field" value={form.episOutros} onChange={e => atualizar('episOutros', e.target.value)} placeholder="EPI adicional não listado" />
+                <label className="block text-xs font-semibold text-[#64748B] mb-1.5">Outros (descrever)</label>
+                <input className="field" value={form.precaucoesOutros} onChange={e => atualizar('precaucoesOutros', e.target.value)} />
               </div>
+            </div>
+          )}
+
+          {tipo === 'pt' && (
+            <div className="card space-y-3">
+              <h3 className="font-syne text-sm font-semibold text-[#0F172A]">EPI</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <ChecklistColuna itens={EPI_COL1} marcados={form.epiCol1} onToggle={i => alternarItemLista('epiCol1', i)} />
+                <ChecklistColuna itens={EPI_COL2} marcados={form.epiCol2} onToggle={i => alternarItemLista('epiCol2', i)} />
+                <ChecklistColuna itens={EPI_COL3} marcados={form.epiCol3} onToggle={i => alternarItemLista('epiCol3', i)} />
+              </div>
+            </div>
+          )}
+
+          {tipo === 'pt' && (
+            <div className="card space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Equipe de Execução</h3>
+                <button onClick={adicionarMembro} className="btn-secondary text-xs px-3 py-1.5 min-h-0">
+                  <Plus size={14} /> Adicionar membro
+                </button>
+              </div>
+              {form.equipeExecucao.map((m, idx) => (
+                <div key={m.id} className="border border-[#E2E8F0] rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-[#94A3B8]">Membro {idx + 1}</span>
+                    {form.equipeExecucao.length > 1 && (
+                      <button onClick={() => removerMembro(m.id)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-red-400">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                  <input className="field text-sm" placeholder="Nome" value={m.nome} onChange={e => atualizarMembro(m.id, 'nome', e.target.value)} />
+                  <input className="field text-sm" placeholder="Cargo" value={m.cargo} onChange={e => atualizarMembro(m.id, 'cargo', e.target.value)} />
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-xs text-[#374151] cursor-pointer">
+                      <input type="checkbox" checked={m.nr35} onChange={e => atualizarMembro(m.id, 'nr35', e.target.checked)} className="w-3.5 h-3.5 accent-[#4F7CFF]" />
+                      Apto NR 35
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-[#374151] cursor-pointer">
+                      <input type="checkbox" checked={m.nr12} onChange={e => atualizarMembro(m.id, 'nr12', e.target.checked)} className="w-3.5 h-3.5 accent-[#4F7CFF]" />
+                      Apto NR 12
+                    </label>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
