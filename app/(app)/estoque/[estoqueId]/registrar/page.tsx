@@ -55,7 +55,7 @@ export default function RegistrarPage() {
   const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
   const [funcionarioId, setFuncionarioId] = useState('')
   const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string; responsavel_entrega?: boolean }[]>([])
-  const [destinoTipo, setDestinoTipo] = useState<'obra' | 'manutencao' | 'uso_interno'>('obra')
+  const [destinoTipo, setDestinoTipo] = useState<'obra' | 'manutencao' | 'uso_interno' | 'funcionario'>('obra')
   const [manutencaoId, setManutencaoId] = useState('')
   const [manutencoes, setManutencoes] = useState<{ id: string; numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string } | null }[]>([])
   const [precoEntrada, setPrecoEntrada] = useState('')
@@ -144,6 +144,11 @@ export default function RegistrarPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const icone = estoque?.icone
+    const needsFuncionario = icone === 'shield' || icone === 'shirt'
+    const isLimpeza = icone === 'sparkles'
+    const isCopa = estoque?.nome === 'Copa/Escritório'
+    const isDestinoMultiplo = !needsFuncionario && !isLimpeza && !isCopa
     if (!produtoNome.trim()) { setError('Informe o produto.'); return }
     if (!quantidade || parseFloat(quantidade) <= 0) { setError('Informe a quantidade.'); return }
     if (!responsavel.trim()) { setError('Informe o responsável.'); return }
@@ -154,15 +159,14 @@ export default function RegistrarPage() {
       }
     }
     if (tipo === 'saida') {
-      const icone = estoque?.icone
-      const needsFuncionario = icone === 'shield' || icone === 'shirt'
-      const isLimpeza = icone === 'sparkles'
-      const isCopa = estoque?.nome === 'Copa/Escritório'
       if (needsFuncionario && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
       if (isLimpeza && destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
       if (isLimpeza && destinoTipo === 'manutencao' && !manutencaoId) { setError('Selecione o contrato de manutenção de destino.'); return }
       if (isLimpeza && destinoTipo === 'manutencao' && (!produtoId || produtoId === '__outro__')) { setError('Para destino Manutenção, selecione um produto do catálogo.'); return }
-      if (!needsFuncionario && !isLimpeza && !isCopa && !obraId) { setError('Selecione a obra de destino.'); return }
+      if (isDestinoMultiplo && destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
+      if (isDestinoMultiplo && destinoTipo === 'funcionario' && !funcionarioId) { setError('Selecione o funcionário de destino.'); return }
+      if (isDestinoMultiplo && destinoTipo === 'manutencao' && !manutencaoId) { setError('Selecione o contrato de manutenção de destino.'); return }
+      if (isDestinoMultiplo && destinoTipo === 'manutencao' && (!produtoId || produtoId === '__outro__')) { setError('Para destino Manutenção, selecione um produto do catálogo.'); return }
     }
     if (tipo === 'entrada' && !precoEntrada) { setError('Informe o preço unitário desta entrada.'); return }
 
@@ -188,14 +192,20 @@ export default function RegistrarPage() {
     const precoEntradaNum = parseFloat(precoEntrada) || 0
     const preco_unitario_custo = tipo === 'entrada' ? precoEntradaNum : cmpAtual
     const valor_total = qtd * preco_unitario_custo
-    const isCopa = estoque?.nome === 'Copa/Escritório'
     const destinoFinal = isCopa ? 'uso_interno' : destinoTipo
+    // Estoques com seletor de múltiplos destinos (obra/funcionário/manutenção/uso interno) só devem
+    // gravar o id do destino efetivamente escolhido — senão um id de uma aba anterior "gruda" no
+    // registro e contamina relatórios que filtram por obra_id/funcionario_id (ex.: financeiro da obra).
+    const hasMultiDestino = tipo === 'saida' && (isDestinoMultiplo || (isLimpeza && !isCopa))
+    const obraIdFinal = isCopa ? null : hasMultiDestino ? (destinoFinal === 'obra' ? (obraId || null) : null) : (obraId || null)
+    const funcionarioIdFinal = needsFuncionario ? (funcionarioId || null) : hasMultiDestino ? (destinoFinal === 'funcionario' ? (funcionarioId || null) : null) : (funcionarioId || null)
+    const manutencaoIdFinal = hasMultiDestino && destinoFinal === 'manutencao' ? (manutencaoId || null) : null
 
     const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
       estoque_id: estoqueId, produto_id: produtoId || null, produto_nome: produtoNome.trim(),
       tipo, quantidade: qtd, unidade, responsavel: responsavel.trim(), assinatura_url, data,
-      observacoes: observacoes || null, obra_id: isCopa ? null : (obraId || null), funcionario_id: funcionarioId || null,
-      manutencao_id: tipo === 'saida' && destinoFinal === 'manutencao' ? manutencaoId : null,
+      observacoes: observacoes || null, obra_id: obraIdFinal, funcionario_id: funcionarioIdFinal,
+      manutencao_id: manutencaoIdFinal,
       destino_tipo: tipo === 'saida' ? destinoFinal : null,
       preco_unitario_custo: preco_unitario_custo || null, valor_total: valor_total || null,
     }).select().single()
@@ -235,8 +245,8 @@ export default function RegistrarPage() {
       }
     }
 
-    // Saída de material de limpeza com destino Manutenção repõe o estoque local do contrato
-    if (tipo === 'saida' && estoque?.icone === 'sparkles' && destinoTipo === 'manutencao' && manutencaoId && produtoId) {
+    // Saída com destino Manutenção repõe o estoque local do contrato
+    if (hasMultiDestino && destinoFinal === 'manutencao' && manutencaoId && produtoId) {
       const { data: existente } = await supabase.from('manutencao_estoque_produtos')
         .select('id, quantidade_atual').eq('contrato_id', manutencaoId).eq('produto_id', produtoId).maybeSingle()
       if (existente) {
@@ -296,8 +306,7 @@ export default function RegistrarPage() {
     }
 
     // Saída de EPI/uniforme gera termo de responsabilidade pra imprimir e o funcionário assinar
-    const needsFuncionario = tipo === 'saida' && (estoque?.icone === 'shield' || estoque?.icone === 'shirt')
-    if (needsFuncionario) window.open(`/print/epi/${reg.id}`, '_blank')
+    if (tipo === 'saida' && needsFuncionario) window.open(`/print/epi/${reg.id}`, '_blank')
 
     router.push(`/estoque/${estoqueId}`)
   }
@@ -645,13 +654,39 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
           )}
         </div>
       ) : (
-        <div>
-          <label className="block text-sm font-medium text-[#374151] mb-1.5">Obra de Destino *</label>
-          <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
-            <option value="">Selecione a obra...</option>
-            {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
-          </select>
-          {!obraId && <p className="text-xs text-amber-500 mt-1">Saídas devem estar vinculadas a uma obra.</p>}
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-[#374151]">Destino *</label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {(['obra', 'funcionario', 'uso_interno', 'manutencao'] as const).map(d => (
+              <button key={d} type="button"
+                onClick={() => setDestinoTipo(d)}
+                className={`py-2 rounded-lg text-xs font-medium border-2 transition-all ${destinoTipo === d ? 'border-[#4F7CFF] bg-[#EEF2FF] text-[#4F7CFF]' : 'border-[#E2E8F0] text-[#64748B]'}`}>
+                {d === 'obra' ? 'Obra' : d === 'funcionario' ? 'Funcionário' : d === 'manutencao' ? 'Manutenção' : 'Uso Interno'}
+              </button>
+            ))}
+          </div>
+          {destinoTipo === 'obra' && (
+            <select className="field" value={obraId} onChange={e => setObraId(e.target.value)} required>
+              <option value="">Selecione a obra...</option>
+              {obras.map((o: any) => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+            </select>
+          )}
+          {destinoTipo === 'funcionario' && (
+            <select className="field" value={funcionarioId} onChange={e => setFuncionarioId(e.target.value)} required>
+              <option value="">Selecione o funcionário...</option>
+              {funcionarios.map((f: any) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+            </select>
+          )}
+          {destinoTipo === 'manutencao' && (
+            <select className="field" value={manutencaoId} onChange={e => setManutencaoId(e.target.value)} required>
+              <option value="">Selecione o contrato de manutenção...</option>
+              {manutencoes.map((m: any) => (
+                <option key={m.id} value={m.id}>
+                  {(m.empresa?.apelido || m.empresa?.razao_social || 'Sem empresa')}{m.numero_contrato ? ` · ${m.numero_contrato}` : ''}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 
