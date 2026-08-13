@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Printer, Plus, Trash2, ShieldAlert, ClipboardCheck } from 'lucide-react'
+import { ArrowLeft, Printer, Plus, Trash2, ShieldAlert, ClipboardCheck, Settings, Save } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import AprDocument from '@/components/documentos/AprDocument'
 import PtDocument from '@/components/documentos/PtDocument'
+import ModalGerenciarModelosPt from '@/components/documentos/ModalGerenciarModelosPt'
 import {
-  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem, MembroEquipe,
+  DocumentoSegurancaFormData, TipoDocumentoSeguranca, RiscoItem, MembroEquipe, ModeloPt,
   AGENTES_FATALIDADE_GRUPOS, RISCOS_ASSOCIADOS_COL1, RISCOS_ASSOCIADOS_COL2,
   PRECAUCOES_COL1, PRECAUCOES_COL2, EPI_COL1, EPI_COL2, EPI_COL3,
-  novoRiscoItem, novoMembroEquipe, criarFormDataInicial,
+  novoRiscoItem, novoMembroEquipe, criarFormDataInicial, extrairDadosModelo, normalizarDadosModelo,
 } from '@/components/documentos/types'
 
 type ListaBooleana = 'riscosAssociadosCol1' | 'riscosAssociadosCol2' | 'precaucoesCol1' | 'precaucoesCol2' | 'epiCol1' | 'epiCol2' | 'epiCol3'
@@ -61,22 +62,37 @@ export default function NovoDocumentoSegurancaPage() {
   const [funcionarios, setFuncionarios] = useState<FuncionarioOpcao[]>([])
   const [funcionariosSelecionados, setFuncionariosSelecionados] = useState<string[]>([])
   const [buscaFuncionario, setBuscaFuncionario] = useState('')
+  const [modelosPt, setModelosPt] = useState<ModeloPt[]>([])
+  const [modeloSelecionadoId, setModeloSelecionadoId] = useState('')
+  const [nomeNovoModelo, setNomeNovoModelo] = useState('')
+  const [salvandoModelo, setSalvandoModelo] = useState(false)
+  const [mostrarGerenciarModelos, setMostrarGerenciarModelos] = useState(false)
   const [tipo, setTipo] = useState<TipoDocumentoSeguranca>('apr')
   const [form, setForm] = useState<DocumentoSegurancaFormData>(() => criarFormDataInicial())
+
+  async function recarregarModelos(): Promise<ModeloPt[]> {
+    const { data, error } = await createClient().from('pt_modelos').select('id,nome,dados').order('nome')
+    if (error) { console.error('Erro ao carregar modelos de PT:', error); return modelosPt }
+    const lista = (data as ModeloPt[] | null) || []
+    setModelosPt(lista)
+    return lista
+  }
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [obrasRes, clientesRes, empresasRes, funcionariosRes] = await Promise.all([
+      const [obrasRes, clientesRes, empresasRes, funcionariosRes, modelosRes] = await Promise.all([
         supabase.from('obras').select('id,titulo,endereco,descricao,engenheiro_responsavel,cliente_id,gestor_id').order('titulo'),
         supabase.from('clientes').select('id,nome,empresa_id'),
         supabase.from('empresas').select('id,razao_social'),
         supabase.from('funcionarios').select('id,nome,cargo').eq('ativo', true).order('nome'),
+        supabase.from('pt_modelos').select('id,nome,dados').order('nome'),
       ])
       if (obrasRes.error) console.error('Erro ao carregar obras:', obrasRes.error)
       if (clientesRes.error) console.error('Erro ao carregar clientes:', clientesRes.error)
       if (empresasRes.error) console.error('Erro ao carregar empresas:', empresasRes.error)
       if (funcionariosRes.error) console.error('Erro ao carregar funcionários:', funcionariosRes.error)
+      if (modelosRes.error) console.error('Erro ao carregar modelos de PT:', modelosRes.error)
 
       if (obrasRes.data) setObras(obrasRes.data as ObraOpcao[])
       if (clientesRes.data) {
@@ -90,6 +106,7 @@ export default function NovoDocumentoSegurancaPage() {
         setEmpresasMap(map)
       }
       if (funcionariosRes.data) setFuncionarios(funcionariosRes.data as FuncionarioOpcao[])
+      if (modelosRes.data) setModelosPt(modelosRes.data as ModeloPt[])
     }
     load()
   }, [])
@@ -171,6 +188,37 @@ export default function NovoDocumentoSegurancaPage() {
     })
     setFuncionariosSelecionados([])
     setBuscaFuncionario('')
+  }
+
+  function aplicarModelo(modeloId: string) {
+    setModeloSelecionadoId(modeloId)
+    if (!modeloId) return
+    const modelo = modelosPt.find(m => m.id === modeloId)
+    if (!modelo) return
+    const dados = normalizarDadosModelo(modelo.dados)
+    setForm(prev => ({ ...prev, ...dados }))
+  }
+
+  async function salvarComoNovoModelo() {
+    if (!nomeNovoModelo.trim()) return
+    setSalvandoModelo(true)
+    const dados = extrairDadosModelo(form)
+    const { data, error } = await createClient().from('pt_modelos').insert({ nome: nomeNovoModelo.trim(), dados }).select('id,nome,dados').single()
+    setSalvandoModelo(false)
+    if (error) { console.error('Erro ao salvar modelo de PT:', error); return }
+    setNomeNovoModelo('')
+    await recarregarModelos()
+    if (data) setModeloSelecionadoId(data.id)
+  }
+
+  async function atualizarModeloSelecionado() {
+    if (!modeloSelecionadoId) return
+    setSalvandoModelo(true)
+    const dados = extrairDadosModelo(form)
+    const { error } = await createClient().from('pt_modelos').update({ dados, updated_at: new Date().toISOString() }).eq('id', modeloSelecionadoId)
+    setSalvandoModelo(false)
+    if (error) { console.error('Erro ao atualizar modelo de PT:', error); return }
+    await recarregarModelos()
   }
 
   return (
@@ -346,6 +394,38 @@ export default function NovoDocumentoSegurancaPage() {
 
           {tipo === 'pt' && (
             <div className="card space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Modelo de Atividade</h3>
+                <button onClick={() => setMostrarGerenciarModelos(true)} className="text-xs text-[#4F7CFF] hover:underline flex items-center gap-1">
+                  <Settings size={12} /> Gerenciar
+                </button>
+              </div>
+              <p className="text-xs text-[#94A3B8] -mt-1">Aplica os checklists (agentes, riscos, precauções, EPI) de um modelo salvo. Você ajusta a equipe e o resto depois.</p>
+              <select className="field" value={modeloSelecionadoId} onChange={e => aplicarModelo(e.target.value)}>
+                <option value="">Nenhum modelo (preencher do zero)</option>
+                {modelosPt.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+              <div className="flex gap-2">
+                <input
+                  className="field text-sm flex-1"
+                  placeholder="Nome do novo modelo (ex: PT de Solda)"
+                  value={nomeNovoModelo}
+                  onChange={e => setNomeNovoModelo(e.target.value)}
+                />
+                <button onClick={salvarComoNovoModelo} disabled={!nomeNovoModelo.trim() || salvandoModelo} className="btn-secondary text-xs px-3 min-h-0 disabled:opacity-50 shrink-0">
+                  <Save size={14} /> Salvar
+                </button>
+              </div>
+              {modeloSelecionadoId && (
+                <button onClick={atualizarModeloSelecionado} disabled={salvandoModelo} className="text-xs text-[#4F7CFF] hover:underline disabled:opacity-50">
+                  Atualizar &quot;{modelosPt.find(m => m.id === modeloSelecionadoId)?.nome}&quot; com os checkboxes atuais
+                </button>
+              )}
+            </div>
+          )}
+
+          {tipo === 'pt' && (
+            <div className="card space-y-3">
               <h3 className="font-syne text-sm font-semibold text-[#0F172A]">Inspeção / Responsáveis</h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -506,6 +586,17 @@ export default function NovoDocumentoSegurancaPage() {
           </div>
         </div>
       </div>
+
+      {mostrarGerenciarModelos && (
+        <ModalGerenciarModelosPt
+          modelos={modelosPt}
+          onClose={() => setMostrarGerenciarModelos(false)}
+          onChanged={async () => {
+            const lista = await recarregarModelos()
+            if (!lista.some(m => m.id === modeloSelecionadoId)) setModeloSelecionadoId('')
+          }}
+        />
+      )}
     </div>
   )
 }

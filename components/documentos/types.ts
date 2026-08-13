@@ -217,6 +217,59 @@ export function novoMembroEquipe(): MembroEquipe {
   return { id: crypto.randomUUID(), nome: '', cargo: '', nr35: false, nr12: false }
 }
 
+// ─── Modelos reutilizáveis de PT (checklists pré-marcados por tipo de atividade) ──
+export interface DadosModeloPt {
+  agentesFatalidade: boolean[][]
+  riscosAssociadosCol1: boolean[]
+  riscosAssociadosCol2: boolean[]
+  precaucoesCol1: boolean[]
+  precaucoesCol2: boolean[]
+  precaucoesOutros: string
+  epiCol1: boolean[]
+  epiCol2: boolean[]
+  epiCol3: boolean[]
+}
+
+export interface ModeloPt {
+  id: string
+  nome: string
+  dados: DadosModeloPt
+}
+
+export function extrairDadosModelo(form: DocumentoSegurancaFormData): DadosModeloPt {
+  return {
+    agentesFatalidade: form.agentesFatalidade,
+    riscosAssociadosCol1: form.riscosAssociadosCol1,
+    riscosAssociadosCol2: form.riscosAssociadosCol2,
+    precaucoesCol1: form.precaucoesCol1,
+    precaucoesCol2: form.precaucoesCol2,
+    precaucoesOutros: form.precaucoesOutros,
+    epiCol1: form.epiCol1,
+    epiCol2: form.epiCol2,
+    epiCol3: form.epiCol3,
+  }
+}
+
+function normalizarBooleanArray(salvo: boolean[] | undefined, tamanho: number): boolean[] {
+  return Array.from({ length: tamanho }, (_, i) => !!salvo?.[i])
+}
+
+// Reconstrói os arrays de um modelo salvo no formato atual das listas de
+// checklist — protege contra dessincronia caso os itens mudem no futuro.
+export function normalizarDadosModelo(dados: Partial<DadosModeloPt> | null | undefined): DadosModeloPt {
+  return {
+    agentesFatalidade: AGENTES_FATALIDADE_GRUPOS.map((g, gi) => normalizarBooleanArray(dados?.agentesFatalidade?.[gi], g.itens.length)),
+    riscosAssociadosCol1: normalizarBooleanArray(dados?.riscosAssociadosCol1, RISCOS_ASSOCIADOS_COL1.length),
+    riscosAssociadosCol2: normalizarBooleanArray(dados?.riscosAssociadosCol2, RISCOS_ASSOCIADOS_COL2.length),
+    precaucoesCol1: normalizarBooleanArray(dados?.precaucoesCol1, PRECAUCOES_COL1.length),
+    precaucoesCol2: normalizarBooleanArray(dados?.precaucoesCol2, PRECAUCOES_COL2.length),
+    precaucoesOutros: dados?.precaucoesOutros || '',
+    epiCol1: normalizarBooleanArray(dados?.epiCol1, EPI_COL1.length),
+    epiCol2: normalizarBooleanArray(dados?.epiCol2, EPI_COL2.length),
+    epiCol3: normalizarBooleanArray(dados?.epiCol3, EPI_COL3.length),
+  }
+}
+
 export function criarFormDataInicial(): DocumentoSegurancaFormData {
   return {
     obraId: '',
