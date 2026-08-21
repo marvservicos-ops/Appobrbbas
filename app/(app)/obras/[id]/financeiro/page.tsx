@@ -34,7 +34,7 @@ function DreSummary({ obraId }: { obraId: string }) {
         sb.from('obra_materiais').select('valor_total').eq('obra_id', obraId).eq('tipo_compra', 'interna'),
         sb.from('funcionario_alocacoes')
           .select('percentual, funcionarios:funcionario_id(custo_diario, salario_bruto, dias_mes)')
-          .eq('obra_id', obraId).in('tipo', ['obra', 'folga']),
+          .eq('obra_id', obraId).in('tipo', ['obra', 'folga', 'escritorio']),
       ])
 
       const totalContrato = (meds ?? []).reduce((s: number, m: any) => s + (m.valor_previsto || 0), 0)
