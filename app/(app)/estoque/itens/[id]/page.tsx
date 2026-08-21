@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import Image from 'next/image'
 import { ArrowLeft, Edit2, ArrowUpCircle, ArrowDownCircle, RefreshCw, Package, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, EstoqueMovimentacao } from '@/lib/types'
@@ -91,12 +92,15 @@ export default function ItemDetailPage() {
             {/* Foto */}
             <div className="card p-0 overflow-hidden">
               {item.foto_url ? (
-                <img
-                  src={item.foto_url}
-                  alt={item.nome}
-                  className="w-full h-48 object-cover cursor-zoom-in"
-                  onClick={() => openLightbox(item.foto_url!)}
-                />
+                <div className="relative w-full h-48 cursor-zoom-in" onClick={() => openLightbox(item.foto_url!)}>
+                  <Image
+                    src={item.foto_url}
+                    alt={item.nome}
+                    fill
+                    sizes="(max-width: 1024px) 100vw, 33vw"
+                    className="object-cover"
+                  />
+                </div>
               ) : (
                 <div className="w-full h-48 bg-[#F8FAFC] flex items-center justify-center">
                   <Package size={48} className="text-[#CBD5E1]" />

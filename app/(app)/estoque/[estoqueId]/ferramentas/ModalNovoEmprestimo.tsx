@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { X, Loader2, CheckSquare, Square, Wrench, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta } from '@/lib/types'
@@ -129,7 +130,7 @@ export default function ModalNovoEmprestimo({ ferramentasDisponiveis, onClose, o
                     className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${sel ? 'bg-[#F5F7FF]' : 'hover:bg-[#F8FAFC]'}`}>
                     {sel ? <CheckSquare size={16} className="text-[#4F7CFF] shrink-0" /> : <Square size={16} className="text-[#94A3B8] shrink-0" />}
                     {f.foto_url
-                      ? <img src={f.foto_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-[#E2E8F0]" />
+                      ? <Image src={f.foto_url} alt="" width={32} height={32} className="w-8 h-8 rounded-lg object-cover border border-[#E2E8F0]" />
                       : <div className="w-8 h-8 rounded-lg bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]"><Wrench size={14} /></div>}
                     <div>
                       <div className="flex items-center gap-1.5">

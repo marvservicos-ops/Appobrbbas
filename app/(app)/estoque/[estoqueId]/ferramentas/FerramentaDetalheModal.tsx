@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { X, Loader2, Wrench, Building2, QrCode, Undo2, Hammer, Ban, CheckCircle2, Pencil, Briefcase, UserCheck, Plus, ChevronLeft, Printer, Trash2, Search, Package, ArrowDownCircle, ArrowUpCircle, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem, FerramentaDefeito, CampoTecnico, FerramentaDado, EstoqueProduto, MalaEstoqueProduto, MalaEstoqueRegistro } from '@/lib/types'
@@ -547,9 +548,11 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   {ferramenta.foto_url
-                    ? <img
+                    ? <Image
                         src={ferramenta.foto_url}
                         alt=""
+                        width={64}
+                        height={64}
                         className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0] cursor-zoom-in"
                         onClick={() => openLightbox(ferramenta.foto_url!)}
                       />
@@ -557,9 +560,11 @@ export default function FerramentaDetalheModal({ ferramentaId, modoPatrimonio = 
                         {ferramenta.eh_mala ? <Briefcase size={22} /> : modoPatrimonio ? <Building2 size={22} /> : <Wrench size={22} />}
                       </div>}
                   {ferramenta.foto_url_2 && (
-                    <img
+                    <Image
                       src={ferramenta.foto_url_2}
                       alt=""
+                      width={64}
+                      height={64}
                       className="w-16 h-16 rounded-xl object-cover border border-[#E2E8F0] cursor-zoom-in"
                       onClick={() => openLightbox(ferramenta.foto_url_2!)}
                     />

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { ArrowLeft, Plus, Trash2, X, Loader2, Upload, Check, ChevronDown, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
@@ -183,9 +184,9 @@ export default function ModelosPage() {
                 { url: m.logo_relatorio_url, label: 'Logomarca Relatório' },
                 { url: m.logo_relatorio2_url, label: 'Logomarca Relatório 2' },
               ].map(({ url, label }) => (
-                <div key={label} className="border border-[#E2E8F0] rounded-lg bg-[#F8FAFC] aspect-video flex items-center justify-center overflow-hidden">
+                <div key={label} className="relative border border-[#E2E8F0] rounded-lg bg-[#F8FAFC] aspect-video flex items-center justify-center overflow-hidden">
                   {url
-                    ? <img src={url} alt={label} className="w-full h-full object-contain p-1" />
+                    ? <Image src={url} alt={label} fill sizes="(max-width: 640px) 100vw, 33vw" className="object-contain p-1" />
                     : <p className="text-[10px] text-[#94A3B8] text-center px-1">{label}</p>
                   }
                 </div>
@@ -287,7 +288,7 @@ function ModeloForm({ inicial, obraId, saving, uploadingLogo, onSalvar, onCancel
                     ? <Loader2 size={18} className="animate-spin text-[#4F7CFF]" />
                     : url
                       ? <>
-                          <img src={url} alt={label} className="w-full h-full object-contain p-1" />
+                          <Image src={url} alt={label} fill sizes="(max-width: 640px) 100vw, 33vw" className="object-contain p-1" />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                             <Upload size={16} className="text-white" />
                           </div>

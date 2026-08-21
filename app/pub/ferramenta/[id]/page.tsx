@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { FileText } from 'lucide-react'
 
 function fmtDate(d?: string | null) {
@@ -70,12 +71,12 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
         {/* Foto */}
         {f.foto_url && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001', flex: 1 }}>
-              <img src={f.foto_url} alt={f.nome} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+            <div style={{ position: 'relative', width: '100%', height: 220, borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001', flex: 1 }}>
+              <Image src={f.foto_url} alt={f.nome} fill sizes="(max-width: 480px) 50vw, 240px" style={{ objectFit: 'cover' }} />
             </div>
             {f.foto_url_2 && (
-              <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001', flex: 1 }}>
-                <img src={f.foto_url_2} alt={f.nome} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+              <div style={{ position: 'relative', width: '100%', height: 220, borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001', flex: 1 }}>
+                <Image src={f.foto_url_2} alt={f.nome} fill sizes="(max-width: 480px) 50vw, 240px" style={{ objectFit: 'cover' }} />
               </div>
             )}
           </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 
 export function usePhotoLightbox() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -22,12 +23,18 @@ export function PhotoLightbox({ url, onClose }: { url: string | null; onClose: (
       >
         &times;
       </button>
-      <img
-        src={url}
-        alt=""
-        className="max-w-full max-h-full object-contain rounded-lg"
+      <div
+        className="relative w-[90vw] h-[90vh]"
         onClick={(e) => e.stopPropagation()}
-      />
+      >
+        <Image
+          src={url}
+          alt=""
+          fill
+          sizes="90vw"
+          className="object-contain rounded-lg"
+        />
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
@@ -335,7 +336,7 @@ export default function EquipamentoPage() {
           {/* Foto */}
           <div className="card p-0 overflow-hidden relative min-h-[220px] flex flex-col">
             {equip.foto_url ? (
-              <img src={equip.foto_url} alt={equip.nome} className="w-full h-full object-cover flex-1" style={{ minHeight: 220 }} />
+              <Image src={equip.foto_url} alt={equip.nome} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
             ) : (
               <div className="flex-1 bg-[#F1F5F9] flex items-center justify-center" style={{ minHeight: 220 }}>
                 <Wrench size={32} className="text-[#CBD5E1]" />

@@ -4,7 +4,10 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
-    unoptimized: true,
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.supabase.co', pathname: '/storage/v1/object/**' },
+    ],
+    minimumCacheTTL: 2678400,
   },
   webpack: (config, { isServer }) => {
     if (isServer) {

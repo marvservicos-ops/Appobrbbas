@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { Plus, Package, Search, Filter, Edit2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, EstoqueCategoria } from '@/lib/types'
@@ -98,10 +99,12 @@ export default function EstoqueItensPage() {
                   {/* Foto */}
                   <div className="relative h-36 bg-[#F8FAFC] border-b border-[#E2E8F0]">
                     {item.foto_url ? (
-                      <img
+                      <Image
                         src={item.foto_url}
                         alt={item.nome}
-                        className="w-full h-full object-cover cursor-zoom-in"
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                        className="object-cover cursor-zoom-in"
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); openLightbox(item.foto_url!) }}
                       />
                     ) : (

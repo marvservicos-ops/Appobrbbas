@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { X, Loader2, Upload, Wrench, Building2, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
@@ -204,7 +205,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
             <label className="block text-sm font-medium text-[#374151] mb-1.5">{modoPatrimonio ? 'Foto 1' : 'Foto'}</label>
             <div className="flex items-center gap-3">
               {fotoUrl
-                ? <img src={fotoUrl} alt="foto" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
+                ? <Image src={fotoUrl} alt="foto" width={64} height={64} className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
                 : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
                     {modoPatrimonio ? <Building2 size={20} className="text-[#94A3B8]" /> : <Wrench size={20} className="text-[#94A3B8]" />}
                   </div>}
@@ -222,7 +223,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
               <p className="text-xs text-[#94A3B8] mb-1.5">Ex: evaporadora + condensadora de um ar-condicionado</p>
               <div className="flex items-center gap-3">
                 {fotoUrl2
-                  ? <img src={fotoUrl2} alt="foto 2" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
+                  ? <Image src={fotoUrl2} alt="foto 2" width={64} height={64} className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
                   : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
                       <Building2 size={20} className="text-[#94A3B8]" />
                     </div>}

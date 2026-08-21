@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import Image from 'next/image'
 import { Wrench, CheckCircle2, XCircle, AlertTriangle, FileText } from 'lucide-react'
 
 function fmtDate(d?: string | null) {
@@ -55,8 +56,8 @@ export default async function PubEquipamentoPage({ params }: { params: { equipId
 
         {/* Foto */}
         {(equip as any).foto_url && (
-          <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001' }}>
-            <img src={(equip as any).foto_url} alt={(equip as any).nome} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+          <div style={{ position: 'relative', width: '100%', height: 220, borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px #0001' }}>
+            <Image src={(equip as any).foto_url} alt={(equip as any).nome} fill sizes="480px" style={{ objectFit: 'cover' }} />
           </div>
         )}
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { TrendingUp, TrendingDown, RefreshCw, Filter } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueMovimentacao } from '@/lib/types'
@@ -107,7 +108,7 @@ export default function MovimentacoesPage() {
                     <td className="px-4 py-3">
                       <Link href={`/estoque/itens/${mov.item_id}`} className="flex items-center gap-2 group">
                         {item?.foto_url ? (
-                          <img src={item.foto_url} className="w-7 h-7 rounded-lg object-cover" alt="" />
+                          <Image src={item.foto_url} width={28} height={28} className="w-7 h-7 rounded-lg object-cover" alt="" />
                         ) : (
                           <div className="w-7 h-7 bg-[#F1F5F9] rounded-lg flex items-center justify-center">
                             <span className="text-[10px] text-[#94A3B8]">📦</span>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Image from 'next/image'
 import { ArrowLeft, ArrowUpCircle, ArrowDownCircle, Search, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, Obra, TipoMovimentacao } from '@/lib/types'
@@ -188,7 +189,7 @@ function MovimentacaoForm() {
                         className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#F8FAFC] transition-colors border-b border-[#F1F5F9] last:border-0 ${semEstoque ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
                         {item.foto_url ? (
-                          <img src={item.foto_url} alt={item.nome} className="w-8 h-8 rounded-lg object-cover" />
+                          <Image src={item.foto_url} alt={item.nome} width={32} height={32} className="w-8 h-8 rounded-lg object-cover" />
                         ) : (
                           <div className="w-8 h-8 bg-[#F1F5F9] rounded-lg flex items-center justify-center"><Package size={14} className="text-[#94A3B8]" /></div>
                         )}

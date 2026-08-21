@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { ArrowLeft, Plus, Trash2, X, Loader2, Camera, Check, Pencil, Upload, Printer, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
@@ -468,7 +469,9 @@ export default function RDOPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {fotos.map(f => (
                     <div key={f.id} className="relative group">
-                      <img src={f.url} alt="" className="w-full aspect-square object-cover rounded-lg border border-[#E2E8F0]" />
+                      <div className="relative w-full aspect-square rounded-lg border border-[#E2E8F0] overflow-hidden">
+                        <Image src={f.url} alt="" fill sizes="(max-width: 640px) 50vw, 33vw" className="object-cover" />
+                      </div>
                       <button onClick={() => removeFoto(f)} className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <X size={12} />
                       </button>
@@ -643,8 +646,8 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemo
       <p className="text-xs font-medium text-[#64748B]">{label}</p>
 
       {assinado && modo === 'idle' ? (
-        <div className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white p-2">
-          <img src={assinatura!.assinatura_url!} alt="assinatura" className="w-full h-20 object-contain" />
+        <div className="relative border border-[#E2E8F0] rounded-lg overflow-hidden bg-white p-2 w-full h-20">
+          <Image src={assinatura!.assinatura_url!} alt="assinatura" fill sizes="300px" className="object-contain" />
         </div>
       ) : modo === 'tela' ? (
         <div className="border-2 border-[#4F7CFF] rounded-lg overflow-hidden bg-white touch-none" style={{ cursor: 'crosshair' }}>

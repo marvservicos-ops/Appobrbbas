@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import Image from 'next/image'
 import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2, ClipboardList } from 'lucide-react'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
@@ -354,7 +355,7 @@ export default function EstoqueDetalhe() {
                           <td className="px-4 py-3 text-sm text-[#374151]">{reg.responsavel}</td>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             {reg.assinatura_url
-                              ? <img src={reg.assinatura_url} alt="assinatura" className="h-8 object-contain border border-[#E2E8F0] rounded" />
+                              ? <div className="relative h-8 w-24 border border-[#E2E8F0] rounded"><Image src={reg.assinatura_url} alt="assinatura" fill sizes="96px" className="object-contain" /></div>
                               : <span className="text-xs text-[#94A3B8]">—</span>}
                           </td>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -458,9 +459,11 @@ export default function EstoqueDetalhe() {
                       <tr key={p.id} className={`border-b border-[#F1F5F9] group transition-colors ${negativo ? 'bg-red-50 hover:bg-red-100' : abaixoMin ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-[#F8FAFC]'}`}>
                         <td className="px-3 py-2 hidden sm:table-cell">
                           {p.foto_url
-                            ? <img
+                            ? <Image
                                 src={p.foto_url}
                                 alt=""
+                                width={36}
+                                height={36}
                                 className="w-9 h-9 rounded-lg object-cover border border-[#E2E8F0] cursor-zoom-in"
                                 onClick={() => openLightbox(p.foto_url!)}
                               />
@@ -692,7 +695,7 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Foto do Produto</label>
             <div className="flex items-center gap-3">
               {fotoUrl
-                ? <img src={fotoUrl} alt="foto" className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
+                ? <Image src={fotoUrl} alt="foto" width={64} height={64} className="w-16 h-16 rounded-lg object-cover border border-[#E2E8F0]" />
                 : <div className="w-16 h-16 rounded-lg bg-[#F1F5F9] flex items-center justify-center border border-dashed border-[#CBD5E1]">
                     <Package size={20} className="text-[#94A3B8]" />
                   </div>
@@ -1124,7 +1127,7 @@ function ModalDetalheRegistro({ registro, estoqueIcone, onClose }: {
           {registro.assinatura_url && (
             <div className="pt-3 border-t border-[#F1F5F9]">
               <p className="text-xs text-[#64748B] mb-1.5">Assinatura</p>
-              <img src={registro.assinatura_url} alt="assinatura" className="h-16 object-contain border border-[#E2E8F0] rounded-lg" />
+              <div className="relative h-16 w-48"><Image src={registro.assinatura_url} alt="assinatura" fill sizes="192px" className="object-contain border border-[#E2E8F0] rounded-lg" /></div>
             </div>
           )}
         </div>

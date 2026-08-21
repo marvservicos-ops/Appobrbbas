@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { Plus, Wrench, Building2, Search, Loader2, DollarSign, PackageCheck, HandCoins, Hammer, FileText, Briefcase, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Ferramenta, FerramentaEmprestimoItem } from '@/lib/types'
@@ -222,7 +223,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-3">
                     {f.foto_url
-                      ? <img src={f.foto_url} alt="" className="w-11 h-11 rounded-xl object-cover border border-[#E2E8F0]" />
+                      ? <Image src={f.foto_url} alt="" width={44} height={44} className="w-11 h-11 rounded-xl object-cover border border-[#E2E8F0]" />
                       : <div className="w-11 h-11 rounded-xl bg-[#F1F5F9] flex items-center justify-center text-[#94A3B8]">
                           {f.eh_mala ? <Briefcase size={18} /> : modoPatrimonio ? <Building2 size={18} /> : <Wrench size={18} />}
                         </div>}
