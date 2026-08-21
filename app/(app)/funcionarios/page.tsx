@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { Plus, Pencil, X, Loader2, Users, DollarSign, CheckCircle2, XCircle, Clock, Calculator, TrendingUp, Heart, Trash2, LayoutGrid } from 'lucide-react'
+import { Plus, Pencil, X, Loader2, Users, DollarSign, CheckCircle2, XCircle, Clock, Calculator, TrendingUp, Heart, Trash2, LayoutGrid, Shirt } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
+import { UniformeCamposFuncionario, carregarTamanhosFuncionario, salvarTamanhosFuncionario, type TamanhosPorPeca } from '@/components/UniformeCamposFuncionario'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const fmt2 = (v: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
@@ -25,10 +26,7 @@ interface Funcionario {
   telefone: string | null
   email: string | null
   responsavel_entrega: boolean
-  tamanho_camisa: string | null
-  tamanho_calca: string | null
-  tamanho_calca_brim: string | null
-  tamanho_bota: string | null
+  categoria_uniforme_id: string | null
   salario_bruto: number | null
   horas_dia: number | null
   dias_mes: number | null
@@ -96,10 +94,8 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   const [telefone, setTelefone] = useState(funcionario?.telefone ?? '')
   const [email, setEmail] = useState(funcionario?.email ?? '')
   const [responsavelEntrega, setResponsavelEntrega] = useState(funcionario?.responsavel_entrega ?? false)
-  const [tamanhoCamisa, setTamanhoCamisa] = useState(funcionario?.tamanho_camisa ?? '')
-  const [tamanhoCalca, setTamanhoCalca] = useState(funcionario?.tamanho_calca ?? '')
-  const [tamanhoCalcaBrim, setTamanhoCalcaBrim] = useState(funcionario?.tamanho_calca_brim ?? '')
-  const [tamanhoBota, setTamanhoBota] = useState(funcionario?.tamanho_bota ?? '')
+  const [categoriaUniformeId, setCategoriaUniformeId] = useState(funcionario?.categoria_uniforme_id ?? '')
+  const [tamanhosPecas, setTamanhosPecas] = useState<TamanhosPorPeca>({})
   const [dataAdmissao, setDataAdmissao] = useState(funcionario?.data_admissao ?? '')
   const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario?.acordo_rescisorio ?? false)
   const [salarioBruto, setSalarioBruto] = useState(funcionario?.salario_bruto ? String(funcionario.salario_bruto) : '')
@@ -120,6 +116,14 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (funcionario) carregarTamanhosFuncionario(funcionario.id).then(setTamanhosPecas)
+  }, [funcionario])
+
+  function setTamanho(pecaId: string, key: 'tamanho' | 'quantidade', value: string) {
+    setTamanhosPecas(prev => ({ ...prev, [pecaId]: { tamanho: prev[pecaId]?.tamanho ?? '', quantidade: prev[pecaId]?.quantidade ?? '1', [key]: value } }))
+  }
 
   const salNum = parseFloat(salarioBruto) || 0
   const diasNum = parseFloat(diasMes) || 30
@@ -158,10 +162,7 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
       telefone: telefone.trim() || null,
       email: email.trim() || null,
       responsavel_entrega: responsavelEntrega,
-      tamanho_camisa: tamanhoCamisa.trim() || null,
-      tamanho_calca: tamanhoCalca.trim() || null,
-      tamanho_calca_brim: tamanhoCalcaBrim.trim() || null,
-      tamanho_bota: tamanhoBota.trim() || null,
+      categoria_uniforme_id: categoriaUniformeId || null,
       data_admissao: dataAdmissao || null,
       acordo_rescisorio: acordoRescisorio,
       salario_bruto: salNum || null,
@@ -182,11 +183,17 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
         ? outrosBeneficios.filter(o => o.descricao.trim())
         : null,
     }
-    const { error: err } = funcionario
-      ? await supabase.from('funcionarios').update(payload).eq('id', funcionario.id)
-      : await supabase.from('funcionarios').insert(payload)
+    let funcionarioId = funcionario?.id
+    if (funcionario) {
+      const { error: err } = await supabase.from('funcionarios').update(payload).eq('id', funcionario.id)
+      if (err) { setSaving(false); setError(err.message); return }
+    } else {
+      const { data, error: err } = await supabase.from('funcionarios').insert(payload).select('id').single()
+      if (err || !data) { setSaving(false); setError(err?.message ?? 'Erro ao criar funcionário'); return }
+      funcionarioId = data.id
+    }
+    if (funcionarioId) await salvarTamanhosFuncionario(funcionarioId, tamanhosPecas)
     setSaving(false)
-    if (err) { setError(err.message); return }
     onSaved()
   }
 
@@ -236,23 +243,14 @@ function ModalFuncionario({ funcionario, regras, onClose, onSaved }: {
               <label className="block text-xs font-medium text-[#374151] mb-1.5">E-mail</label>
               <input type="email" className="field" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@exemplo.com" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Camisa</label>
-                <input className="field" value={tamanhoCamisa} onChange={e => setTamanhoCamisa(e.target.value)} placeholder="P, M, G..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Bota</label>
-                <input className="field" value={tamanhoBota} onChange={e => setTamanhoBota(e.target.value)} placeholder="40, 41..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça Jeans</label>
-                <input className="field" value={tamanhoCalca} onChange={e => setTamanhoCalca(e.target.value)} placeholder="38, 40..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça de Brim</label>
-                <input className="field" value={tamanhoCalcaBrim} onChange={e => setTamanhoCalcaBrim(e.target.value)} placeholder="P, M, G, GG..." />
-              </div>
+            <div className="border-t border-[#E2E8F0] pt-4">
+              <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><Shirt size={13} /> Uniforme</p>
+              <UniformeCamposFuncionario
+                categoriaId={categoriaUniformeId}
+                setCategoriaId={setCategoriaUniformeId}
+                tamanhos={tamanhosPecas}
+                setTamanho={setTamanho}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -510,6 +508,10 @@ export default function FuncionariosPage() {
             <button onClick={() => router.push('/funcionarios/alocacao')}
               className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] transition-colors font-medium">
               <LayoutGrid size={15} /> Quadro
+            </button>
+            <button onClick={() => router.push('/funcionarios/uniformes')}
+              className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] transition-colors font-medium">
+              <Shirt size={15} /> Uniformes
             </button>
             <button onClick={() => { setEditando(null); setShowModal(true) }}
               className="btn-primary flex items-center gap-2 text-sm">

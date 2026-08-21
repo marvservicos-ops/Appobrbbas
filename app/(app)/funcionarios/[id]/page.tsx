@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2, Wrench, Printer } from 'lucide-react'
+import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2, Wrench, Printer, Shirt } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 import GestaoPJPanel from '@/components/GestaoPJPanel'
+import { UniformeCamposFuncionario, carregarTamanhosFuncionario, salvarTamanhosFuncionario, type TamanhosPorPeca } from '@/components/UniformeCamposFuncionario'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const fmt2 = (v: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
@@ -22,10 +23,7 @@ interface Funcionario {
   id: string
   nome: string
   cargo: string | null
-  tamanho_camisa: string | null
-  tamanho_calca: string | null
-  tamanho_calca_brim: string | null
-  tamanho_bota: string | null
+  categoria_uniforme_id: string | null
   salario_bruto: number | null
   horas_dia: number | null
   dias_mes: number | null
@@ -546,10 +544,8 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
 }) {
   const [nome, setNome] = useState(funcionario.nome)
   const [cargo, setCargo] = useState(funcionario.cargo ?? '')
-  const [tamanhoCamisa, setTamanhoCamisa] = useState(funcionario.tamanho_camisa ?? '')
-  const [tamanhoCalca, setTamanhoCalca] = useState(funcionario.tamanho_calca ?? '')
-  const [tamanhoCalcaBrim, setTamanhoCalcaBrim] = useState(funcionario.tamanho_calca_brim ?? '')
-  const [tamanhoBota, setTamanhoBota] = useState(funcionario.tamanho_bota ?? '')
+  const [categoriaUniformeId, setCategoriaUniformeId] = useState(funcionario.categoria_uniforme_id ?? '')
+  const [tamanhosPecas, setTamanhosPecas] = useState<TamanhosPorPeca>({})
   const [dataAdmissao, setDataAdmissao] = useState(funcionario.data_admissao ?? '')
   const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario.acordo_rescisorio ?? false)
   const [salarioBruto, setSalarioBruto] = useState(funcionario.salario_bruto ? String(funcionario.salario_bruto) : '')
@@ -570,6 +566,14 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    carregarTamanhosFuncionario(funcionario.id).then(setTamanhosPecas)
+  }, [funcionario.id])
+
+  function setTamanho(pecaId: string, key: 'tamanho' | 'quantidade', value: string) {
+    setTamanhosPecas(prev => ({ ...prev, [pecaId]: { tamanho: prev[pecaId]?.tamanho ?? '', quantidade: prev[pecaId]?.quantidade ?? '1', [key]: value } }))
+  }
 
   const salNum = parseFloat(salarioBruto) || 0
   const diasNum = parseFloat(diasMes) || 30
@@ -597,10 +601,7 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
     const supabase = createClient()
     const { error: err } = await supabase.from('funcionarios').update({
       nome: nome.trim(), cargo: cargo.trim() || null,
-      tamanho_camisa: tamanhoCamisa.trim() || null,
-      tamanho_calca: tamanhoCalca.trim() || null,
-      tamanho_calca_brim: tamanhoCalcaBrim.trim() || null,
-      tamanho_bota: tamanhoBota.trim() || null,
+      categoria_uniforme_id: categoriaUniformeId || null,
       data_admissao: dataAdmissao || null,
       acordo_rescisorio: acordoRescisorio,
       salario_bruto: salNum || null, horas_dia: horasNum, dias_mes: diasNum,
@@ -617,8 +618,9 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
       outros_beneficios: outrosBeneficios.filter(o => o.descricao.trim()).length > 0
         ? outrosBeneficios.filter(o => o.descricao.trim()) : null,
     }).eq('id', funcionario.id)
+    if (err) { setSaving(false); setError(err.message); return }
+    await salvarTamanhosFuncionario(funcionario.id, tamanhosPecas)
     setSaving(false)
-    if (err) { setError(err.message); return }
     onSaved()
   }
 
@@ -648,23 +650,14 @@ function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
               <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Camisa</label>
-                <input className="field" value={tamanhoCamisa} onChange={e => setTamanhoCamisa(e.target.value)} placeholder="P, M, G..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Bota</label>
-                <input className="field" value={tamanhoBota} onChange={e => setTamanhoBota(e.target.value)} placeholder="40, 41..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça Jeans</label>
-                <input className="field" value={tamanhoCalca} onChange={e => setTamanhoCalca(e.target.value)} placeholder="38, 40..." />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Tam. Calça de Brim</label>
-                <input className="field" value={tamanhoCalcaBrim} onChange={e => setTamanhoCalcaBrim(e.target.value)} placeholder="P, M, G, GG..." />
-              </div>
+            <div className="border-t border-[#E2E8F0] pt-4">
+              <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><Shirt size={13} /> Uniforme</p>
+              <UniformeCamposFuncionario
+                categoriaId={categoriaUniformeId}
+                setCategoriaId={setCategoriaUniformeId}
+                tamanhos={tamanhosPecas}
+                setTamanho={setTamanho}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
