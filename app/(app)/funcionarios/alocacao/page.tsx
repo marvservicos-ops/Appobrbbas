@@ -403,10 +403,14 @@ export default function AlocacaoPage() {
                       const alocArray = alocMap.get(`${f.id}_${dk}`) ?? []
                       const weekend = isWeekendD(d)
                       const diaN = d.getDate()
+                      const prevD = new Date(d); prevD.setDate(prevD.getDate() - 1)
+                      const prevNoturno = (alocMap.get(`${f.id}_${dateKey(prevD)}`) ?? []).some(a => a.noturno)
                       return (
                         <td key={dk}
                           onClick={() => { setMes(d.getMonth()); setAno(d.getFullYear()); setModalCell({ fid: f.id, dia: diaN }) }}
+                          title={prevNoturno ? 'Continuação da madrugada do turno noturno do dia anterior' : undefined}
                           className={`border-b border-r border-[#E2E8F0] cursor-pointer transition-colors
+                            ${prevNoturno ? 'border-l-4 border-l-[#6366F1]' : ''}
                             ${alocArray.length === 0 && weekend ? (zebra ? 'bg-[#F4F6F9]' : 'bg-[#F0F2F5]') : zebra ? 'bg-white' : 'bg-[#FAFAFA]'}`}
                           style={{ height: view === 'semanal' ? 72 : 48, padding: 3 }}>
                           {alocArray.length > 0 ? (() => {
@@ -435,6 +439,8 @@ export default function AlocacaoPage() {
                                             ? `${view === 'semanal' ? aloc.obra_nome : abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
                                             : aloc.tipo === 'manutencao' && aloc.manutencao_nome
                                             ? `${view === 'semanal' ? aloc.manutencao_nome : abrev(aloc.manutencao_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
+                                            : aloc.tipo === 'folga' && aloc.obra_nome
+                                            ? `Folga ($) ${view === 'semanal' ? aloc.obra_nome : abrev(aloc.obra_nome)}`
                                             : `${cfg.label}${showPct ? ` ${aloc.percentual}%` : ''}`}
                                         </span>
                                       </div>
@@ -442,7 +448,7 @@ export default function AlocacaoPage() {
                                   })}
                                 </div>
                                 <div className="w-full flex items-center justify-center bg-[#F1F5F9] shrink-0 gap-1" style={{ height: 13 }}>
-                                  {hasNoturno && <span className="text-[8px] font-semibold text-[#6366F1] shrink-0">Noturno</span>}
+                                  {hasNoturno && <span className="text-[8px] font-semibold text-[#6366F1] shrink-0">Noturno ›</span>}
                                   {!hasNoturno && transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{transpLabel}</span>}
                                   {hasNoturno && transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">· {transpLabel}</span>}
                                   {hasObs && <span className="text-[8px] text-[#F59E0B] shrink-0" title="Tem observação">●</span>}
@@ -607,7 +613,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
         const toInsert = row.alocs.filter(a => a.tipo).map(a => ({
           funcionario_id: f.id, data,
           tipo: a.tipo as TipoAlocacao,
-          obra_id: a.tipo === 'obra' && a.obra_id ? a.obra_id : null,
+          obra_id: (a.tipo === 'obra' || a.tipo === 'folga') && a.obra_id ? a.obra_id : null,
           manutencao_id: a.tipo === 'manutencao' && a.manutencao_id ? a.manutencao_id : null,
           percentual: a.percentual,
           noturno: (a.tipo === 'obra' || a.tipo === 'manutencao') ? a.noturno : false,
@@ -674,7 +680,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                         </button>
                         {TIPOS.map(t => (
                           <button key={t.tipo}
-                            onClick={() => updateAloc(f.id, aloc._key, { tipo: aloc.tipo === t.tipo ? '' : t.tipo, obra_id: t.tipo !== 'obra' ? '' : aloc.obra_id, manutencao_id: t.tipo !== 'manutencao' ? '' : aloc.manutencao_id })}
+                            onClick={() => updateAloc(f.id, aloc._key, { tipo: aloc.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga') ? aloc.obra_id : '', manutencao_id: t.tipo !== 'manutencao' ? '' : aloc.manutencao_id })}
                             className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
                               ${aloc.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
                             style={aloc.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
@@ -693,6 +699,14 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                             value={aloc.manutencao_id} onChange={e => updateAloc(f.id, aloc._key, { manutencao_id: e.target.value })}>
                             <option value="">Manutenção...</option>
                             {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                          </select>
+                        )}
+                        {aloc.tipo === 'folga' && (
+                          <select className="field text-xs py-1 flex-1 min-w-[140px]"
+                            value={aloc.obra_id} onChange={e => updateAloc(f.id, aloc._key, { obra_id: e.target.value })}
+                            title="Se a folga é decorrente de virada de turno, selecione a obra para gerar custo">
+                            <option value="">Sem custo (ex: aniversário)</option>
+                            {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
                           </select>
                         )}
                         {(aloc.tipo === 'obra' || aloc.tipo === 'manutencao') && (
@@ -834,7 +848,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
       funcionario_id: fid,
       data,
       tipo: r.tipo as TipoAlocacao,
-      obra_id: r.tipo === 'obra' && r.obra_id ? r.obra_id : null,
+      obra_id: (r.tipo === 'obra' || r.tipo === 'folga') && r.obra_id ? r.obra_id : null,
       manutencao_id: r.tipo === 'manutencao' && r.manutencao_id ? r.manutencao_id : null,
       percentual: r.percentual,
       noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
@@ -873,7 +887,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                 <div className="flex gap-1 flex-wrap flex-1">
                   {TIPOS.map(t => (
                     <button key={t.tipo}
-                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: t.tipo !== 'obra' ? '' : row.obra_id })}
+                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga') ? row.obra_id : '' })}
                       className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
                         ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
                       style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
@@ -912,6 +926,16 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                     value={row.manutencao_id} onChange={e => updateRow(row._key, { manutencao_id: e.target.value })}>
                     <option value="">Selecione a manutenção...</option>
                     {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  </select>
+                </div>
+              )}
+              {row.tipo === 'folga' && (
+                <div className="pl-7">
+                  <select className="field text-sm py-1.5 w-full"
+                    value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value })}
+                    title="Se a folga é decorrente de virada de turno, selecione a obra para gerar custo">
+                    <option value="">Sem custo (ex: aniversário)</option>
+                    {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
                   </select>
                 </div>
               )}
@@ -1105,7 +1129,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
     const sb = createClient()
     const toInsert = rows.filter(r => r.tipo).map(r => ({
       tipo: r.tipo as TipoAlocacao,
-      obra_id: r.tipo === 'obra' && r.obra_id ? r.obra_id : null,
+      obra_id: (r.tipo === 'obra' || r.tipo === 'folga') && r.obra_id ? r.obra_id : null,
       manutencao_id: r.tipo === 'manutencao' && r.manutencao_id ? r.manutencao_id : null,
       percentual: r.percentual,
       noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
@@ -1155,7 +1179,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                 <div className="flex gap-1 flex-wrap flex-1">
                   {TIPOS.map(t => (
                     <button key={t.tipo}
-                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: t.tipo !== 'obra' ? '' : row.obra_id, manutencao_id: t.tipo !== 'manutencao' ? '' : row.manutencao_id })}
+                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga') ? row.obra_id : '', manutencao_id: t.tipo !== 'manutencao' ? '' : row.manutencao_id })}
                       className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
                         ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
                       style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
@@ -1186,6 +1210,15 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                   <select className="field text-sm py-1.5 w-full" value={row.manutencao_id} onChange={e => updateRow(row._key, { manutencao_id: e.target.value })}>
                     <option value="">Selecione a manutenção...</option>
                     {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  </select>
+                </div>
+              )}
+              {row.tipo === 'folga' && (
+                <div className="pl-7">
+                  <select className="field text-sm py-1.5 w-full" value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value })}
+                    title="Se a folga é decorrente de virada de turno, selecione a obra para gerar custo">
+                    <option value="">Sem custo (ex: aniversário)</option>
+                    {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
                   </select>
                 </div>
               )}

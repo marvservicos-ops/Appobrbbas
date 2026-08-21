@@ -3763,6 +3763,7 @@ interface EquipeEntry {
   dias_sabado: number
   dias_domingo: number
   dias_noturno: number
+  dias_folga: number
   custo_total: number
 }
 
@@ -3779,8 +3780,8 @@ function AbaEquipe({ obraId }: { obraId: string }) {
       setLoadingEquipe(true)
       const sb = createClient()
       let q = sb.from('funcionario_alocacoes')
-        .select('data, funcionario_id, percentual, noturno')
-        .eq('obra_id', obraId).eq('tipo', 'obra')
+        .select('data, funcionario_id, percentual, noturno, tipo')
+        .eq('obra_id', obraId).in('tipo', ['obra', 'folga'])
       if (filtroMes) {
         const [ano, mesNum] = filtroMes.split('-').map(Number)
         const inicio = `${ano}-${String(mesNum).padStart(2,'0')}-01`
@@ -3814,11 +3815,17 @@ function AbaEquipe({ obraId }: { obraId: string }) {
         const horasDia: number = f.horas_dia ?? 8
         const custoHora = horasDia > 0 ? custoDia / horasDia : 0
         if (!map.has(r.funcionario_id)) {
-          map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, custo_hora: custoHora, dias_uteis: 0, dias_sabado: 0, dias_domingo: 0, dias_noturno: 0, custo_total: 0 })
+          map.set(r.funcionario_id, { funcionario_id: r.funcionario_id, nome: f.nome, cargo: f.cargo, custo_diario: custoDia, custo_hora: custoHora, dias_uteis: 0, dias_sabado: 0, dias_domingo: 0, dias_noturno: 0, dias_folga: 0, custo_total: 0 })
         }
         const entry = map.get(r.funcionario_id)!
         const pct = (r.percentual ?? 100) / 100
         const dow = new Date(r.data + 'T12:00:00').getDay()
+        // Folga com custo (virada de turno): conta como 1 dia de custo base, sem adicionais
+        if (r.tipo === 'folga') {
+          entry.dias_folga += pct
+          entry.custo_total += pct * entry.custo_diario
+          continue
+        }
         if (r.noturno) {
           entry.dias_noturno += pct
         } else if (dow === 6) {
@@ -3899,6 +3906,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                       {e.dias_sabado > 0 && <span className="text-xs text-amber-600">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
                       {e.dias_domingo > 0 && <span className="text-xs text-red-500">+{Number.isInteger(e.dias_domingo) ? e.dias_domingo : e.dias_domingo.toFixed(1)}dom</span>}
                       {e.dias_noturno > 0 && <span className="text-xs text-indigo-500">+{Number.isInteger(e.dias_noturno) ? e.dias_noturno : e.dias_noturno.toFixed(1)}d not.</span>}
+                      {e.dias_folga > 0 && <span className="text-xs text-emerald-600">+{Number.isInteger(e.dias_folga) ? e.dias_folga : e.dias_folga.toFixed(1)}d folga</span>}
                     </div>
                   </div>
                   <span className="text-sm font-bold text-violet-700 shrink-0">{moeda(e.custo_total)}</span>
@@ -3929,6 +3937,7 @@ function AbaEquipe({ obraId }: { obraId: string }) {
                       {e.dias_sabado > 0 && <span className="text-amber-600 ml-1">+{Number.isInteger(e.dias_sabado) ? e.dias_sabado : e.dias_sabado.toFixed(1)}sáb</span>}
                       {e.dias_domingo > 0 && <span className="text-red-500 ml-1">+{Number.isInteger(e.dias_domingo) ? e.dias_domingo : e.dias_domingo.toFixed(1)}dom</span>}
                       {e.dias_noturno > 0 && <span className="text-indigo-500 ml-1">+{Number.isInteger(e.dias_noturno) ? e.dias_noturno : e.dias_noturno.toFixed(1)}d not.</span>}
+                      {e.dias_folga > 0 && <span className="text-emerald-600 ml-1">+{Number.isInteger(e.dias_folga) ? e.dias_folga : e.dias_folga.toFixed(1)}d folga</span>}
                     </td>
                     <td className="px-4 py-3 text-sm text-[#374151] hidden md:table-cell">{moeda(e.custo_diario)}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
