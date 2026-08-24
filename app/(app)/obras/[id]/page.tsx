@@ -557,47 +557,49 @@ export default function ObraDetailPage() {
           <ArrowLeft size={16} />
         </button>
         <h1 className="font-syne font-semibold text-[#0F172A] text-sm md:text-base leading-5 line-clamp-2 md:truncate flex-1 min-w-0 pt-1.5 md:pt-0">{obra.titulo}</h1>
-        <div className="ml-auto hidden md:flex items-center gap-3">
+
+        {/* Botão Enviar Email — visível em mobile e desktop */}
+        {isAdmin && emailTemplates.length > 0 && (
+          <div className="relative ml-auto md:ml-0 shrink-0">
+            <button
+              onClick={() => setShowEmailMenu(v => !v)}
+              disabled={enviandoEmail}
+              aria-label="Enviar Email"
+              className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60">
+              <Mail size={14} />
+              <span className="hidden md:inline">Enviar Email</span>
+              <ChevronDown size={13} />
+            </button>
+            {showEmailMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowEmailMenu(false)} />
+                <div className="absolute right-0 top-full mt-2 bg-white border border-[#E2E8F0] rounded-xl shadow-lg z-40 min-w-[220px] overflow-hidden">
+                  <div className="px-3 py-2 border-b border-[#F1F5F9]">
+                    <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">Selecionar modelo</p>
+                  </div>
+                  {emailTemplates.map(t => (
+                    <button key={t.id} onClick={() => enviarEmailTemplate(t)}
+                      className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#F8FAFC] transition-colors text-left">
+                      <Send size={13} className="text-[#4F7CFF] shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-[#0F172A]">{t.nome}</p>
+                        <p className="text-[10px] text-[#94A3B8]">
+                          {t.destinatario_tipo === 'gestor' ? 'Para: Gestor' : t.destinatario_tipo === 'comprador' ? 'Para: Comprador' : 'Destinatário manual'}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className={`${isAdmin && emailTemplates.length > 0 ? '' : 'ml-auto'} hidden md:flex items-center gap-3`}>
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
             <input placeholder="Buscar..." className="pl-9 pr-4 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-sm w-52 focus:outline-none focus:border-[#4F7CFF] transition-colors" />
           </div>
-
-          {/* Botão Enviar Email */}
-          {isAdmin && emailTemplates.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setShowEmailMenu(v => !v)}
-                disabled={enviandoEmail}
-                className="flex items-center gap-1.5 px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60">
-                <Mail size={14} />
-                Enviar Email
-                <ChevronDown size={13} />
-              </button>
-              {showEmailMenu && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setShowEmailMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 bg-white border border-[#E2E8F0] rounded-xl shadow-lg z-40 min-w-[220px] overflow-hidden">
-                    <div className="px-3 py-2 border-b border-[#F1F5F9]">
-                      <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">Selecionar modelo</p>
-                    </div>
-                    {emailTemplates.map(t => (
-                      <button key={t.id} onClick={() => enviarEmailTemplate(t)}
-                        className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#F8FAFC] transition-colors text-left">
-                        <Send size={13} className="text-[#4F7CFF] shrink-0" />
-                        <div>
-                          <p className="text-sm font-medium text-[#0F172A]">{t.nome}</p>
-                          <p className="text-[10px] text-[#94A3B8]">
-                            {t.destinatario_tipo === 'gestor' ? 'Para: Gestor' : t.destinatario_tipo === 'comprador' ? 'Para: Comprador' : 'Destinatário manual'}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
 
           <button className="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
             <Bell size={18} className="text-[#64748B]" />
