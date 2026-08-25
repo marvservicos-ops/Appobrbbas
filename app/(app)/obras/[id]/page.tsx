@@ -206,7 +206,8 @@ export default function ObraDetailPage() {
   const id = params.id as string
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
-  const { can, isAdmin } = useAccess()
+  const { can, isAdmin, profile } = useAccess()
+  const podeEnviarEmail = Boolean(profile?.active)
   const [obra, setObra] = useState<Obra | null>(null)
   const [etapas, setEtapas] = useState<CronogramaEtapa[]>([])
   const [docs, setDocs] = useState<Documento[]>([])
@@ -559,7 +560,7 @@ export default function ObraDetailPage() {
         <h1 className="font-syne font-semibold text-[#0F172A] text-sm md:text-base leading-5 line-clamp-2 md:truncate flex-1 min-w-0 pt-1.5 md:pt-0">{obra.titulo}</h1>
 
         {/* Botão Enviar Email — visível em mobile e desktop */}
-        {isAdmin && emailTemplates.length > 0 && (
+        {podeEnviarEmail && emailTemplates.length > 0 && (
           <div className="relative ml-auto md:ml-0 shrink-0">
             <button
               onClick={() => setShowEmailMenu(v => !v)}
@@ -595,7 +596,7 @@ export default function ObraDetailPage() {
           </div>
         )}
 
-        <div className={`${isAdmin && emailTemplates.length > 0 ? '' : 'ml-auto'} hidden md:flex items-center gap-3`}>
+        <div className={`${podeEnviarEmail && emailTemplates.length > 0 ? '' : 'ml-auto'} hidden md:flex items-center gap-3`}>
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
             <input placeholder="Buscar..." className="pl-9 pr-4 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-sm w-52 focus:outline-none focus:border-[#4F7CFF] transition-colors" />
