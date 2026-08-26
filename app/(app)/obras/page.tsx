@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Calendar, User, MoreVertical, CheckCircle2, Clock, TrendingUp, Pencil } from 'lucide-react'
+import { Plus, Calendar, User, MoreVertical, CheckCircle2, Clock, TrendingUp, Pencil, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Obra, Cliente } from '@/lib/types'
 import Topbar from '@/components/Topbar'
@@ -24,6 +24,8 @@ function formatDate(d?: string) {
   return new Date(d).toLocaleDateString('pt-BR')
 }
 
+const PAGE_SIZE = 6
+
 export default function ObrasPage() {
   const [obras, setObras] = useState<Obra[]>([])
   const [search, setSearch] = useState('')
@@ -31,6 +33,9 @@ export default function ObrasPage() {
   const [editObra, setEditObra] = useState<Obra | null>(null)
   const [menuObraId, setMenuObraId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [ativasVisiveis, setAtivasVisiveis] = useState(PAGE_SIZE)
+  const [concluidasAbertas, setConcluidasAbertas] = useState(false)
+  const [concluidasVisiveis, setConcluidasVisiveis] = useState(PAGE_SIZE)
 
   async function load() {
     setLoading(true)
@@ -48,6 +53,69 @@ export default function ObrasPage() {
     (o.cliente as Cliente | undefined)?.nome?.toLowerCase().includes(search.toLowerCase()) ||
     (o.gestor as Cliente | undefined)?.nome?.toLowerCase().includes(search.toLowerCase())
   )
+
+  const ativas = filtered.filter(o => o.status !== 'Concluída')
+  const concluidas = filtered.filter(o => o.status === 'Concluída')
+
+  function renderObraCard(obra: Obra) {
+    const progress = calcProgress(obra)
+    const cliente = obra.cliente as Cliente | undefined
+    return (
+      <Link key={obra.id} href={`/obras/${obra.id}`}>
+        <div className="card p-3 hover:border-[#4F7CFF]/30 hover:shadow-sm transition-all cursor-pointer group">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <StatusChip status={obra.status} />
+              {obra.tipo_servico && <span className="text-xs text-[#4F7CFF] bg-[#EEF2FF] px-1.5 py-0.5 rounded truncate">{obra.tipo_servico}</span>}
+            </div>
+            <div className="relative">
+              <button
+                className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all shrink-0"
+                onClick={e => { e.preventDefault(); e.stopPropagation(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
+              >
+                <MoreVertical size={13} className="text-[#64748B]" />
+              </button>
+              {menuObraId === obra.id && (
+                <div className="absolute right-0 top-7 z-20 bg-white border border-[#E2E8F0] rounded-xl shadow-lg py-1 min-w-[140px]"
+                  onClick={e => e.preventDefault()}>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#374151] hover:bg-[#F8FAFF] transition-colors"
+                    onClick={e => { e.preventDefault(); setEditObra(obra); setMenuObraId(null) }}
+                  >
+                    <Pencil size={13} className="text-[#64748B]" />
+                    Editar obra
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <h3 className="font-syne font-semibold text-[#0F172A] text-sm mb-0.5 line-clamp-1">{obra.titulo}</h3>
+          {cliente && <p className="text-xs text-[#94A3B8] mb-2 truncate">{cliente.nome}</p>}
+
+          <div className="h-1 bg-[#F1F5F9] rounded-full overflow-hidden mb-2">
+            <div
+              className={`h-1 rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress > 70 ? 'bg-amber-400' : 'bg-[#4F7CFF]'}`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-[#94A3B8]">
+            {obra.engenheiro_responsavel && (
+              <div className="flex items-center gap-1">
+                <User size={11} />
+                <span className="truncate max-w-[100px]">{obra.engenheiro_responsavel}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1 ml-auto">
+              <span className="font-medium text-[#64748B]">{progress}%</span>
+              {obra.previsao_termino && <><span>·</span><Calendar size={11} /><span>{formatDate(obra.previsao_termino)}</span></>}
+            </div>
+          </div>
+        </div>
+      </Link>
+    )
+  }
 
   const stats = {
     total: obras.length,
@@ -81,9 +149,9 @@ export default function ObrasPage() {
             { label: 'Em orçamento', value: stats.orcamento, icon: <Clock size={13} />, color: 'text-slate-600', bg: 'bg-slate-100' },
             { label: 'Aprovadas', value: stats.aprovada, icon: <CheckCircle2 size={13} />, color: 'text-violet-700', bg: 'bg-violet-50' },
             { label: 'Em andamento', value: stats.andamento, icon: <Clock size={13} />, color: 'text-blue-700', bg: 'bg-blue-50' },
-            { label: 'Concluídas', value: stats.concluida, icon: <CheckCircle2 size={13} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'Concluídas', value: stats.concluida, icon: <CheckCircle2 size={13} />, color: 'text-emerald-600', bg: 'bg-emerald-50', onClick: () => setConcluidasAbertas(true) },
           ].map(s => (
-            <div key={s.label} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${s.bg}`}>
+            <div key={s.label} onClick={s.onClick} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${s.bg} ${s.onClick ? 'cursor-pointer hover:brightness-95 transition-all' : ''}`}>
               <span className={s.color}>{s.icon}</span>
               <span className={`font-syne font-bold text-base ${s.color}`}>{s.value}</span>
               <span className="text-xs text-[#64748B]">{s.label}</span>
@@ -100,79 +168,55 @@ export default function ObrasPage() {
           </div>
         ) : (
           <>
+            {/* Obras ativas */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filtered.map(obra => {
-                const progress = calcProgress(obra)
-                const cliente = obra.cliente as Cliente | undefined
-                return (
-                  <Link key={obra.id} href={`/obras/${obra.id}`}>
-                    <div className="card p-3 hover:border-[#4F7CFF]/30 hover:shadow-sm transition-all cursor-pointer group">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <StatusChip status={obra.status} />
-                          {obra.tipo_servico && <span className="text-xs text-[#4F7CFF] bg-[#EEF2FF] px-1.5 py-0.5 rounded truncate">{obra.tipo_servico}</span>}
-                        </div>
-                        <div className="relative">
-                          <button
-                            className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all shrink-0"
-                            onClick={e => { e.preventDefault(); e.stopPropagation(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
-                          >
-                            <MoreVertical size={13} className="text-[#64748B]" />
-                          </button>
-                          {menuObraId === obra.id && (
-                            <div className="absolute right-0 top-7 z-20 bg-white border border-[#E2E8F0] rounded-xl shadow-lg py-1 min-w-[140px]"
-                              onClick={e => e.preventDefault()}>
-                              <button
-                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#374151] hover:bg-[#F8FAFF] transition-colors"
-                                onClick={e => { e.preventDefault(); setEditObra(obra); setMenuObraId(null) }}
-                              >
-                                <Pencil size={13} className="text-[#64748B]" />
-                                Editar obra
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <h3 className="font-syne font-semibold text-[#0F172A] text-sm mb-0.5 line-clamp-1">{obra.titulo}</h3>
-                      {cliente && <p className="text-xs text-[#94A3B8] mb-2 truncate">{cliente.nome}</p>}
-
-                      <div className="h-1 bg-[#F1F5F9] rounded-full overflow-hidden mb-2">
-                        <div
-                          className={`h-1 rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress > 70 ? 'bg-amber-400' : 'bg-[#4F7CFF]'}`}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-[#94A3B8]">
-                        {obra.engenheiro_responsavel && (
-                          <div className="flex items-center gap-1">
-                            <User size={11} />
-                            <span className="truncate max-w-[100px]">{obra.engenheiro_responsavel}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-1 ml-auto">
-                          <span className="font-medium text-[#64748B]">{progress}%</span>
-                          {obra.previsao_termino && <><span>·</span><Calendar size={11} /><span>{formatDate(obra.previsao_termino)}</span></>}
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                )
-              })}
+              {ativas.slice(0, ativasVisiveis).map(renderObraCard)}
 
               {/* Empty state card */}
-              <button onClick={() => setShowModal(true)} className="card p-3 border-dashed hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-all flex flex-col items-center justify-center gap-2 min-h-[100px] group">
-                <div className="w-8 h-8 rounded-full bg-[#EEF2FF] group-hover:bg-[#4F7CFF] flex items-center justify-center transition-colors">
-                  <Plus size={16} className="text-[#4F7CFF] group-hover:text-white transition-colors" />
-                </div>
-                <p className="text-xs font-medium text-[#94A3B8]">Nova Obra</p>
-              </button>
+              {ativasVisiveis >= ativas.length && (
+                <button onClick={() => setShowModal(true)} className="card p-3 border-dashed hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-all flex flex-col items-center justify-center gap-2 min-h-[100px] group">
+                  <div className="w-8 h-8 rounded-full bg-[#EEF2FF] group-hover:bg-[#4F7CFF] flex items-center justify-center transition-colors">
+                    <Plus size={16} className="text-[#4F7CFF] group-hover:text-white transition-colors" />
+                  </div>
+                  <p className="text-xs font-medium text-[#94A3B8]">Nova Obra</p>
+                </button>
+              )}
             </div>
 
-            {filtered.length > 6 && (
+            {ativas.length === 0 && (
+              <p className="text-sm text-[#94A3B8] py-6 text-center">Nenhuma obra ativa encontrada.</p>
+            )}
+
+            {ativasVisiveis < ativas.length && (
               <div className="flex justify-center mt-6">
-                <button className="btn-secondary">Ver mais obras ↓</button>
+                <button onClick={() => setAtivasVisiveis(v => v + PAGE_SIZE)} className="btn-secondary">Ver mais obras ↓</button>
+              </div>
+            )}
+
+            {/* Obras concluídas — seção separada, recolhida por padrão */}
+            {concluidas.length > 0 && (
+              <div className="mt-8 pt-5 border-t border-[#E2E8F0]">
+                <button
+                  onClick={() => setConcluidasAbertas(v => !v)}
+                  className="flex items-center gap-2 text-sm font-semibold text-[#64748B] hover:text-[#0F172A] transition-colors mb-4"
+                >
+                  {concluidasAbertas ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  Obras concluídas
+                  <span className="text-xs font-medium text-[#94A3B8] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{concluidas.length}</span>
+                </button>
+
+                {concluidasAbertas && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 opacity-90">
+                      {concluidas.slice(0, concluidasVisiveis).map(renderObraCard)}
+                    </div>
+                    {concluidasVisiveis < concluidas.length && (
+                      <div className="flex justify-center mt-6">
+                        <button onClick={() => setConcluidasVisiveis(v => v + PAGE_SIZE)} className="btn-secondary">Ver mais obras concluídas ↓</button>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </>
