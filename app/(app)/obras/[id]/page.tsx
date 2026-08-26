@@ -1326,7 +1326,9 @@ export default function ObraDetailPage() {
             <div className="flex flex-col divide-y divide-[#F1F5F9] overflow-y-auto">
               <div className="flex items-center gap-3 px-6 py-3">
                 <span className="text-xs font-semibold text-[#94A3B8] w-16 shrink-0">De</span>
-                <span className="text-sm text-[#374151]">joaovictor@marvservicos.com.br</span>
+                <span className="text-sm text-[#374151]">
+                  {profile?.email?.toLowerCase().endsWith('@marvservicos.com.br') ? profile.email : 'MARV Serviços'}
+                </span>
               </div>
               <div className="flex items-center gap-3 px-6 py-3">
                 <span className="text-xs font-semibold text-[#94A3B8] w-16 shrink-0">Para</span>
