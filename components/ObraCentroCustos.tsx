@@ -87,12 +87,13 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [regRes, matRes, eqRes, finRes, tribRes] = await Promise.all([
+      const [regRes, matRes, alocRes, finRes, tribRes, adicRes] = await Promise.all([
         supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false }),
         supabase.from('obra_materiais').select('*, oc:obra_ocs(numero_oc)').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
-        supabase.from('obra_funcionarios').select('*, funcionario:funcionarios(nome, cargo)').eq('obra_id', obraId),
+        supabase.from('funcionario_alocacoes').select('data, funcionario_id, percentual, noturno, tipo').eq('obra_id', obraId).in('tipo', ['obra', 'folga', 'escritorio']),
         supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
         supabase.from('configuracoes_empresa').select('valor').eq('chave', 'aliquota_simples').maybeSingle(),
+        supabase.from('configuracoes_empresa').select('chave, valor').like('chave', 'adicional_%'),
       ])
 
       if (regRes.data) {
@@ -101,7 +102,48 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         setDevolucoes(mapped.filter((r: RegistroEstoque) => r.tipo === 'entrada'))
       }
       if (matRes.data) setMateriais(matRes.data as MaterialObra[])
-      if (eqRes.data) setEquipe(eqRes.data as AlocacaoFuncionario[])
+
+      if (alocRes.data && alocRes.data.length > 0) {
+        const ids = Array.from(new Set(alocRes.data.map((r: any) => r.funcionario_id as string)))
+        const { data: funcs } = await supabase.from('funcionarios')
+          .select('id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes')
+          .in('id', ids)
+        const funcMap = new Map((funcs ?? []).map((f: any) => [f.id, f]))
+        const adicMap = new Map((adicRes.data ?? []).map((c: any) => [c.chave, parseFloat(c.valor?.percentual ?? c.valor) || 0]))
+        const pctNoturno = (adicMap.get('adicional_noturno') ?? 0) / 100
+        const pctSabado = (adicMap.get('adicional_sabado') ?? 0) / 100
+        const pctDomingo = (adicMap.get('adicional_domingo_feriado') ?? 0) / 100
+
+        const map = new Map<string, AlocacaoFuncionario & { funcionario_id: string }>()
+        for (const r of alocRes.data as any[]) {
+          const f = funcMap.get(r.funcionario_id)
+          if (!f) continue
+          const custoDia: number = f.custo_diario ?? (f.salario_bruto && f.dias_mes ? f.salario_bruto / f.dias_mes : 0)
+          if (!map.has(r.funcionario_id)) {
+            map.set(r.funcionario_id, {
+              id: r.funcionario_id, funcionario_id: r.funcionario_id,
+              funcionario: { nome: f.nome, cargo: f.cargo },
+              dias_trabalhados: 0, custo_diario_epoca: custoDia, custo_total: 0,
+            })
+          }
+          const entry = map.get(r.funcionario_id)!
+          const pct = (r.percentual ?? 100) / 100
+          entry.dias_trabalhados += pct
+          if (r.tipo === 'folga' || r.tipo === 'escritorio') {
+            entry.custo_total += pct * custoDia
+            continue
+          }
+          const dow = new Date(r.data + 'T12:00:00').getDay()
+          entry.custo_total += pct * custoDia
+          if (r.noturno && pctNoturno > 0) entry.custo_total += pct * custoDia * pctNoturno
+          else if (!r.noturno && dow === 6 && pctSabado > 0) entry.custo_total += pct * custoDia * pctSabado
+          else if (!r.noturno && dow === 0 && pctDomingo > 0) entry.custo_total += pct * custoDia * pctDomingo
+        }
+        setEquipe(Array.from(map.values()).sort((a, b) => (a.funcionario?.nome ?? '').localeCompare(b.funcionario?.nome ?? '')))
+      } else {
+        setEquipe([])
+      }
+
       if (finRes.data) setValorContrato(Number(finRes.data.valor_contrato) || 0)
       if (tribRes.data) setAliquotaSimples(Number((tribRes.data.valor as any)?.percentual) || 0)
       setLoading(false)
@@ -430,7 +472,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         onToggle={() => setSecaoMaoDeObra(a => !a)}
       >
         {equipe.length === 0 ? (
-          <EmptyState text="Nenhum funcionário alocado. Acesse a aba Equipe para adicionar." />
+          <EmptyState text="Nenhum funcionário alocado. Use o Quadro de Alocação para vincular dias desta obra." />
         ) : (
           <>
             {/* Mobile cards */}
@@ -439,7 +481,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                 <div key={e.id} className="px-4 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-[#0F172A]">{e.funcionario?.nome ?? '—'}</p>
-                    <p className="text-xs text-[#94A3B8] mt-0.5">{e.funcionario?.cargo ?? '—'} · {e.dias_trabalhados}d · {moeda(e.custo_diario_epoca)}/dia</p>
+                    <p className="text-xs text-[#94A3B8] mt-0.5">{e.funcionario?.cargo ?? '—'} · {Number.isInteger(e.dias_trabalhados) ? e.dias_trabalhados : e.dias_trabalhados.toFixed(1)}d · {moeda(e.custo_diario_epoca)}/dia</p>
                   </div>
                   <span className="text-sm font-bold text-violet-700 shrink-0">{moeda(e.custo_total)}</span>
                 </div>
@@ -460,7 +502,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                     <tr key={e.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
                       <Td bold>{e.funcionario?.nome ?? '—'}</Td>
                       <Td>{e.funcionario?.cargo ?? '—'}</Td>
-                      <Td>{e.dias_trabalhados}d</Td>
+                      <Td>{Number.isInteger(e.dias_trabalhados) ? e.dias_trabalhados : e.dias_trabalhados.toFixed(1)}d</Td>
                       <Td>{moeda(e.custo_diario_epoca)}</Td>
                       <td className="px-4 py-3 text-sm font-semibold text-violet-700">{moeda(e.custo_total)}</td>
                     </tr>
