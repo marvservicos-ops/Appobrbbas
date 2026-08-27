@@ -95,33 +95,53 @@ async function pastaObra(obraTitulo: string): Promise<string> {
   return nova.id!
 }
 
-async function uploadPdf(pastaId: string, nomeArquivo: string, pdfUrl: string): Promise<{ id: string; url: string }> {
+// Envia (ou re-envia) o PDF de um RDO pro Drive de forma IDEMPOTENTE:
+// - se já sabemos o fileId, substitui o conteúdo dele (mantém id/URL);
+// - senão, procura na pasta um arquivo com o mesmo nome e substitui;
+// - só cria um arquivo novo se não existir nenhum.
+// Isso evita as cópias duplicadas que apareciam a cada sincronização.
+async function enviarPdf(
+  pastaId: string,
+  nomeArquivo: string,
+  pdfUrl: string,
+  fileIdConhecido?: string | null,
+): Promise<{ id: string; url: string }> {
   const resp = await fetch(pdfUrl)
   if (!resp.ok) throw new Error(`Erro ao baixar PDF (${resp.status})`)
   const buffer = Buffer.from(await resp.arrayBuffer())
   const drive = driveClient()
+
+  let fileId = fileIdConhecido ?? null
+  if (!fileId) {
+    const nomeEscapado = nomeArquivo.replace(/'/g, "\\'")
+    const { data } = await drive.files.list({
+      q: `'${pastaId}' in parents and name = '${nomeEscapado}' and trashed = false`,
+      fields: 'files(id)',
+      orderBy: 'createdTime',
+    })
+    if (data.files && data.files.length > 0) fileId = data.files[0].id!
+  }
+
+  if (fileId) {
+    try {
+      const { data } = await drive.files.update({
+        fileId,
+        requestBody: { name: nomeArquivo },
+        media: { mimeType: 'application/pdf', body: Readable.from(buffer) },
+        fields: 'id, webViewLink',
+      })
+      return { id: data.id ?? fileId, url: data.webViewLink ?? `https://drive.google.com/file/d/${fileId}/view` }
+    } catch {
+      // fileId inválido/removido — cai pro create abaixo
+    }
+  }
+
   const { data } = await drive.files.create({
     requestBody: { name: nomeArquivo, parents: [pastaId] },
     media: { mimeType: 'application/pdf', body: Readable.from(buffer) },
     fields: 'id, webViewLink',
   })
   return { id: data.id!, url: data.webViewLink ?? `https://drive.google.com/file/d/${data.id}/view` }
-}
-
-// Substitui o conteúdo de um PDF já existente no Drive, mantendo o mesmo fileId
-// (e portanto a mesma URL já salva no banco e já compartilhada).
-async function atualizarPdfDrive(fileId: string, nomeArquivo: string, pdfUrl: string): Promise<{ id: string; url: string }> {
-  const resp = await fetch(pdfUrl)
-  if (!resp.ok) throw new Error(`Erro ao baixar PDF (${resp.status})`)
-  const buffer = Buffer.from(await resp.arrayBuffer())
-  const drive = driveClient()
-  const { data } = await drive.files.update({
-    fileId,
-    requestBody: { name: nomeArquivo },
-    media: { mimeType: 'application/pdf', body: Readable.from(buffer) },
-    fields: 'id, webViewLink',
-  })
-  return { id: data.id ?? fileId, url: data.webViewLink ?? `https://drive.google.com/file/d/${fileId}/view` }
 }
 
 type ResultadoSincronizacao = { importados: number; atualizados: number; ignorados: number; erros: string[]; pendente: boolean }
@@ -163,9 +183,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
         let driveFileId = existente.drive_file_id as string | null
         let driveFileUrl: string | null = null
         if (detalhe.linkPdf) {
-          const arquivo = driveFileId
-            ? await atualizarPdfDrive(driveFileId, nomeArquivo, detalhe.linkPdf)
-            : await uploadPdf(pastaId, nomeArquivo, detalhe.linkPdf)
+          const arquivo = await enviarPdf(pastaId, nomeArquivo, detalhe.linkPdf, driveFileId)
           driveFileId = arquivo.id
           driveFileUrl = arquivo.url
         }
@@ -196,7 +214,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
 
       const pastaId = await pastaObra(diarioObraNome)
       const nomeArquivo = `RDO-${String(resumo.numero).padStart(3, '0')}_${resumo.data.replace(/\//g, '-')}.pdf`
-      const arquivo = await uploadPdf(pastaId, nomeArquivo, detalhe.linkPdf)
+      const arquivo = await enviarPdf(pastaId, nomeArquivo, detalhe.linkPdf)
 
       await supabase.from('diario_obra_relatorios').insert({
         obra_id: obraId,
@@ -257,6 +275,83 @@ export async function sincronizarBackupCompleto(limite = 20): Promise<{ resultad
     }
   }
   return { resultados, completo }
+}
+
+// ── Limpeza de PDFs duplicados no Drive ─────────────────────────────
+// Varre a pasta da obra, agrupa os arquivos por nome e, pra cada grupo
+// com mais de um, mantém só UM (o que já está referenciado no banco, ou
+// senão o mais antigo) e manda os outros pra Lixeira do Drive. Ao final
+// corrige drive_file_id / drive_file_url no banco pra apontar pro que ficou.
+export async function limparDuplicadosDaObra(
+  obraTitulo: string,
+): Promise<{ removidos: number; grupos: number; mantidos: number }> {
+  const rootId = process.env.GOOGLE_DRIVE_RDOS_ROOT_FOLDER_ID
+  if (!rootId) throw new Error('GOOGLE_DRIVE_RDOS_ROOT_FOLDER_ID não configurado')
+  const drive = driveClient()
+  const supabase = createServiceClient()
+
+  const nomeEscapado = obraTitulo.replace(/'/g, "\\'")
+  const { data: pastas } = await drive.files.list({
+    q: `'${rootId}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${nomeEscapado}' and trashed = false`,
+    fields: 'files(id)',
+  })
+  const pastaId = pastas.files?.[0]?.id
+  if (!pastaId) return { removidos: 0, grupos: 0, mantidos: 0 }
+
+  // Todos os PDFs da pasta (paginado)
+  const arquivos: { id: string; name: string; createdTime: string }[] = []
+  let pageToken: string | undefined
+  do {
+    const { data } = await drive.files.list({
+      q: `'${pastaId}' in parents and mimeType = 'application/pdf' and trashed = false`,
+      fields: 'nextPageToken, files(id, name, createdTime)',
+      orderBy: 'createdTime',
+      pageSize: 1000,
+      pageToken,
+    })
+    for (const f of data.files ?? []) arquivos.push({ id: f.id!, name: f.name!, createdTime: f.createdTime! })
+    pageToken = data.nextPageToken ?? undefined
+  } while (pageToken)
+
+  const porNome = new Map<string, typeof arquivos>()
+  for (const f of arquivos) {
+    const lista = porNome.get(f.name) ?? []
+    lista.push(f)
+    porNome.set(f.name, lista)
+  }
+
+  const { data: rows } = await supabase
+    .from('diario_obra_relatorios')
+    .select('id, drive_file_id')
+    .eq('diario_obra_nome', obraTitulo)
+  const idsNoBanco = new Set((rows ?? []).map(r => r.drive_file_id).filter(Boolean) as string[])
+
+  let removidos = 0
+  let grupos = 0
+  let mantidos = 0
+
+  for (const lista of Array.from(porNome.values())) {
+    if (lista.length < 2) continue
+    grupos++
+    lista.sort((a, b) => a.createdTime.localeCompare(b.createdTime))
+    const manter = lista.find(f => idsNoBanco.has(f.id)) ?? lista[0]
+    mantidos++
+    const { data: manterMeta } = await drive.files.get({ fileId: manter.id, fields: 'id, webViewLink' })
+    const urlManter = manterMeta.webViewLink ?? `https://drive.google.com/file/d/${manter.id}/view`
+
+    for (const f of lista) {
+      if (f.id === manter.id) continue
+      await drive.files.update({ fileId: f.id, requestBody: { trashed: true } })
+      removidos++
+      // corrige linhas do banco que apontavam pro arquivo removido
+      await supabase
+        .from('diario_obra_relatorios')
+        .update({ drive_file_id: manter.id, drive_file_url: urlManter })
+        .eq('drive_file_id', f.id)
+    }
+  }
+
+  return { removidos, grupos, mantidos }
 }
 
 function converterDataBR(data: string): string | null {

@@ -220,6 +220,7 @@ export default function ObraDetailPage() {
   const [showEnviarDiario, setShowEnviarDiario] = useState(false)
   const [sincronizandoDiario, setSincronizandoDiario] = useState(false)
   const [msgSincronizacao, setMsgSincronizacao] = useState('')
+  const [limpandoDuplicados, setLimpandoDuplicados] = useState(false)
   const [materiais, setMateriais] = useState<ObraMaterial[]>([])
   const [equipe] = useState<ObraFuncionario[]>([])
   const [criandoRdo, setCriandoRdo] = useState(false)
@@ -476,6 +477,27 @@ export default function ObraDetailPage() {
       setMsgSincronizacao(`Erro: ${e instanceof Error ? e.message : String(e)}`)
     }
     setSincronizandoDiario(false)
+  }
+
+  async function limparDuplicados() {
+    if (!confirm('Isso move para a Lixeira do Google Drive as cópias duplicadas dos PDFs de RDO desta obra, mantendo uma de cada. Continuar?')) return
+    setLimpandoDuplicados(true)
+    setMsgSincronizacao('')
+    try {
+      const res = await fetch('/api/diario-obra/limpar-duplicados', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ obraId: id }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setMsgSincronizacao(`Erro: ${json.error ?? 'falha desconhecida'}`)
+      } else {
+        setMsgSincronizacao(`${json.removidos} duplicado(s) movido(s) para a Lixeira em ${json.grupos} grupo(s).`)
+        loadDiarioRelatorios()
+      }
+    } catch (e) {
+      setMsgSincronizacao(`Erro: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    setLimpandoDuplicados(false)
   }
 
   async function excluirPasta(pastaId: string, nomePasta: string) {
@@ -1140,7 +1162,12 @@ export default function ObraDetailPage() {
                         <Mail size={14} /> Enviar por E-mail ({selecionadosDiario.size})
                       </button>
                     )}
-                    <button onClick={sincronizarDiario} disabled={sincronizandoDiario}
+                    <button onClick={limparDuplicados} disabled={limpandoDuplicados || sincronizandoDiario}
+                      className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
+                      {limpandoDuplicados ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      Limpar duplicados
+                    </button>
+                    <button onClick={sincronizarDiario} disabled={sincronizandoDiario || limpandoDuplicados}
                       className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
                       {sincronizandoDiario ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                       Sincronizar agora
