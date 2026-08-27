@@ -8,7 +8,7 @@ export interface TipoServico {
 export type StatusEtapa = 'Pendente' | 'Em Andamento' | 'Concluída' | 'Atrasada'
 export type CategoriaDoc = 'Financeiro' | 'Técnico' | 'Jurídico' | 'Outros'
 
-export type TipoCliente = 'Gestor' | 'Comprador'
+export type TipoCliente = 'Gestor' | 'Comprador' | 'Fiscal'
 
 export interface Empresa {
   id: string

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import Topbar from '@/components/Topbar'
 import { createClient } from '@/lib/supabase/client'
 import { Cliente, Empresa, TipoCliente } from '@/lib/types'
-import { Plus, X, Pencil, Building2, ShoppingCart, Trash2, ChevronRight, MapPin, Phone, Mail, Hash } from 'lucide-react'
+import { Plus, X, Pencil, Building2, ShoppingCart, Trash2, ChevronRight, MapPin, Phone, Mail, Hash, ShieldCheck } from 'lucide-react'
 
 // ─── Modal Empresa ───────────────────────────────────────────────────────────
 function ModalEmpresa({ empresa, onClose, onSaved }: {
@@ -158,15 +158,17 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
           {/* Tipo */}
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-2">Tipo *</label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['Gestor', 'Comprador'] as TipoCliente[]).map(t => (
+            <div className="grid grid-cols-3 gap-2">
+              {(['Gestor', 'Comprador', 'Fiscal'] as TipoCliente[]).map(t => (
                 <button key={t} type="button" onClick={() => setTipo(t)}
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
                     tipo === t
-                      ? t === 'Gestor' ? 'border-[#4F7CFF] bg-[#EEF2FF] text-[#4F7CFF]' : 'border-[#10B981] bg-emerald-50 text-emerald-700'
+                      ? t === 'Gestor' ? 'border-[#4F7CFF] bg-[#EEF2FF] text-[#4F7CFF]'
+                        : t === 'Comprador' ? 'border-[#10B981] bg-emerald-50 text-emerald-700'
+                        : 'border-[#F59E0B] bg-amber-50 text-amber-700'
                       : 'border-[#E2E8F0] text-[#64748B] hover:border-[#CBD5E1]'
                   }`}>
-                  {t === 'Gestor' ? <Building2 size={15} /> : <ShoppingCart size={15} />}
+                  {t === 'Gestor' ? <Building2 size={15} /> : t === 'Comprador' ? <ShoppingCart size={15} /> : <ShieldCheck size={15} />}
                   {t}
                 </button>
               ))}
@@ -237,6 +239,8 @@ function TabelaClientes({ clientes, empresas, onEdit, onDelete }: {
             <td className="px-4 py-3">
               {c.tipo === 'Gestor'
                 ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#EEF2FF] text-[#4F7CFF]"><Building2 size={10} /> Gestor</span>
+                : c.tipo === 'Fiscal'
+                ? <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700"><ShieldCheck size={10} /> Fiscal</span>
                 : <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700"><ShoppingCart size={10} /> Comprador</span>}
             </td>
             <td className="px-4 py-3">
@@ -304,6 +308,7 @@ export default function ClientesPage() {
 
   const gestores = filteredClientes.filter(c => c.tipo === 'Gestor')
   const compradores = filteredClientes.filter(c => c.tipo === 'Comprador' || !c.tipo)
+  const fiscais = filteredClientes.filter(c => c.tipo === 'Fiscal')
 
   const thCls = 'text-left text-xs font-semibold text-[#64748B] px-4 py-2.5'
 
@@ -387,6 +392,27 @@ export default function ClientesPage() {
                     <th className="w-16" />
                   </tr></thead>
                   <tbody><TabelaClientes clientes={compradores} empresas={empresas} onEdit={c => { setEditCliente(c); setShowModalCliente(true) }} onDelete={excluirCliente} /></tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Fiscais */}
+            <div className="card p-0 overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0]">
+                <ShieldCheck size={14} className="text-amber-600" />
+                <span className="font-semibold text-sm text-[#0F172A]">Fiscais</span>
+                <span className="text-xs text-[#94A3B8]">{fiscais.length}</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[400px]">
+                  <thead><tr className="border-b border-[#F1F5F9]">
+                    <th className={thCls}>Nome</th>
+                    <th className={`hidden sm:table-cell ${thCls}`}>E-mail</th>
+                    <th className={`hidden md:table-cell ${thCls}`}>Telefone</th>
+                    <th className={thCls}>Tipo</th>
+                    <th className="w-16" />
+                  </tr></thead>
+                  <tbody><TabelaClientes clientes={fiscais} empresas={empresas} onEdit={c => { setEditCliente(c); setShowModalCliente(true) }} onDelete={excluirCliente} /></tbody>
                 </table>
               </div>
             </div>

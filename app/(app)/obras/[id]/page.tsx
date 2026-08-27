@@ -4223,7 +4223,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
   const [erro, setErro] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [remetente, setRemetente] = useState<{ nome: string; email: string }>({ nome: '', email: '' })
-  const [contatos, setContatos] = useState<{ gestor?: { nome: string; email: string }; comprador?: { nome: string; email: string } }>({})
+  const [contatos, setContatos] = useState<{ nome: string; email: string; tipo: string | null }[]>([])
 
   useEffect(() => {
     const supabase = createClient()
@@ -4237,16 +4237,13 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
       setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? '')
       setRemetente({ nome: data.user?.user_metadata?.nome ?? '', email: data.user?.email ?? '' })
     })
-    supabase.from('obras').select('gestor_id, comprador_id').eq('id', obraId).single().then(async ({ data: obra }) => {
-      if (!obra) return
-      const [gestorRes, compradorRes] = await Promise.all([
-        obra.gestor_id ? supabase.from('clientes').select('nome, email').eq('id', obra.gestor_id).single() : Promise.resolve({ data: null }),
-        obra.comprador_id ? supabase.from('clientes').select('nome, email').eq('id', obra.comprador_id).single() : Promise.resolve({ data: null }),
-      ])
-      setContatos({
-        gestor: gestorRes.data?.email ? gestorRes.data : undefined,
-        comprador: compradorRes.data?.email ? compradorRes.data : undefined,
-      })
+    supabase.from('clientes').select('nome, email, tipo').not('email', 'is', null).order('nome').then(({ data }) => {
+      const ordem: Record<string, number> = { Gestor: 0, Comprador: 1, Fiscal: 2 }
+      const lista = (data ?? [])
+        .filter(c => c.email)
+        .map(c => ({ nome: c.nome as string, email: c.email as string, tipo: (c.tipo as string) ?? null }))
+      lista.sort((a, b) => (ordem[a.tipo ?? ''] ?? 9) - (ordem[b.tipo ?? ''] ?? 9) || a.nome.localeCompare(b.nome))
+      setContatos(lista)
     })
   }, [obraId])
 
@@ -4321,21 +4318,21 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto">
-          {(contatos.gestor || contatos.comprador) && (
-            <div className="flex flex-wrap items-center gap-1.5">
+          {contatos.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto">
               <span className="text-xs text-[#94A3B8]">Adicionar:</span>
-              {contatos.gestor && (
-                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.gestor!.email)}
-                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
-                  + {contatos.gestor.nome} (gestor)
+              {contatos.map((c, i) => (
+                <button key={`${c.email}-${i}`} type="button" onClick={() => adicionarContato('destinatarios', c.email)}
+                  className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                    c.tipo === 'Fiscal'
+                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : c.tipo === 'Comprador'
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF]'
+                  }`}>
+                  + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
                 </button>
-              )}
-              {contatos.comprador && (
-                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.comprador!.email)}
-                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
-                  + {contatos.comprador.nome} (comprador)
-                </button>
-              )}
+              ))}
             </div>
           )}
           <div>
@@ -4405,7 +4402,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
   const [erro, setErro] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [remetente, setRemetente] = useState<{ nome: string; email: string }>({ nome: '', email: '' })
-  const [contatos, setContatos] = useState<{ gestor?: { nome: string; email: string }; comprador?: { nome: string; email: string } }>({})
+  const [contatos, setContatos] = useState<{ nome: string; email: string; tipo: string | null }[]>([])
 
   useEffect(() => {
     const supabase = createClient()
@@ -4419,16 +4416,13 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
       setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? '')
       setRemetente({ nome: data.user?.user_metadata?.nome ?? '', email: data.user?.email ?? '' })
     })
-    supabase.from('obras').select('gestor_id, comprador_id').eq('id', obraId).single().then(async ({ data: obra }) => {
-      if (!obra) return
-      const [gestorRes, compradorRes] = await Promise.all([
-        obra.gestor_id ? supabase.from('clientes').select('nome, email').eq('id', obra.gestor_id).single() : Promise.resolve({ data: null }),
-        obra.comprador_id ? supabase.from('clientes').select('nome, email').eq('id', obra.comprador_id).single() : Promise.resolve({ data: null }),
-      ])
-      setContatos({
-        gestor: gestorRes.data?.email ? gestorRes.data : undefined,
-        comprador: compradorRes.data?.email ? compradorRes.data : undefined,
-      })
+    supabase.from('clientes').select('nome, email, tipo').not('email', 'is', null).order('nome').then(({ data }) => {
+      const ordem: Record<string, number> = { Gestor: 0, Comprador: 1, Fiscal: 2 }
+      const lista = (data ?? [])
+        .filter(c => c.email)
+        .map(c => ({ nome: c.nome as string, email: c.email as string, tipo: (c.tipo as string) ?? null }))
+      lista.sort((a, b) => (ordem[a.tipo ?? ''] ?? 9) - (ordem[b.tipo ?? ''] ?? 9) || a.nome.localeCompare(b.nome))
+      setContatos(lista)
     })
   }, [obraId])
 
@@ -4503,21 +4497,21 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto">
-          {(contatos.gestor || contatos.comprador) && (
-            <div className="flex flex-wrap items-center gap-1.5">
+          {contatos.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto">
               <span className="text-xs text-[#94A3B8]">Adicionar:</span>
-              {contatos.gestor && (
-                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.gestor!.email)}
-                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
-                  + {contatos.gestor.nome} (gestor)
+              {contatos.map((c, i) => (
+                <button key={`${c.email}-${i}`} type="button" onClick={() => adicionarContato('destinatarios', c.email)}
+                  className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                    c.tipo === 'Fiscal'
+                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : c.tipo === 'Comprador'
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF]'
+                  }`}>
+                  + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
                 </button>
-              )}
-              {contatos.comprador && (
-                <button type="button" onClick={() => adicionarContato('destinatarios', contatos.comprador!.email)}
-                  className="text-xs px-2 py-1 rounded-full bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF] transition-colors">
-                  + {contatos.comprador.nome} (comprador)
-                </button>
-              )}
+              ))}
             </div>
           )}
           <div>
