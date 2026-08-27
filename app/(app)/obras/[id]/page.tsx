@@ -467,7 +467,7 @@ export default function ObraDetailPage() {
       if (!res.ok || !json.ok) {
         setMsgSincronizacao(`Erro: ${json.error ?? 'falha desconhecida'}`)
       } else {
-        const resumo = `${json.importados} RDO(s) importado(s), ${json.ignorados} já existiam.`
+        const resumo = `${json.importados} RDO(s) importado(s), ${json.atualizados ?? 0} atualizado(s), ${json.ignorados} sem mudança.`
         const detalhesErros: string[] = json.erros ?? []
         setMsgSincronizacao(detalhesErros.length > 0 ? `${resumo} Erros: ${detalhesErros.join(' | ')}` : resumo)
         loadDiarioRelatorios()

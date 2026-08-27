@@ -9,6 +9,17 @@ type DiarioRelatorioResumo = {
   numero: number
   data: string
   status: { id: number; descricao: string }
+  // Campos opcionais que a API externa pode mandar e que servem pra detectar
+  // que o relatório mudou desde a última importação (edição no app externo).
+  updatedAt?: string
+  atualizadoEm?: string
+  revisao?: number
+}
+
+// "Impressão digital" do estado atual do relatório na API externa. Se ela muda,
+// o relatório foi editado lá e precisamos re-baixar o PDF e atualizar o status.
+function assinaturaRelatorio(r: DiarioRelatorioResumo): string {
+  return String(r.updatedAt ?? r.atualizadoEm ?? r.revisao ?? r.status?.descricao ?? '')
 }
 
 type DiarioRelatorioDetalhe = DiarioRelatorioResumo & {
@@ -97,7 +108,23 @@ async function uploadPdf(pastaId: string, nomeArquivo: string, pdfUrl: string): 
   return { id: data.id!, url: data.webViewLink ?? `https://drive.google.com/file/d/${data.id}/view` }
 }
 
-type ResultadoSincronizacao = { importados: number; ignorados: number; erros: string[]; pendente: boolean }
+// Substitui o conteúdo de um PDF já existente no Drive, mantendo o mesmo fileId
+// (e portanto a mesma URL já salva no banco e já compartilhada).
+async function atualizarPdfDrive(fileId: string, nomeArquivo: string, pdfUrl: string): Promise<{ id: string; url: string }> {
+  const resp = await fetch(pdfUrl)
+  if (!resp.ok) throw new Error(`Erro ao baixar PDF (${resp.status})`)
+  const buffer = Buffer.from(await resp.arrayBuffer())
+  const drive = driveClient()
+  const { data } = await drive.files.update({
+    fileId,
+    requestBody: { name: nomeArquivo },
+    media: { mimeType: 'application/pdf', body: Readable.from(buffer) },
+    fields: 'id, webViewLink',
+  })
+  return { id: data.id ?? fileId, url: data.webViewLink ?? `https://drive.google.com/file/d/${fileId}/view` }
+}
+
+type ResultadoSincronizacao = { importados: number; atualizados: number; ignorados: number; erros: string[]; pendente: boolean }
 
 // ── Sincronização de uma obra externa (do Diário de Obra) ───────────
 // obraId: id da obra correspondente no marv-gestão, se houver (só pra
@@ -107,16 +134,62 @@ type ResultadoSincronizacao = { importados: number; ignorados: number; erros: st
 async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: string, obraId: string | null, orcamento: number): Promise<ResultadoSincronizacao> {
   const supabase = createServiceClient()
   const relatorios = await listarRelatorios(diarioObraId)
-  const { data: jaImportados } = await supabase.from('diario_obra_relatorios').select('diario_relatorio_id').eq('diario_obra_id_externo', diarioObraId)
-  const idsImportados = new Set((jaImportados ?? []).map(r => r.diario_relatorio_id))
+  const { data: jaImportados } = await supabase
+    .from('diario_obra_relatorios')
+    .select('diario_relatorio_id, status_descricao, atualizado_em, drive_file_id')
+    .eq('diario_obra_id_externo', diarioObraId)
+  const existentes = new Map((jaImportados ?? []).map(r => [r.diario_relatorio_id as string, r]))
 
-  let importados = 0, ignorados = 0
+  let importados = 0, atualizados = 0, ignorados = 0
   let pendente = false
   const erros: string[] = []
 
   for (const resumo of relatorios) {
-    if (idsImportados.has(resumo._id)) { ignorados++; continue }
-    if (importados >= orcamento) { pendente = true; break }
+    const existente = existentes.get(resumo._id)
+    const assinatura = assinaturaRelatorio(resumo)
+
+    // Já importado: só refaz o trabalho se o relatório mudou no app externo
+    // (status diferente ou "impressão digital" diferente).
+    if (existente) {
+      const mudouStatus = (existente.status_descricao ?? null) !== (resumo.status?.descricao ?? null)
+      const mudouAssinatura = (existente.atualizado_em ?? null) !== (assinatura || null)
+      if (!mudouStatus && !mudouAssinatura) { ignorados++; continue }
+      if (importados + atualizados >= orcamento) { pendente = true; break }
+      try {
+        const detalhe = await buscarDetalheRelatorio(diarioObraId, resumo._id)
+        const pastaId = await pastaObra(diarioObraNome)
+        const nomeArquivo = `RDO-${String(resumo.numero).padStart(3, '0')}_${resumo.data.replace(/\//g, '-')}.pdf`
+
+        let driveFileId = existente.drive_file_id as string | null
+        let driveFileUrl: string | null = null
+        if (detalhe.linkPdf) {
+          const arquivo = driveFileId
+            ? await atualizarPdfDrive(driveFileId, nomeArquivo, detalhe.linkPdf)
+            : await uploadPdf(pastaId, nomeArquivo, detalhe.linkPdf)
+          driveFileId = arquivo.id
+          driveFileUrl = arquivo.url
+        }
+
+        const patch: Record<string, unknown> = {
+          status_descricao: resumo.status?.descricao ?? null,
+          data: converterDataBR(resumo.data),
+          atualizado_em: assinatura || null,
+        }
+        if (driveFileUrl) { patch.drive_file_id = driveFileId; patch.drive_file_url = driveFileUrl }
+
+        await supabase
+          .from('diario_obra_relatorios')
+          .update(patch)
+          .eq('diario_obra_id_externo', diarioObraId)
+          .eq('diario_relatorio_id', resumo._id)
+        atualizados++
+      } catch (e) {
+        erros.push(`RDO ${resumo.numero}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+      continue
+    }
+
+    if (importados + atualizados >= orcamento) { pendente = true; break }
     try {
       const detalhe = await buscarDetalheRelatorio(diarioObraId, resumo._id)
       if (!detalhe.linkPdf) { erros.push(`RDO ${resumo.numero}: sem PDF disponível ainda`); continue }
@@ -133,6 +206,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
         numero: resumo.numero,
         data: converterDataBR(resumo.data),
         status_descricao: resumo.status?.descricao ?? null,
+        atualizado_em: assinatura || null,
         drive_file_id: arquivo.id,
         drive_file_url: arquivo.url,
       })
@@ -142,7 +216,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
     }
   }
 
-  return { importados, ignorados, erros, pendente }
+  return { importados, atualizados, ignorados, erros, pendente }
 }
 
 // ── Sincronização de uma obra vinculada no marv-gestão ───────────────
@@ -176,7 +250,7 @@ export async function sincronizarBackupCompleto(limite = 20): Promise<{ resultad
     try {
       const r = await sincronizarObraExterna(obraExterna._id, obraExterna.nome, mapaLink.get(obraExterna._id) ?? null, orcamentoRestante)
       resultados[obraExterna.nome] = r
-      orcamentoRestante -= r.importados
+      orcamentoRestante -= r.importados + r.atualizados
       if (r.pendente) completo = false
     } catch (e) {
       resultados[obraExterna.nome] = { erro: e instanceof Error ? e.message : String(e) }
