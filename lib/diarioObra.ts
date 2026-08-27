@@ -144,6 +144,12 @@ async function enviarPdf(
   return { id: data.id!, url: data.webViewLink ?? `https://drive.google.com/file/d/${data.id}/view` }
 }
 
+// Renomeia um arquivo já existente no Drive (sem mexer no conteúdo).
+async function renomearArquivoDrive(fileId: string, nomeArquivo: string): Promise<void> {
+  const drive = driveClient()
+  await drive.files.update({ fileId, requestBody: { name: nomeArquivo } })
+}
+
 type ResultadoSincronizacao = { importados: number; atualizados: number; ignorados: number; erros: string[]; pendente: boolean }
 
 // ── Sincronização de uma obra externa (do Diário de Obra) ───────────
@@ -156,7 +162,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
   const relatorios = await listarRelatorios(diarioObraId)
   const { data: jaImportados } = await supabase
     .from('diario_obra_relatorios')
-    .select('diario_relatorio_id, status_descricao, atualizado_em, drive_file_id')
+    .select('diario_relatorio_id, numero, status_descricao, atualizado_em, drive_file_id')
     .eq('diario_obra_id_externo', diarioObraId)
   const existentes = new Map((jaImportados ?? []).map(r => [r.diario_relatorio_id as string, r]))
 
@@ -173,7 +179,8 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
     if (existente) {
       const mudouStatus = (existente.status_descricao ?? null) !== (resumo.status?.descricao ?? null)
       const mudouAssinatura = (existente.atualizado_em ?? null) !== (assinatura || null)
-      if (!mudouStatus && !mudouAssinatura) { ignorados++; continue }
+      const mudouNumero = (existente.numero ?? null) !== (resumo.numero ?? null)
+      if (!mudouStatus && !mudouAssinatura && !mudouNumero) { ignorados++; continue }
       if (importados + atualizados >= orcamento) { pendente = true; break }
       try {
         const detalhe = await buscarDetalheRelatorio(diarioObraId, resumo._id)
@@ -186,9 +193,14 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
           const arquivo = await enviarPdf(pastaId, nomeArquivo, detalhe.linkPdf, driveFileId)
           driveFileId = arquivo.id
           driveFileUrl = arquivo.url
+        } else if (driveFileId && mudouNumero) {
+          // Sem PDF novo, mas o número mudou → só renomeia o arquivo no Drive
+          // (o nome é RDO-<numero>_<data>.pdf).
+          await renomearArquivoDrive(driveFileId, nomeArquivo).catch(() => {})
         }
 
         const patch: Record<string, unknown> = {
+          numero: resumo.numero,
           status_descricao: resumo.status?.descricao ?? null,
           data: converterDataBR(resumo.data),
           atualizado_em: assinatura || null,
