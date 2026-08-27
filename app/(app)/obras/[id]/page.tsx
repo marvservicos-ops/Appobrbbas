@@ -1143,7 +1143,7 @@ export default function ObraDetailPage() {
                     <button onClick={sincronizarDiario} disabled={sincronizandoDiario}
                       className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
                       {sincronizandoDiario ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      Importar agora
+                      Sincronizar agora
                     </button>
                   </div>
                 </div>
