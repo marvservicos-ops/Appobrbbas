@@ -4321,18 +4321,25 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
           {contatos.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto">
               <span className="text-xs text-[#94A3B8]">Adicionar:</span>
-              {contatos.map((c, i) => (
-                <button key={`${c.email}-${i}`} type="button" onClick={() => adicionarContato('destinatarios', c.email)}
-                  className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                    c.tipo === 'Fiscal'
-                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                      : c.tipo === 'Comprador'
-                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                      : 'bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF]'
-                  }`}>
-                  + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
-                </button>
-              ))}
+              {contatos.map((c, i) => {
+                const cor = c.tipo === 'Fiscal'
+                  ? 'bg-amber-50 text-amber-700'
+                  : c.tipo === 'Comprador'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-[#EEF2FF] text-[#4F7CFF]'
+                return (
+                  <span key={`${c.email}-${i}`} className={`inline-flex items-center rounded-full overflow-hidden ${cor}`}>
+                    <button type="button" onClick={() => adicionarContato('destinatarios', c.email)}
+                      className="text-xs pl-2 pr-1.5 py-1 hover:brightness-95 transition-all">
+                      + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
+                    </button>
+                    <button type="button" onClick={() => adicionarContato('cc', c.email)} title="Adicionar em Cc"
+                      className="text-[10px] font-semibold px-1.5 py-1 border-l border-white/60 hover:brightness-95 transition-all">
+                      Cc
+                    </button>
+                  </span>
+                )
+              })}
             </div>
           )}
           <div>
@@ -4500,18 +4507,25 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
           {contatos.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto">
               <span className="text-xs text-[#94A3B8]">Adicionar:</span>
-              {contatos.map((c, i) => (
-                <button key={`${c.email}-${i}`} type="button" onClick={() => adicionarContato('destinatarios', c.email)}
-                  className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                    c.tipo === 'Fiscal'
-                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                      : c.tipo === 'Comprador'
-                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                      : 'bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DDE6FF]'
-                  }`}>
-                  + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
-                </button>
-              ))}
+              {contatos.map((c, i) => {
+                const cor = c.tipo === 'Fiscal'
+                  ? 'bg-amber-50 text-amber-700'
+                  : c.tipo === 'Comprador'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-[#EEF2FF] text-[#4F7CFF]'
+                return (
+                  <span key={`${c.email}-${i}`} className={`inline-flex items-center rounded-full overflow-hidden ${cor}`}>
+                    <button type="button" onClick={() => adicionarContato('destinatarios', c.email)}
+                      className="text-xs pl-2 pr-1.5 py-1 hover:brightness-95 transition-all">
+                      + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
+                    </button>
+                    <button type="button" onClick={() => adicionarContato('cc', c.email)} title="Adicionar em Cc"
+                      className="text-[10px] font-semibold px-1.5 py-1 border-l border-white/60 hover:brightness-95 transition-all">
+                      Cc
+                    </button>
+                  </span>
+                )
+              })}
             </div>
           )}
           <div>
