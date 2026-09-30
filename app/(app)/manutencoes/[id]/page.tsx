@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin, Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ContratoManutencao, ManutencaoAditivo, ManutencaoNF, ManutencaoFuncionario, Equipamento, ManutencaoEstoqueProduto, ManutencaoEstoqueRegistro, EstoqueProduto } from '@/lib/types'
@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { useAccess } from '@/lib/useAccess'
 
 type Tab = 'financeiro' | 'equipe' | 'equipamentos' | 'estoque'
+const TABS: Tab[] = ['financeiro', 'equipe', 'equipamentos', 'estoque']
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function fmtDate(d?: string | null) { return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—' }
@@ -991,7 +992,11 @@ export default function ManutencaoDetalhe() {
   const router = useRouter()
   const { isAdmin } = useAccess()
   const [contrato, setContrato] = useState<ContratoManutencao | null>(null)
-  const [tab, setTab] = useState<Tab>('financeiro')
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get('tab') as Tab | null
+  const tab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : 'financeiro'
+  // A aba fica na URL para que voltar de um equipamento (ou do navegador) caia na mesma aba
+  function setTab(t: Tab) { router.replace(`/manutencoes/${id}?tab=${t}`, { scroll: false }) }
   const [loading, setLoading] = useState(true)
   const [criticosEstoque, setCriticosEstoque] = useState(0)
 

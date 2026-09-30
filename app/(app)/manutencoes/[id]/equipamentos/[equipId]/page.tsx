@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode, FileText } from 'lucide-react'
+import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode, FileText, ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
@@ -218,13 +218,183 @@ function DadosTecnicos({ equipId }: { equipId: string }) {
   )
 }
 
+interface Foto { id: string; url: string; path: string | null; ordem: number }
+
+function FotosEquipamento({ equipId, nome, fotoCapa }: { equipId: string; nome: string; fotoCapa: string | null | undefined }) {
+  const [fotos, setFotos] = useState<Foto[]>([])
+  const [sel, setSel] = useState(0)
+  const [lightbox, setLightbox] = useState<number | null>(null)
+  const [uploading, setUploading] = useState('')
+  const [erro, setErro] = useState('')
+
+  async function load() {
+    const { data, error } = await createClient().from('equipamento_fotos').select('*')
+      .eq('equipamento_id', equipId).order('ordem').order('created_at')
+    if (error) {
+      // Tabela ainda não criada: mostra a foto única antiga
+      setFotos(fotoCapa ? [{ id: 'capa', url: fotoCapa, path: null, ordem: 0 }] : [])
+      setErro('Galeria indisponível: rode a migração equipamento_fotos.sql no Supabase.')
+      return
+    }
+    setFotos((data ?? []) as Foto[])
+  }
+
+  useEffect(() => { load() }, [equipId])
+
+  useEffect(() => {
+    if (lightbox === null) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setLightbox(null)
+      if (e.key === 'ArrowRight') setLightbox(i => i === null ? i : (i + 1) % fotos.length)
+      if (e.key === 'ArrowLeft') setLightbox(i => i === null ? i : (i - 1 + fotos.length) % fotos.length)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox, fotos.length])
+
+  // A primeira foto da galeria é a capa (equipamentos.foto_url), usada na ficha pública
+  async function sincronizarCapa(lista: Foto[]) {
+    await createClient().from('equipamentos').update({ foto_url: lista[0]?.url ?? null }).eq('id', equipId)
+  }
+
+  async function enviar(files: FileList) {
+    setErro('')
+    const sb = createClient()
+    let ordem = fotos.reduce((m, f) => Math.max(m, f.ordem), -1) + 1
+    const novas: Foto[] = []
+    for (let i = 0; i < files.length; i++) {
+      setUploading(files.length > 1 ? `Enviando ${i + 1}/${files.length}...` : 'Enviando...')
+      const file = await converterSeForHeic(files[i])
+      const ext = file.name.split('.').pop()
+      const path = `equipamentos/${equipId}/${Date.now()}_${i}.${ext}`
+      const { error: errUp } = await sb.storage.from('marv-manutencao').upload(path, file)
+      if (errUp) { setErro(errUp.message); continue }
+      const { data: pub } = sb.storage.from('marv-manutencao').getPublicUrl(path)
+      const { data, error } = await sb.from('equipamento_fotos')
+        .insert({ equipamento_id: equipId, url: pub.publicUrl, path, ordem: ordem++ }).select().single()
+      if (error) { setErro(error.message); continue }
+      novas.push(data as Foto)
+    }
+    const lista = [...fotos, ...novas]
+    setFotos(lista)
+    if (novas.length) setSel(fotos.length)
+    await sincronizarCapa(lista)
+    setUploading('')
+  }
+
+  async function excluir(foto: Foto) {
+    if (!confirm('Excluir esta foto?')) return
+    const sb = createClient()
+    await sb.from('equipamento_fotos').delete().eq('id', foto.id)
+    if (foto.path) await sb.storage.from('marv-manutencao').remove([foto.path])
+    const lista = fotos.filter(f => f.id !== foto.id)
+    setFotos(lista)
+    setSel(s => Math.min(s, Math.max(lista.length - 1, 0)))
+    setLightbox(null)
+    await sincronizarCapa(lista)
+  }
+
+  async function definirCapa(foto: Foto) {
+    const lista = [foto, ...fotos.filter(f => f.id !== foto.id)].map((f, i) => ({ ...f, ordem: i }))
+    setFotos(lista)
+    setSel(0)
+    const sb = createClient()
+    await Promise.all(lista.map(f => sb.from('equipamento_fotos').update({ ordem: f.ordem }).eq('id', f.id)))
+    await sincronizarCapa(lista)
+  }
+
+  const atual = fotos[sel]
+  const semTabela = fotos[0]?.id === 'capa'
+
+  return (
+    <div className="card p-0 overflow-hidden flex flex-col">
+      <div className="relative min-h-[220px] flex-1">
+        {atual ? (
+          <button onClick={() => setLightbox(sel)} className="absolute inset-0 cursor-zoom-in">
+            <Image src={atual.url} alt={nome} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
+          </button>
+        ) : (
+          <div className="absolute inset-0 bg-[#F1F5F9] flex items-center justify-center">
+            <Wrench size={32} className="text-[#CBD5E1]" />
+          </div>
+        )}
+        {fotos.length > 1 && (
+          <span className="absolute top-2 left-2 text-[11px] font-medium text-white bg-black/50 px-2 py-0.5 rounded-full">
+            {sel + 1}/{fotos.length}
+          </span>
+        )}
+        {!semTabela && (
+          <label className="absolute bottom-2 right-2 flex items-center gap-1.5 text-xs text-[#4F7CFF] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow cursor-pointer hover:bg-white transition-colors">
+            {uploading || <><Upload size={12} /> {fotos.length ? 'Adicionar fotos' : 'Adicionar foto'}</>}
+            <input type="file" className="hidden" multiple accept="image/*,.heic,.heif" disabled={!!uploading}
+              onChange={e => { const fs = e.target.files; if (fs?.length) enviar(fs); e.target.value = '' }} />
+          </label>
+        )}
+      </div>
+
+      {fotos.length > 1 && (
+        <div className="flex gap-1.5 p-2 overflow-x-auto border-t border-[#E2E8F0]">
+          {fotos.map((f, i) => (
+            <button key={f.id} onClick={() => setSel(i)}
+              className={`relative w-12 h-12 shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${i === sel ? 'border-[#4F7CFF]' : 'border-transparent hover:border-[#CBD5E1]'}`}>
+              <Image src={f.url} alt="" fill sizes="48px" className="object-cover" />
+              {i === 0 && <Star size={10} className="absolute top-0.5 left-0.5 text-yellow-300 fill-yellow-300 drop-shadow" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {erro && <p className="text-xs text-red-500 px-3 py-2">{erro}</p>}
+
+      {lightbox !== null && fotos[lightbox] && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex flex-col" onClick={() => setLightbox(null)}>
+          <div className="flex items-center justify-between p-4 text-white" onClick={e => e.stopPropagation()}>
+            <span className="text-sm">{lightbox + 1} / {fotos.length}</span>
+            <div className="flex items-center gap-2">
+              {!semTabela && lightbox > 0 && (
+                <button onClick={() => { definirCapa(fotos[lightbox]); setLightbox(0) }}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20">
+                  <Star size={12} /> Definir como capa
+                </button>
+              )}
+              {!semTabela && (
+                <button onClick={() => excluir(fotos[lightbox])}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-red-500/80">
+                  <Trash2 size={12} /> Excluir
+                </button>
+              )}
+              <button onClick={() => setLightbox(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+          <div className="relative flex-1 m-4 mt-0">
+            <Image src={fotos[lightbox].url} alt={nome} fill sizes="100vw" className="object-contain" />
+          </div>
+          {fotos.length > 1 && (
+            <>
+              <button onClick={e => { e.stopPropagation(); setLightbox((lightbox - 1 + fotos.length) % fotos.length) }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white">
+                <ChevronLeft size={22} />
+              </button>
+              <button onClick={e => { e.stopPropagation(); setLightbox((lightbox + 1) % fotos.length) }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white">
+                <ChevronRight size={22} />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function EquipamentoPage() {
   const { id: contratoId, equipId } = useParams<{ id: string; equipId: string }>()
   const router = useRouter()
   const [equip, setEquip] = useState<Equipamento | null>(null)
   const [historico, setHistorico] = useState<ManutencaoHistorico[]>([])
   const [loading, setLoading] = useState(true)
-  const [uploadingFoto, setUploadingFoto] = useState(false)
   const [uploadingManual, setUploadingManual] = useState(false)
   const [erroManual, setErroManual] = useState('')
 
@@ -248,19 +418,6 @@ export default function EquipamentoPage() {
   }
 
   useEffect(() => { load() }, [equipId])
-
-  async function uploadFoto(fileOriginal: File) {
-    setUploadingFoto(true)
-    const file = await converterSeForHeic(fileOriginal)
-    const ext = file.name.split('.').pop()
-    const path = `equipamentos/${equipId}.${ext}`
-    const sb = createClient()
-    await sb.storage.from('marv-manutencao').upload(path, file, { upsert: true })
-    const { data } = sb.storage.from('marv-manutencao').getPublicUrl(path)
-    await sb.from('equipamentos').update({ foto_url: data.publicUrl }).eq('id', equipId)
-    setUploadingFoto(false)
-    load()
-  }
 
   async function uploadManual(file: File) {
     const erro = validarPdf(file)
@@ -333,20 +490,8 @@ export default function EquipamentoPage() {
         <QrModal equipId={equipId} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Foto */}
-          <div className="card p-0 overflow-hidden relative min-h-[220px] flex flex-col">
-            {equip.foto_url ? (
-              <Image src={equip.foto_url} alt={equip.nome} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
-            ) : (
-              <div className="flex-1 bg-[#F1F5F9] flex items-center justify-center" style={{ minHeight: 220 }}>
-                <Wrench size={32} className="text-[#CBD5E1]" />
-              </div>
-            )}
-            <label className="absolute bottom-2 right-2 flex items-center gap-1.5 text-xs text-[#4F7CFF] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow cursor-pointer hover:bg-white transition-colors">
-              {uploadingFoto ? 'Enviando...' : <><Upload size={12} /> {equip.foto_url ? 'Trocar foto' : 'Adicionar foto'}</>}
-              <input type="file" className="hidden" accept="image/*,.heic,.heif" onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
-            </label>
-          </div>
+          {/* Fotos */}
+          <FotosEquipamento equipId={equipId} nome={equip.nome} fotoCapa={equip.foto_url} />
 
           {/* Manual de instruções */}
           <div className="card flex flex-col justify-between">
