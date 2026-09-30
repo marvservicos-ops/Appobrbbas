@@ -361,6 +361,7 @@ export interface Equipamento {
   marca?: string | null
   modelo?: string | null
   capacidade_btu?: number | null
+  capacidade_unidade?: string | null
   numero_serie?: string | null
   localizacao?: string | null
   data_instalacao?: string | null

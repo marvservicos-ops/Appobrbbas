@@ -353,6 +353,12 @@ const TIPO_COLOR: Record<string, string> = {
 }
 
 const TIPOS_EQUIP = ['Split', 'Cassete', 'VRF', 'Janela', 'Piso-teto', 'Chiller', 'Fan Coil', 'Condensadora', 'Outro']
+const UNIDADES_CAPACIDADE = ['BTU', 'BTU/h', 'TR', 'CV', 'HP', 'kW', 'kcal/h', 'm³/h', 'L/s']
+
+function fmtCapacidade(eq: Equipamento) {
+  if (eq.capacidade_btu == null) return null
+  return `${Number(eq.capacidade_btu).toLocaleString('pt-BR')} ${eq.capacidade_unidade ?? 'BTU'}`
+}
 
 let _formEquipId = 0
 
@@ -362,11 +368,12 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
   onSaved: () => void; onCancel: () => void
 }) {
   const datalistId = useState(() => `tipos-equip-${++_formEquipId}`)[0]
+  const [erro, setErro] = useState('')
 
   function emptyForm() {
     return {
       nome: '', tipo: 'Split',
-      marca: '', modelo: '', capacidade_btu: '',
+      marca: '', modelo: '', capacidade_btu: '', capacidade_unidade: 'BTU',
       numero_serie: '', localizacao: '', data_instalacao: '',
       grupo_id: grupoIdInicial ?? '',
     }
@@ -375,7 +382,8 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
   const [form, setForm] = useState(() => equipamento ? {
     nome: equipamento.nome, tipo: equipamento.tipo ?? 'Split',
     marca: equipamento.marca ?? '', modelo: equipamento.modelo ?? '',
-    capacidade_btu: equipamento.capacidade_btu ? String(equipamento.capacidade_btu) : '',
+    capacidade_btu: equipamento.capacidade_btu != null ? String(equipamento.capacidade_btu) : '',
+    capacidade_unidade: equipamento.capacidade_unidade ?? 'BTU',
     numero_serie: equipamento.numero_serie ?? '', localizacao: equipamento.localizacao ?? '',
     data_instalacao: equipamento.data_instalacao ?? '',
     grupo_id: equipamento.grupo_id ?? grupoIdInicial ?? '',
@@ -386,20 +394,26 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
     const payload = {
       nome: form.nome, tipo: form.tipo || 'Outro',
       marca: form.marca || null, modelo: form.modelo || null,
-      capacidade_btu: form.capacidade_btu ? parseInt(form.capacidade_btu) : null,
+      capacidade_btu: form.capacidade_btu ? parseFloat(form.capacidade_btu.replace(',', '.')) : null,
+      capacidade_unidade: form.capacidade_btu ? (form.capacidade_unidade.trim() || null) : null,
       numero_serie: form.numero_serie || null,
       localizacao: form.localizacao || null,
       data_instalacao: form.data_instalacao || null,
       grupo_id: form.grupo_id || null,
     }
-    if (equipamento) {
-      await createClient().from('equipamentos').update(payload).eq('id', equipamento.id)
-      onSaved()
-    } else {
-      await createClient().from('equipamentos').insert({ ...payload, contrato_id: contratoId, ativo: true })
-      setForm(emptyForm())
-      onSaved()
+    setErro('')
+    const sb = createClient()
+    const { error } = equipamento
+      ? await sb.from('equipamentos').update(payload).eq('id', equipamento.id)
+      : await sb.from('equipamentos').insert({ ...payload, contrato_id: contratoId, ativo: true })
+    if (error) {
+      setErro(error.message.includes('capacidade_unidade')
+        ? 'Rode a migração equipamentos_capacidade_unidade.sql no Supabase para salvar a unidade.'
+        : error.message)
+      return
     }
+    if (!equipamento) setForm(emptyForm())
+    onSaved()
   }
 
   return (
@@ -417,8 +431,14 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
           </datalist>
         </div>
         <div>
-          <label className="text-xs font-medium text-[#64748B] block mb-1">Capacidade (BTU)</label>
-          <input type="number" className="field text-sm" placeholder="Ex: 12000" value={form.capacidade_btu} onChange={e => setForm(f => ({ ...f, capacidade_btu: e.target.value }))} />
+          <label className="text-xs font-medium text-[#64748B] block mb-1">Capacidade</label>
+          <div className="flex gap-2">
+            <input type="number" step="any" className="field text-sm flex-1 min-w-0" placeholder="Ex: 12000" value={form.capacidade_btu} onChange={e => setForm(f => ({ ...f, capacidade_btu: e.target.value }))} />
+            <input list={`${datalistId}-un`} className="field text-sm w-28 shrink-0" placeholder="Unidade" value={form.capacidade_unidade} onChange={e => setForm(f => ({ ...f, capacidade_unidade: e.target.value }))} />
+            <datalist id={`${datalistId}-un`}>
+              {UNIDADES_CAPACIDADE.map(u => <option key={u} value={u} />)}
+            </datalist>
+          </div>
         </div>
         <div>
           <label className="text-xs font-medium text-[#64748B] block mb-1">Marca</label>
@@ -444,6 +464,7 @@ function FormEquipamento({ contratoId, grupos, grupoIdInicial, equipamento, onSa
           </select>
         </div>
       </div>
+      {erro && <p className="text-xs text-red-500">{erro}</p>}
       <div className="flex justify-end gap-2">
         <button onClick={onCancel} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-white rounded-lg">Cancelar</button>
         <button onClick={salvar} disabled={!form.nome} className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">{equipamento ? 'Salvar' : 'Adicionar'}</button>
@@ -574,7 +595,7 @@ function GrupoSection({ grupo, equipamentos, contratoId, grupos, onReload, colla
                     <Link href={`/manutencoes/${contratoId}/equipamentos/${eq.id}`} className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-[#0F172A] hover:text-[#4F7CFF] transition-colors truncate">{eq.nome}</p>
                       <p className="text-xs text-[#94A3B8] truncate">
-                        {[eq.marca, eq.modelo, eq.capacidade_btu ? `${eq.capacidade_btu.toLocaleString()} BTU` : null].filter(Boolean).join(' · ')}
+                        {[eq.marca, eq.modelo, fmtCapacidade(eq)].filter(Boolean).join(' · ')}
                       </p>
                     </Link>
 
