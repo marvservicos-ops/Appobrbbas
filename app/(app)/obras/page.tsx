@@ -1,11 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Calendar, User, MoreVertical, CheckCircle2, Clock, TrendingUp, Pencil, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, User, MoreVertical, Pencil, ChevronDown, ChevronRight, AlertTriangle, ArrowRight, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Obra, Cliente } from '@/lib/types'
+import { Obra, Cliente, StatusObra } from '@/lib/types'
 import Topbar from '@/components/Topbar'
-import StatusChip from '@/components/StatusChip'
 import ModalNovaObra from '@/components/ModalNovaObra'
 import Link from 'next/link'
 
@@ -24,7 +23,32 @@ function formatDate(d?: string) {
   return new Date(d).toLocaleDateString('pt-BR')
 }
 
-const PAGE_SIZE = 6
+function isAtrasada(obra: Obra): boolean {
+  if (obra.status === 'Concluída' || !obra.previsao_termino) return false
+  return new Date(obra.previsao_termino).getTime() < Date.now()
+}
+
+const GRUPOS: { status: StatusObra; label: string; dot: string }[] = [
+  { status: 'Em Andamento', label: 'Em andamento', dot: 'bg-blue-500' },
+  { status: 'Aprovada', label: 'Aprovadas', dot: 'bg-violet-500' },
+  { status: 'Em Orçamento', label: 'Em orçamento', dot: 'bg-slate-400' },
+  { status: 'Concluída', label: 'Concluídas', dot: 'bg-emerald-500' },
+]
+
+// Atrasadas primeiro, depois término mais próximo; concluídas: término mais recente primeiro
+function ordenar(lista: Obra[], status: StatusObra): Obra[] {
+  const t = (o: Obra) => (o.previsao_termino ? new Date(o.previsao_termino).getTime() : null)
+  return [...lista].sort((a, b) => {
+    if (status === 'Concluída') return (t(b) ?? 0) - (t(a) ?? 0)
+    const atrasoA = isAtrasada(a) ? 0 : 1
+    const atrasoB = isAtrasada(b) ? 0 : 1
+    if (atrasoA !== atrasoB) return atrasoA - atrasoB
+    return (t(a) ?? Infinity) - (t(b) ?? Infinity)
+  })
+}
+
+const STORAGE_KEY = 'obras:grupos-recolhidos'
+const ROW_GRID = 'md:grid md:grid-cols-[minmax(0,2.6fr)_minmax(0,1.3fr)_minmax(0,1fr)_130px_110px_28px] md:gap-4 md:items-center'
 
 export default function ObrasPage() {
   const [obras, setObras] = useState<Obra[]>([])
@@ -33,96 +57,169 @@ export default function ObrasPage() {
   const [editObra, setEditObra] = useState<Obra | null>(null)
   const [menuObraId, setMenuObraId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [ativasVisiveis, setAtivasVisiveis] = useState(PAGE_SIZE)
-  const [concluidasAbertas, setConcluidasAbertas] = useState(false)
-  const [concluidasVisiveis, setConcluidasVisiveis] = useState(PAGE_SIZE)
+  const [recolhidos, setRecolhidos] = useState<Record<string, boolean>>({ 'Concluída': true })
 
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const { data, error } = await supabase.from('obras').select('*').order('created_at', { ascending: false })
-    if (error) console.error('obras load error:', error)
+    let { data, error } = await supabase
+      .from('obras')
+      .select('*, cliente:clientes!cliente_id(id, nome)')
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('obras load error (com cliente):', error)
+      ;({ data, error } = await supabase.from('obras').select('*').order('created_at', { ascending: false }))
+      if (error) console.error('obras load error:', error)
+    }
     if (data) setObras(data as Obra[])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
+  useEffect(() => {
+    try {
+      const salvo = localStorage.getItem(STORAGE_KEY)
+      if (salvo) setRecolhidos(JSON.parse(salvo))
+    } catch {}
+  }, [])
+
+  function toggleGrupo(status: StatusObra) {
+    setRecolhidos(prev => {
+      const next = { ...prev, [status]: !prev[status] }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
+  async function mudarStatus(obra: Obra, status: StatusObra) {
+    setMenuObraId(null)
+    const anterior = obra.status
+    setObras(prev => prev.map(o => (o.id === obra.id ? { ...o, status } : o)))
+    const supabase = createClient()
+    const { error } = await supabase.from('obras').update({ status }).eq('id', obra.id)
+    if (error) {
+      console.error('mudar status error:', error)
+      setObras(prev => prev.map(o => (o.id === obra.id ? { ...o, status: anterior } : o)))
+      alert('Não foi possível mudar o status da obra.')
+    }
+  }
+
+  const termo = search.toLowerCase()
   const filtered = obras.filter(o =>
-    o.titulo.toLowerCase().includes(search.toLowerCase()) ||
-    (o.cliente as Cliente | undefined)?.nome?.toLowerCase().includes(search.toLowerCase()) ||
-    (o.gestor as Cliente | undefined)?.nome?.toLowerCase().includes(search.toLowerCase())
+    o.titulo.toLowerCase().includes(termo) ||
+    (o.cliente as Cliente | undefined)?.nome?.toLowerCase().includes(termo) ||
+    o.engenheiro_responsavel?.toLowerCase().includes(termo)
   )
 
-  const ativas = filtered.filter(o => o.status !== 'Concluída')
-  const concluidas = filtered.filter(o => o.status === 'Concluída')
-
-  function renderObraCard(obra: Obra) {
+  function renderObraRow(obra: Obra) {
     const progress = calcProgress(obra)
+    const atrasada = isAtrasada(obra)
     const cliente = obra.cliente as Cliente | undefined
+    const barColor = obra.status === 'Concluída' ? 'bg-emerald-500' : atrasada ? 'bg-red-400' : progress > 70 ? 'bg-amber-400' : 'bg-[#4F7CFF]'
+
     return (
-      <Link key={obra.id} href={`/obras/${obra.id}`}>
-        <div className="card p-3 hover:border-[#4F7CFF]/30 hover:shadow-sm transition-all cursor-pointer group">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <StatusChip status={obra.status} />
-              {obra.tipo_servico && <span className="text-xs text-[#4F7CFF] bg-[#EEF2FF] px-1.5 py-0.5 rounded truncate">{obra.tipo_servico}</span>}
+      <Link key={obra.id} href={`/obras/${obra.id}`} className="block">
+        <div className={`${ROW_GRID} px-4 py-3 border-t border-[#F1F5F9] hover:bg-[#F8FAFF] transition-colors cursor-pointer group`}>
+          {/* Obra / cliente */}
+          <div className="min-w-0 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-syne font-semibold text-[#0F172A] text-sm truncate">{obra.titulo}</p>
+              <p className="text-xs text-[#94A3B8] truncate">
+                {cliente?.nome ?? 'Sem cliente'}
+                <span className="md:hidden">{obra.engenheiro_responsavel ? ` · ${obra.engenheiro_responsavel}` : ''}</span>
+              </p>
             </div>
-            <div className="relative">
-              <button
-                className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all shrink-0"
-                onClick={e => { e.preventDefault(); e.stopPropagation(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
-              >
-                <MoreVertical size={13} className="text-[#64748B]" />
-              </button>
-              {menuObraId === obra.id && (
-                <div className="absolute right-0 top-7 z-20 bg-white border border-[#E2E8F0] rounded-xl shadow-lg py-1 min-w-[140px]"
-                  onClick={e => e.preventDefault()}>
-                  <button
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#374151] hover:bg-[#F8FAFF] transition-colors"
-                    onClick={e => { e.preventDefault(); setEditObra(obra); setMenuObraId(null) }}
-                  >
-                    <Pencil size={13} className="text-[#64748B]" />
-                    Editar obra
-                  </button>
-                </div>
-              )}
-            </div>
+            <div className="relative md:hidden shrink-0">{renderMenuButton(obra)}</div>
           </div>
 
-          <h3 className="font-syne font-semibold text-[#0F172A] text-sm mb-0.5 line-clamp-1">{obra.titulo}</h3>
-          {cliente && <p className="text-xs text-[#94A3B8] mb-2 truncate">{cliente.nome}</p>}
-
-          <div className="h-1 bg-[#F1F5F9] rounded-full overflow-hidden mb-2">
-            <div
-              className={`h-1 rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress > 70 ? 'bg-amber-400' : 'bg-[#4F7CFF]'}`}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-[#94A3B8]">
-            {obra.engenheiro_responsavel && (
-              <div className="flex items-center gap-1">
-                <User size={11} />
-                <span className="truncate max-w-[100px]">{obra.engenheiro_responsavel}</span>
-              </div>
+          {/* Tipo de serviço */}
+          <div className="min-w-0 hidden md:block">
+            {obra.tipo_servico && (
+              <span className="block text-xs text-[#4F7CFF] bg-[#EEF2FF] px-1.5 py-0.5 rounded truncate w-fit max-w-full" title={obra.tipo_servico}>
+                {obra.tipo_servico}
+              </span>
             )}
-            <div className="flex items-center gap-1 ml-auto">
-              <span className="font-medium text-[#64748B]">{progress}%</span>
-              {obra.previsao_termino && <><span>·</span><Calendar size={11} /><span>{formatDate(obra.previsao_termino)}</span></>}
+          </div>
+
+          {/* Responsável */}
+          <div className="min-w-0 hidden md:flex items-center gap-1 text-xs text-[#64748B]">
+            {obra.engenheiro_responsavel && (
+              <>
+                <User size={11} className="shrink-0 text-[#94A3B8]" />
+                <span className="truncate">{obra.engenheiro_responsavel}</span>
+              </>
+            )}
+          </div>
+
+          {/* Prazo decorrido + término (no mobile ficam na mesma linha) */}
+          <div className="flex items-center gap-3 mt-2 md:mt-0 md:contents">
+            <div className="flex items-center gap-2 flex-1 md:flex-none">
+              <div className="h-1 flex-1 bg-[#F1F5F9] rounded-full overflow-hidden">
+                <div className={`h-1 rounded-full ${barColor}`} style={{ width: `${progress}%` }} />
+              </div>
+              <span className="text-xs font-medium text-[#64748B] w-9 text-right">{progress}%</span>
+            </div>
+
+            <div className={`flex items-center gap-1 text-xs whitespace-nowrap ${atrasada ? 'text-red-600 font-medium' : 'text-[#64748B]'}`}>
+              {atrasada && <AlertTriangle size={12} />}
+              {formatDate(obra.previsao_termino)}
             </div>
           </div>
+
+          {/* Menu */}
+          <div className="relative hidden md:block">{renderMenuButton(obra)}</div>
         </div>
       </Link>
     )
   }
 
-  const stats = {
-    total: obras.length,
-    orcamento: obras.filter(o => o.status === 'Em Orçamento').length,
-    aprovada: obras.filter(o => o.status === 'Aprovada').length,
-    andamento: obras.filter(o => o.status === 'Em Andamento').length,
-    concluida: obras.filter(o => o.status === 'Concluída').length,
+  function renderMenuButton(obra: Obra) {
+    return (
+      <>
+        <button
+          className="w-7 h-7 flex items-center justify-center rounded md:opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all"
+          onClick={e => { e.preventDefault(); e.stopPropagation(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
+        >
+          <MoreVertical size={14} className="text-[#64748B]" />
+        </button>
+        {menuObraId === obra.id && renderMenu(obra)}
+      </>
+    )
+  }
+
+  function renderMenu(obra: Obra) {
+    return (
+      <div
+        className="absolute right-0 top-8 z-20 bg-white border border-[#E2E8F0] rounded-xl shadow-lg py-1 min-w-[190px]"
+        onClick={e => { e.preventDefault(); e.stopPropagation() }}
+      >
+        <button
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[#374151] hover:bg-[#F8FAFF] transition-colors"
+          onClick={() => { setEditObra(obra); setMenuObraId(null) }}
+        >
+          <Pencil size={13} className="text-[#64748B]" />
+          Editar obra
+        </button>
+        <div className="border-t border-[#F1F5F9] my-1" />
+        <p className="px-3 pt-1 pb-1 text-[11px] font-medium text-[#94A3B8] uppercase tracking-wide">Mover para</p>
+        {GRUPOS.map(g => {
+          const atual = g.status === obra.status
+          return (
+            <button
+              key={g.status}
+              disabled={atual}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-[#374151] hover:bg-[#F8FAFF] transition-colors disabled:text-[#94A3B8] disabled:hover:bg-transparent"
+              onClick={() => mudarStatus(obra, g.status)}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
+              {g.status}
+              {atual ? <Check size={13} className="ml-auto" /> : <ArrowRight size={13} className="ml-auto text-[#CBD5E1]" />}
+            </button>
+          )
+        })}
+      </div>
+    )
   }
 
   return (
@@ -142,84 +239,63 @@ export default function ObrasPage() {
           </button>
         </div>
 
-        {/* Stats — barra compacta */}
-        <div className="flex items-center gap-2 mb-5 flex-wrap">
-          {[
-            { label: 'Total', value: stats.total, icon: <TrendingUp size={13} />, color: 'text-[#0F172A]', bg: 'bg-[#F1F5F9]' },
-            { label: 'Em orçamento', value: stats.orcamento, icon: <Clock size={13} />, color: 'text-slate-600', bg: 'bg-slate-100' },
-            { label: 'Aprovadas', value: stats.aprovada, icon: <CheckCircle2 size={13} />, color: 'text-violet-700', bg: 'bg-violet-50' },
-            { label: 'Em andamento', value: stats.andamento, icon: <Clock size={13} />, color: 'text-blue-700', bg: 'bg-blue-50' },
-            { label: 'Concluídas', value: stats.concluida, icon: <CheckCircle2 size={13} />, color: 'text-emerald-600', bg: 'bg-emerald-50', onClick: () => setConcluidasAbertas(true) },
-          ].map(s => (
-            <div key={s.label} onClick={s.onClick} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${s.bg} ${s.onClick ? 'cursor-pointer hover:brightness-95 transition-all' : ''}`}>
-              <span className={s.color}>{s.icon}</span>
-              <span className={`font-syne font-bold text-base ${s.color}`}>{s.value}</span>
-              <span className="text-xs text-[#64748B]">{s.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Grid */}
         {loading ? (
-          <div className="grid grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="card animate-pulse h-44 bg-[#F1F5F9]" />
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="card animate-pulse h-32 bg-[#F1F5F9]" />
             ))}
           </div>
         ) : (
-          <>
-            {/* Obras ativas */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {ativas.slice(0, ativasVisiveis).map(renderObraCard)}
+          <div className="space-y-3">
+            {GRUPOS.map(g => {
+              const lista = ordenar(filtered.filter(o => o.status === g.status), g.status)
+              if (search && lista.length === 0) return null
+              const recolhido = !search && !!recolhidos[g.status]
+              const atrasadas = lista.filter(isAtrasada).length
 
-              {/* Empty state card */}
-              {ativasVisiveis >= ativas.length && (
-                <button onClick={() => setShowModal(true)} className="card p-3 border-dashed hover:border-[#4F7CFF] hover:bg-[#F8FAFF] transition-all flex flex-col items-center justify-center gap-2 min-h-[100px] group">
-                  <div className="w-8 h-8 rounded-full bg-[#EEF2FF] group-hover:bg-[#4F7CFF] flex items-center justify-center transition-colors">
-                    <Plus size={16} className="text-[#4F7CFF] group-hover:text-white transition-colors" />
-                  </div>
-                  <p className="text-xs font-medium text-[#94A3B8]">Nova Obra</p>
-                </button>
-              )}
-            </div>
-
-            {ativas.length === 0 && (
-              <p className="text-sm text-[#94A3B8] py-6 text-center">Nenhuma obra ativa encontrada.</p>
-            )}
-
-            {ativasVisiveis < ativas.length && (
-              <div className="flex justify-center mt-6">
-                <button onClick={() => setAtivasVisiveis(v => v + PAGE_SIZE)} className="btn-secondary">Ver mais obras ↓</button>
-              </div>
-            )}
-
-            {/* Obras concluídas — seção separada, recolhida por padrão */}
-            {concluidas.length > 0 && (
-              <div className="mt-8 pt-5 border-t border-[#E2E8F0]">
-                <button
-                  onClick={() => setConcluidasAbertas(v => !v)}
-                  className="flex items-center gap-2 text-sm font-semibold text-[#64748B] hover:text-[#0F172A] transition-colors mb-4"
-                >
-                  {concluidasAbertas ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  Obras concluídas
-                  <span className="text-xs font-medium text-[#94A3B8] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{concluidas.length}</span>
-                </button>
-
-                {concluidasAbertas && (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 opacity-90">
-                      {concluidas.slice(0, concluidasVisiveis).map(renderObraCard)}
-                    </div>
-                    {concluidasVisiveis < concluidas.length && (
-                      <div className="flex justify-center mt-6">
-                        <button onClick={() => setConcluidasVisiveis(v => v + PAGE_SIZE)} className="btn-secondary">Ver mais obras concluídas ↓</button>
-                      </div>
+              return (
+                <section key={g.status} className="card p-0 md:p-0 [&>a:last-child>div]:rounded-b-xl">
+                  <button
+                    onClick={() => toggleGrupo(g.status)}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-left"
+                  >
+                    {recolhido ? <ChevronRight size={16} className="text-[#94A3B8]" /> : <ChevronDown size={16} className="text-[#94A3B8]" />}
+                    <span className={`w-2 h-2 rounded-full ${g.dot}`} />
+                    <span className="font-syne font-semibold text-sm text-[#0F172A]">{g.label}</span>
+                    <span className="text-xs font-medium text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{lista.length}</span>
+                    {atrasadas > 0 && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                        <AlertTriangle size={11} />
+                        {atrasadas} {atrasadas === 1 ? 'atrasada' : 'atrasadas'}
+                      </span>
                     )}
-                  </>
-                )}
-              </div>
+                  </button>
+
+                  {!recolhido && (
+                    lista.length === 0 ? (
+                      <p className="px-4 py-4 text-sm text-[#94A3B8] border-t border-[#F1F5F9]">Nenhuma obra {g.label.toLowerCase()}.</p>
+                    ) : (
+                      <>
+                        <div className={`hidden ${ROW_GRID} px-4 pb-2 text-[11px] font-medium text-[#94A3B8] uppercase tracking-wide`}>
+                          <div>Obra / cliente</div>
+                          <div>Tipo de serviço</div>
+                          <div>Responsável</div>
+                          <div>Prazo decorrido</div>
+                          <div>Término</div>
+                          <div />
+                        </div>
+                        {lista.map(renderObraRow)}
+                      </>
+                    )
+                  )}
+                </section>
+              )
+            })}
+
+            {search && filtered.length === 0 && (
+              <p className="text-sm text-[#94A3B8] py-6 text-center">Nenhuma obra encontrada.</p>
             )}
-          </>
+          </div>
         )}
       </div>
 
