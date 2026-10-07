@@ -160,6 +160,19 @@ type ResultadoSincronizacao = { importados: number; atualizados: number; ignorad
 async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: string, obraId: string | null, orcamento: number): Promise<ResultadoSincronizacao> {
   const supabase = createServiceClient()
   const relatorios = await listarRelatorios(diarioObraId)
+
+  // RDOs que o backup completo importou antes da obra ser vinculada aqui
+  // ficam com obra_id vazio (ou apontando pra um vínculo antigo) e não
+  // aparecem na tela da obra. Vincula todos à obra atual antes de comparar.
+  if (obraId) {
+    const { error: vincErr } = await supabase
+      .from('diario_obra_relatorios')
+      .update({ obra_id: obraId })
+      .eq('diario_obra_id_externo', diarioObraId)
+      .or(`obra_id.is.null,obra_id.neq.${obraId}`)
+    if (vincErr) throw new Error(`Erro ao vincular RDOs à obra: ${vincErr.message}`)
+  }
+
   const { data: jaImportados } = await supabase
     .from('diario_obra_relatorios')
     .select('diario_relatorio_id, numero, status_descricao, atualizado_em, drive_file_id')
