@@ -641,7 +641,7 @@ export default function ObraDetailPage() {
               {t === 'visao-geral' ? 'Visão Geral'
                 : t === 'documentos' ? 'Documentos'
                 : t === 'cronograma' ? 'Cronograma'
-                : t === 'relatorios' ? `Relatórios (${rdos.length})`
+                : t === 'relatorios' ? `Relatórios (${rdos.length + diarioRelatorios.length})`
                 : t === 'equipe' ? 'Equipe'
                 : `Materiais (${materiais.length})`}
             </button>
@@ -1058,170 +1058,174 @@ export default function ObraDetailPage() {
         {/* ===== RELATÓRIOS ===== */}
         {tab === 'relatorios' && (
           <div>
-            <div className="flex items-center justify-between mb-5">
+            {/* ===== RDOs do Diário de Obra (principal) ===== */}
+            <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
               <div>
-                <h2 className="font-syne font-semibold text-[#0F172A]">Relatórios Diários de Obra</h2>
-                <p className="text-xs text-[#64748B] mt-0.5">RDO — registre o que aconteceu em cada dia de obra</p>
+                <h2 className="font-syne font-semibold text-[#0F172A] flex items-center gap-2">
+                  <Cloud size={16} className="text-[#4F7CFF]" /> Relatórios Diários de Obra
+                </h2>
+                <p className="text-xs text-[#64748B] mt-0.5">Importados do app Diário de Obra — PDFs salvos no Google Drive</p>
               </div>
-              <div className="flex items-center gap-2">
-                {selecionadosRdo.size > 0 && (
-                  <button onClick={() => setShowEnviarRdo(true)}
-                    className="flex items-center gap-1.5 text-sm px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white rounded-lg transition-colors">
-                    <Mail size={14} /> Enviar por E-mail ({selecionadosRdo.size})
+              {obra?.diario_obra_id && (
+                <div className="flex items-center gap-2">
+                  {selecionadosDiario.size > 0 && (
+                    <button onClick={() => setShowEnviarDiario(true)}
+                      className="flex items-center gap-1.5 text-sm px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white rounded-lg transition-colors">
+                      <Mail size={14} /> Enviar por E-mail ({selecionadosDiario.size})
+                    </button>
+                  )}
+                  <button onClick={limparDuplicados} disabled={limpandoDuplicados || sincronizandoDiario}
+                    className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
+                    {limpandoDuplicados ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                    <span className="hidden sm:inline">Limpar duplicados</span>
                   </button>
-                )}
-                <Link href={`/obras/${id}/modelos`}
-                  className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors">
-                  <Settings size={14} /> <span className="hidden sm:inline">Personalizar</span>
-                </Link>
-                <button onClick={criarNovoRdo} disabled={criandoRdo}
-                  className="btn-primary text-sm flex items-center gap-2">
-                  {criandoRdo ? <Loader2 size={15} className="animate-spin" /> : <PlusCircle size={15} />}
-                  Novo RDO
-                </button>
-              </div>
+                  <button onClick={sincronizarDiario} disabled={sincronizandoDiario || limpandoDuplicados}
+                    className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
+                    {sincronizandoDiario ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                    Sincronizar agora
+                  </button>
+                </div>
+              )}
             </div>
 
-            {rdos.length === 0 ? (
-              <div className="card text-center py-16">
+            {msgSincronizacao && <p className="text-xs text-[#64748B] mb-3">{msgSincronizacao}</p>}
+
+            {!obra?.diario_obra_id ? (
+              <div className="card text-center py-12">
+                <Cloud size={36} className="text-[#CBD5E1] mx-auto mb-3" />
+                <p className="font-medium text-[#374151]">Obra não vinculada ao Diário de Obra</p>
+                <p className="text-sm text-[#94A3B8] mt-1">Edite a obra e escolha a obra correspondente no Diário de Obra para importar os relatórios.</p>
+              </div>
+            ) : diarioRelatorios.length === 0 ? (
+              <div className="card text-center py-12">
                 <FileText size={36} className="text-[#CBD5E1] mx-auto mb-3" />
-                <p className="font-medium text-[#374151]">Nenhum relatório ainda</p>
-                <p className="text-sm text-[#94A3B8] mt-1 mb-4">Crie o primeiro RDO para registrar as atividades do dia</p>
-                <button onClick={criarNovoRdo} disabled={criandoRdo} className="btn-primary mx-auto text-sm">
-                  <PlusCircle size={14} /> Criar primeiro RDO
-                </button>
+                <p className="font-medium text-[#374151]">Nenhum RDO importado ainda</p>
+                <p className="text-sm text-[#94A3B8] mt-1">Clique em Sincronizar agora para trazer os relatórios do Diário de Obra</p>
               </div>
             ) : (
               <div className="card p-0 overflow-x-auto">
-                <table className="w-full min-w-[680px]">
+                <table className="w-full min-w-[520px]">
                   <thead>
                     <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
                       <th className="px-4 py-3 w-8" />
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
-                      <th className="px-4 py-3 w-24" />
+                      <th className="px-4 py-3 w-36" />
                     </tr>
                   </thead>
                   <tbody>
-                    {rdos.map(rdo => {
-                      const statusCor = rdo.status === 'aprovado' ? 'bg-emerald-50 text-emerald-700' : rdo.status === 'revisando' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
-                      const statusLabel = rdo.status === 'aprovado' ? 'Aprovado' : rdo.status === 'revisando' ? 'Revisando' : 'Preenchendo'
-                      return (
-                        <tr key={rdo.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
-                          <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                            <input type="checkbox" checked={selecionadosRdo.has(rdo.id)}
-                              onChange={() => setSelecionadosRdo(s => { const n = new Set(s); n.has(rdo.id) ? n.delete(rdo.id) : n.add(rdo.id); return n })}
+                    {diarioRelatorios.map(r => (
+                      <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
+                        <td className="px-4 py-3">
+                          {r.drive_file_id && (
+                            <input type="checkbox" checked={selecionadosDiario.has(r.id)}
+                              onChange={() => setSelecionadosDiario(s => { const n = new Set(s); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n })}
                               className="rounded" />
-                          </td>
-                          <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{rdo.numero}</td>
-                          <td className="px-4 py-3 text-sm text-[#374151]">
-                            {new Date(rdo.data + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusCor}`}>{statusLabel}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2 justify-end">
-                              <Link href={`/print/rdo/${rdo.id}`} target="_blank"
-                                className="text-xs text-[#64748B] hover:text-[#4F7CFF] px-2 py-1 rounded border border-[#E2E8F0] hover:border-[#4F7CFF] transition-colors">
-                                PDF
-                              </Link>
-                              <Link href={`/obras/${id}/rdo/${rdo.id}`}
-                                className="text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1 rounded transition-colors">
-                                Abrir
-                              </Link>
-                              <button onClick={() => excluirRdo(rdo.id)}
-                                className="text-[#94A3B8] hover:text-red-500 p-1 rounded transition-colors" title="Excluir RDO">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{r.numero ?? '—'}</td>
+                        <td className="px-4 py-3 text-sm text-[#374151]">
+                          {r.data ? new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-[#64748B]">{r.status_descricao ?? '—'}</td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {r.drive_file_url && (
+                            <a href={r.drive_file_url} target="_blank" rel="noopener noreferrer"
+                              className="inline-block text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1.5 rounded transition-colors whitespace-nowrap">
+                              Abrir no Drive
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             )}
 
-            {/* ===== RDOs importados do Diário de Obra ===== */}
-            {obra?.diario_obra_id && (
-              <div className="mt-8">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="font-syne font-semibold text-[#0F172A] text-sm flex items-center gap-2">
-                      <Cloud size={15} className="text-[#4F7CFF]" /> RDOs importados do Diário de Obra
-                    </h3>
-                    <p className="text-xs text-[#94A3B8] mt-0.5">PDFs salvos no Google Drive, um índice fica listado aqui.</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {selecionadosDiario.size > 0 && (
-                      <button onClick={() => setShowEnviarDiario(true)}
-                        className="flex items-center gap-1.5 text-sm px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white rounded-lg transition-colors">
-                        <Mail size={14} /> Enviar por E-mail ({selecionadosDiario.size})
-                      </button>
-                    )}
-                    <button onClick={limparDuplicados} disabled={limpandoDuplicados || sincronizandoDiario}
-                      className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
-                      {limpandoDuplicados ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                      Limpar duplicados
-                    </button>
-                    <button onClick={sincronizarDiario} disabled={sincronizandoDiario || limpandoDuplicados}
-                      className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
-                      {sincronizandoDiario ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      Sincronizar agora
-                    </button>
-                  </div>
+            {/* ===== RDOs criados no app (secundário) ===== */}
+            <div className="mt-10">
+              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                <div>
+                  <h3 className="font-syne font-semibold text-[#0F172A] text-sm">RDOs criados no app ({rdos.length})</h3>
+                  <p className="text-xs text-[#94A3B8] mt-0.5">Relatórios preenchidos diretamente no MARV Gestão</p>
                 </div>
+                <div className="flex items-center gap-2">
+                  {selecionadosRdo.size > 0 && (
+                    <button onClick={() => setShowEnviarRdo(true)}
+                      className="flex items-center gap-1.5 text-sm px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white rounded-lg transition-colors">
+                      <Mail size={14} /> Enviar por E-mail ({selecionadosRdo.size})
+                    </button>
+                  )}
+                  <Link href={`/obras/${id}/modelos`}
+                    className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors">
+                    <Settings size={14} /> <span className="hidden sm:inline">Personalizar</span>
+                  </Link>
+                  <button onClick={criarNovoRdo} disabled={criandoRdo}
+                    className="flex items-center gap-1.5 text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#64748B] transition-colors disabled:opacity-50">
+                    {criandoRdo ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
+                    Novo RDO
+                  </button>
+                </div>
+              </div>
 
-                {msgSincronizacao && <p className="text-xs text-[#64748B] mb-3">{msgSincronizacao}</p>}
-
-                {diarioRelatorios.length === 0 ? (
-                  <p className="text-sm text-[#94A3B8]">Nenhum RDO importado ainda.</p>
-                ) : (
-                  <div className="card p-0 overflow-x-auto">
-                    <table className="w-full min-w-[520px]">
-                      <thead>
-                        <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
-                          <th className="px-4 py-3 w-8" />
-                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
-                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
-                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
-                          <th className="px-4 py-3 w-36" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {diarioRelatorios.map(r => (
-                          <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
-                            <td className="px-4 py-3">
-                              {r.drive_file_id && (
-                                <input type="checkbox" checked={selecionadosDiario.has(r.id)}
-                                  onChange={() => setSelecionadosDiario(s => { const n = new Set(s); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n })}
-                                  className="rounded" />
-                              )}
+              {rdos.length === 0 ? (
+                <p className="text-sm text-[#94A3B8]">Nenhum RDO criado no app.</p>
+              ) : (
+                <div className="card p-0 overflow-x-auto">
+                  <table className="w-full min-w-[680px]">
+                    <thead>
+                      <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                        <th className="px-4 py-3 w-8" />
+                        <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
+                        <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
+                        <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
+                        <th className="px-4 py-3 w-24" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rdos.map(rdo => {
+                        const statusCor = rdo.status === 'aprovado' ? 'bg-emerald-50 text-emerald-700' : rdo.status === 'revisando' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+                        const statusLabel = rdo.status === 'aprovado' ? 'Aprovado' : rdo.status === 'revisando' ? 'Revisando' : 'Preenchendo'
+                        return (
+                          <tr key={rdo.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <input type="checkbox" checked={selecionadosRdo.has(rdo.id)}
+                                onChange={() => setSelecionadosRdo(s => { const n = new Set(s); n.has(rdo.id) ? n.delete(rdo.id) : n.add(rdo.id); return n })}
+                                className="rounded" />
                             </td>
-                            <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{r.numero ?? '—'}</td>
+                            <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{rdo.numero}</td>
                             <td className="px-4 py-3 text-sm text-[#374151]">
-                              {r.data ? new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}
+                              {new Date(rdo.data + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
                             </td>
-                            <td className="px-4 py-3 text-sm text-[#64748B]">{r.status_descricao ?? '—'}</td>
-                            <td className="px-4 py-3 text-right whitespace-nowrap">
-                              {r.drive_file_url && (
-                                <a href={r.drive_file_url} target="_blank" rel="noopener noreferrer"
-                                  className="inline-block text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1.5 rounded transition-colors whitespace-nowrap">
-                                  Abrir no Drive
-                                </a>
-                              )}
+                            <td className="px-4 py-3">
+                              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusCor}`}>{statusLabel}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2 justify-end">
+                                <Link href={`/print/rdo/${rdo.id}`} target="_blank"
+                                  className="text-xs text-[#64748B] hover:text-[#4F7CFF] px-2 py-1 rounded border border-[#E2E8F0] hover:border-[#4F7CFF] transition-colors">
+                                  PDF
+                                </Link>
+                                <Link href={`/obras/${id}/rdo/${rdo.id}`}
+                                  className="text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1 rounded transition-colors">
+                                  Abrir
+                                </Link>
+                                <button onClick={() => excluirRdo(rdo.id)}
+                                  className="text-[#94A3B8] hover:text-red-500 p-1 rounded transition-colors" title="Excluir RDO">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
