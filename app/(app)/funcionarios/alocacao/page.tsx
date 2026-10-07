@@ -173,6 +173,7 @@ export default function AlocacaoPage() {
   const [modalOrdem, setModalOrdem] = useState(false)
   const [selectedFids, setSelectedFids] = useState<Set<string>>(new Set())
   const [modalBulk, setModalBulk] = useState<number | null>(null)
+  const [modalFerias, setModalFerias] = useState<{ fid: string; inicio: string } | null>(null)
 
   function toggleSelect(fid: string) {
     setSelectedFids(prev => {
@@ -275,6 +276,10 @@ export default function AlocacaoPage() {
         <h1 className="font-syne font-bold text-lg text-[#0F172A] flex-1">Quadro de Alocação</h1>
         {!loading && funcionarios.length > 0 && (
           <>
+            <button onClick={() => setModalFerias({ fid: selectedFids.size === 1 ? Array.from(selectedFids)[0] : '', inicio: '' })}
+              className="h-8 px-2.5 rounded-lg border border-[#E2E8F0] flex items-center gap-1.5 hover:bg-[#F1F5F9] transition-colors text-xs font-semibold text-[#14B8A6]" title="Lançar período de férias">
+              <Palmtree size={14} /> <span className="hidden sm:inline">Férias</span>
+            </button>
             <button onClick={() => setModalOrdem(true)}
               className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Reordenar funcionários">
               <ListOrdered size={15} className="text-[#64748B]" />
@@ -493,6 +498,18 @@ export default function AlocacaoPage() {
           alocacoes={alocMap.get(`${modalCell.fid}_${toDate(ano, mes, modalCell.dia)}`) ?? []}
           onClose={() => setModalCell(null)}
           onSaved={() => { setModalCell(null); load() }}
+          onPeriodoFerias={() => { setModalFerias({ fid: modalCell.fid, inicio: toDate(ano, mes, modalCell.dia) }); setModalCell(null) }}
+        />
+      )}
+
+      {/* Modal período de férias */}
+      {modalFerias !== null && (
+        <ModalFerias
+          funcionarios={funcionarios}
+          fidInicial={modalFerias.fid}
+          inicioInicial={modalFerias.inicio}
+          onClose={() => setModalFerias(null)}
+          onSaved={() => { setModalFerias(null); setSelectedFids(new Set()); load() }}
         />
       )}
 
@@ -817,10 +834,10 @@ function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', 
   return { _key: ++_rowKey, tipo, obra_id, manutencao_id, percentual, noturno }
 }
 
-function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, alocacoes, onClose, onSaved }: {
+function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, alocacoes, onClose, onSaved, onPeriodoFerias }: {
   fid: string; fNome: string; dia: number; mes: number; ano: number
   obras: Obra[]; manutencoes: Manutencao[]; veiculos: Veiculo[]; alocacoes: Alocacao[]
-  onClose: () => void; onSaved: () => void
+  onClose: () => void; onSaved: () => void; onPeriodoFerias: () => void
 }) {
   const data = toDate(ano, mes, dia)
 
@@ -884,7 +901,13 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
             <h2 className="font-syne font-semibold text-[#0F172A] text-sm">{fNome}</h2>
             <p className="text-xs text-[#94A3B8] capitalize">{labelData(ano, mes, dia)}</p>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <div className="flex items-center gap-3">
+            <button onClick={onPeriodoFerias}
+              className="flex items-center gap-1 text-[11px] font-semibold text-[#14B8A6] hover:text-[#0D9488] transition-colors">
+              <Palmtree size={12} /> Férias por período
+            </button>
+            <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
@@ -1314,6 +1337,162 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
             {saving ? 'Salvando...' : `Alocar ${funcionarios.length}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal período de férias ────────────────────────────────────────────────────
+
+function parseISO(s: string) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d) }
+function isoOf(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` }
+function diasEntre(inicio: string, fim: string) {
+  const out: string[] = []
+  const d = parseISO(inicio), end = parseISO(fim)
+  while (d <= end) { out.push(isoOf(d)); d.setDate(d.getDate() + 1) }
+  return out
+}
+function fmtBR(s: string) { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
+
+function ModalFerias({ funcionarios, fidInicial, inicioInicial, onClose, onSaved }: {
+  funcionarios: Funcionario[]
+  fidInicial: string
+  inicioInicial: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [fid, setFid] = useState(fidInicial)
+  const [inicio, setInicio] = useState(inicioInicial)
+  const [fim, setFim] = useState('')
+  const [observacao, setObservacao] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [existentes, setExistentes] = useState<{ data: string; tipo: TipoAlocacao }[] | null>(null)
+
+  const periodoOk = !!inicio && !!fim && fim >= inicio
+  const dias = periodoOk ? diasEntre(inicio, fim) : []
+
+  // Alocações já lançadas no período (para avisar o que será substituído)
+  useEffect(() => {
+    setExistentes(null)
+    if (!fid || !periodoOk) return
+    let cancel = false
+    createClient().from('funcionario_alocacoes').select('data, tipo')
+      .eq('funcionario_id', fid).gte('data', inicio).lte('data', fim)
+      .then(({ data }) => { if (!cancel) setExistentes((data ?? []) as any) })
+    return () => { cancel = true }
+  }, [fid, inicio, fim, periodoOk])
+
+  const diasComOutras = new Set((existentes ?? []).filter(e => e.tipo !== 'ferias').map(e => e.data)).size
+  const diasComFerias = new Set((existentes ?? []).filter(e => e.tipo === 'ferias').map(e => e.data)).size
+
+  async function salvar() {
+    if (!fid || !periodoOk) return
+    setSaving(true)
+    const sb = createClient()
+    const { error: delErr } = await sb.from('funcionario_alocacoes').delete()
+      .eq('funcionario_id', fid).gte('data', inicio).lte('data', fim)
+    if (delErr) { alert('Erro ao salvar: ' + delErr.message); setSaving(false); return }
+    const { error } = await sb.from('funcionario_alocacoes').insert(dias.map(data => ({
+      funcionario_id: fid, data, tipo: 'ferias' as TipoAlocacao,
+      obra_id: null, manutencao_id: null, percentual: 100, noturno: false,
+      transporte_tipo: null, veiculo_id: null, observacao: observacao || null,
+    })))
+    setSaving(false)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    onSaved()
+  }
+
+  async function removerFerias() {
+    if (!fid || !periodoOk) return
+    if (!confirm(`Remover os ${diasComFerias} dia(s) de férias lançados entre ${fmtBR(inicio)} e ${fmtBR(fim)}?`)) return
+    setSaving(true)
+    const { error } = await createClient().from('funcionario_alocacoes').delete()
+      .eq('funcionario_id', fid).eq('tipo', 'ferias').gte('data', inicio).lte('data', fim)
+    setSaving(false)
+    if (error) { alert('Erro ao remover: ' + error.message); return }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#F0FDFA' }}>
+              <Palmtree size={16} className="text-[#14B8A6]" />
+            </div>
+            <div>
+              <h2 className="font-syne font-semibold text-[#0F172A]">Período de férias</h2>
+              <p className="text-xs text-[#94A3B8] mt-0.5">Preenche todos os dias do período como Férias</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div>
+            <p className="text-xs font-medium text-[#374151] mb-1.5">Funcionário</p>
+            <select className="field text-sm w-full" value={fid} onChange={e => setFid(e.target.value)}>
+              <option value="">Selecione...</option>
+              {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs font-medium text-[#374151] mb-1.5">De</p>
+              <input type="date" className="field text-sm w-full" value={inicio}
+                onChange={e => { setInicio(e.target.value); if (fim && e.target.value > fim) setFim('') }} />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-[#374151] mb-1.5">Até</p>
+              <input type="date" className="field text-sm w-full" value={fim} min={inicio || undefined}
+                onChange={e => setFim(e.target.value)} />
+            </div>
+          </div>
+
+          {inicio && fim && fim < inicio && (
+            <p className="text-xs text-[#EF4444]">A data final deve ser igual ou posterior à inicial.</p>
+          )}
+
+          {periodoOk && (
+            <div className="rounded-xl bg-[#F0FDFA] border border-[#CCFBF1] px-3 py-2.5 text-xs text-[#0F766E]">
+              <strong>{dias.length} dia{dias.length > 1 ? 's' : ''}</strong> de férias ({fmtBR(inicio)} a {fmtBR(fim)}), incluindo fins de semana.
+            </div>
+          )}
+
+          {fid && periodoOk && diasComOutras > 0 && (
+            <div className="rounded-xl bg-[#FFFBEB] border border-[#FDE68A] px-3 py-2.5 text-xs text-[#92400E]">
+              {diasComOutras} dia{diasComOutras > 1 ? 's' : ''} do período já {diasComOutras > 1 ? 'têm' : 'tem'} outra alocação lançada — {diasComOutras > 1 ? 'serão substituídos' : 'será substituído'} por Férias.
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs font-medium text-[#374151] mb-1.5">Observação</p>
+            <textarea rows={2} placeholder="Opcional (ex: férias referentes a 2025/2026)"
+              value={observacao} onChange={e => setObservacao(e.target.value)}
+              className="field text-sm w-full resize-none" />
+          </div>
+
+          {fid && periodoOk && diasComFerias > 0 && (
+            <button onClick={removerFerias} disabled={saving}
+              className="flex items-center gap-1.5 text-xs font-medium text-[#EF4444] hover:text-[#DC2626] transition-colors disabled:opacity-50">
+              <Trash2 size={13} /> Remover férias já lançadas neste período ({diasComFerias} dia{diasComFerias > 1 ? 's' : ''})
+            </button>
+          )}
+        </div>
+
+        <div className="px-5 pb-5 pt-3 border-t border-[#E2E8F0] flex gap-3 shrink-0">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            Cancelar
+          </button>
+          <button onClick={salvar} disabled={saving || !fid || !periodoOk}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {saving ? 'Salvando...' : 'Lançar férias'}
           </button>
         </div>
       </div>
