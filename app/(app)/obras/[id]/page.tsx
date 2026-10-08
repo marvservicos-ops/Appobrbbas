@@ -229,6 +229,7 @@ export default function ObraDetailPage() {
   const [editandoMaterial, setEditandoMaterial] = useState<ObraMaterial | null>(null)
   const [importandoNF, setImportandoNF] = useState(false)
   const [showImportNF, setShowImportNF] = useState(false)
+  const [importNFFile, setImportNFFile] = useState<File | null>(null)
   const [showNFManual, setShowNFManual] = useState(false)
   const [editandoOrcamento, setEditandoOrcamento] = useState<ObraMaterial[] | null>(null)
   const [pastaAtiva, setPastaAtiva] = useState<string>('__todas__')
@@ -1255,6 +1256,7 @@ export default function ObraDetailPage() {
                         const parsed = await res.json()
                         if (res.ok && parsed && (parsed.emitente || parsed.valorTotal)) {
                           sessionStorage.setItem('nf_import', JSON.stringify({ ...parsed, fileName: f.name }))
+                          setImportNFFile(f)
                           setShowImportNF(true)
                         } else {
                           alert(parsed?.error ?? 'Não foi possível extrair dados desta NF.')
@@ -1438,8 +1440,9 @@ export default function ObraDetailPage() {
       {showImportNF && (
         <ModalImportNF
           obraId={id}
-          onClose={() => setShowImportNF(false)}
-          onSaved={() => { setShowImportNF(false); load() }}
+          arquivo={importNFFile}
+          onClose={() => { setShowImportNF(false); setImportNFFile(null) }}
+          onSaved={() => { setShowImportNF(false); setImportNFFile(null); load() }}
         />
       )}
 
@@ -2190,22 +2193,29 @@ function MateriaisLista({ materiais, onEdit, onDelete, onEditGrupo }: {
   onDelete: (m: ObraMaterial) => void
   onEditGrupo: (itens: ObraMaterial[]) => void
 }) {
-  // Separar materiais com orçamento (agrupados) dos avulsos
-  const comOrc = materiais.filter(m => m.nota_fiscal_url)
-  const semOrc = materiais.filter(m => !m.nota_fiscal_url)
-
-  // Agrupar por nota_fiscal_url (url do orçamento)
-  const grupos = new Map<string, ObraMaterial[]>()
-  for (const m of comOrc) {
-    const key = m.nota_fiscal_url!
-    if (!grupos.has(key)) grupos.set(key, [])
-    grupos.get(key)!.push(m)
+  // Agrupar itens do mesmo orçamento: pela url do arquivo; sem arquivo, pelo nº da NF
+  // + fornecedor; sem nenhum dos dois, pelo lote de inserção (mesmo created_at).
+  const chaveGrupo = (m: ObraMaterial) => {
+    if (m.nota_fiscal_url) return `url|${m.nota_fiscal_url}`
+    const nfNumero = m.observacoes?.match(/NF:\s*([^\s|]+)/)?.[1]
+    if (nfNumero) return `nf|${m.fornecedor ?? ''}|${nfNumero}`
+    return `lote|${m.created_at}|${m.fornecedor ?? ''}`
   }
+  const porChave = new Map<string, ObraMaterial[]>()
+  for (const m of materiais) {
+    const key = chaveGrupo(m)
+    if (!porChave.has(key)) porChave.set(key, [])
+    porChave.get(key)!.push(m)
+  }
+  // Com arquivo ou nº de NF vira orçamento mesmo com 1 item; lote só se tiver 2+ itens
+  const grupos = Array.from(porChave.entries()).filter(([k, itens]) => !k.startsWith('lote|') || itens.length > 1)
+  const agrupados = new Set(grupos.flatMap(([, itens]) => itens.map(m => m.id)))
+  const semOrc = materiais.filter(m => !agrupados.has(m.id))
 
   return (
     <div className="space-y-3">
-      {Array.from(grupos.entries()).map(([url, itens]) => (
-        <OrcamentoCard key={url} itens={itens} orcamentoUrl={url} onEdit={onEdit} onDelete={onDelete} onEditGrupo={onEditGrupo} />
+      {grupos.map(([key, itens]) => (
+        <OrcamentoCard key={key} itens={itens} orcamentoUrl={itens.find(m => m.nota_fiscal_url)?.nota_fiscal_url} onEdit={onEdit} onDelete={onDelete} onEditGrupo={onEditGrupo} />
       ))}
       {semOrc.map(m => (
         <MaterialCard key={m.id} material={m} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)} />
@@ -2217,7 +2227,7 @@ function MateriaisLista({ materiais, onEdit, onDelete, onEditGrupo }: {
 // ── OrcamentoCard ─────────────────────────────────────
 function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
   itens: ObraMaterial[]
-  orcamentoUrl: string
+  orcamentoUrl?: string
   onEdit: (m: ObraMaterial) => void
   onDelete: (m: ObraMaterial) => void
   onEditGrupo: (itens: ObraMaterial[]) => void
@@ -2262,10 +2272,12 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
         </div>
         <div className="flex items-center gap-2 shrink-0 sm:ml-3 pl-11 sm:pl-0">
           <span className="font-syne font-bold text-sm text-[#0F172A] mr-auto sm:mr-1">{fmtMoeda(totalOrc)}</span>
-          <a href={orcamentoUrl} target="_blank" rel="noopener noreferrer"
-            className="min-h-9 flex items-center gap-1 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-1 rounded-lg hover:bg-[#dce8ff] transition-colors">
-            <ExternalLink size={11} /> Ver Orçamento
-          </a>
+          {orcamentoUrl && (
+            <a href={orcamentoUrl} target="_blank" rel="noopener noreferrer"
+              className="min-h-9 flex items-center gap-1 text-xs font-medium text-[#4F7CFF] bg-[#EEF2FF] px-3 py-1 rounded-lg hover:bg-[#dce8ff] transition-colors">
+              <ExternalLink size={11} /> Ver Orçamento
+            </a>
+          )}
           {nfPagamentoUrl && (
             <a href={nfPagamentoUrl} target="_blank" rel="noopener noreferrer"
               className="min-h-9 flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg hover:bg-emerald-100 transition-colors">
@@ -3116,8 +3128,8 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
 }
 
 // ── ModalImportNF ─────────────────────────────────────
-function ModalImportNF({ obraId, onClose, onSaved }: {
-  obraId: string; onClose: () => void; onSaved: () => void
+function ModalImportNF({ obraId, arquivo, onClose, onSaved }: {
+  obraId: string; arquivo: File | null; onClose: () => void; onSaved: () => void
 }) {
   type NfItem = { codigo: string; descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }
   type NfData = { emitente?: string; nfNumero?: string; dataEmissao?: string; valorTotal?: number; produtos?: NfItem[]; descricao?: string }
@@ -3138,6 +3150,17 @@ function ModalImportNF({ obraId, onClose, onSaved }: {
   async function importar() {
     const supabase = createClient()
     setSaving(true)
+    // Guarda o PDF importado: a URL dele é o que agrupa os itens no mesmo card de orçamento
+    let nfUrl: string | null = null
+    let nfPath: string | null = null
+    if (arquivo) {
+      const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(arquivo.name)}`
+      const { error } = await supabase.storage.from('documentos').upload(path, arquivo, { upsert: true })
+      if (!error) {
+        nfUrl = supabase.storage.from('documentos').getPublicUrl(path).data.publicUrl
+        nfPath = path
+      }
+    }
     const payload = itens
       .filter((_, i) => selecionados[i])
       .map(p => ({
@@ -3152,6 +3175,8 @@ function ModalImportNF({ obraId, onClose, onSaved }: {
         valor_unitario: p.valorUnitario,
         valor_total: p.valorTotal,
         status: 'pendente' as const,
+        nota_fiscal_url: nfUrl,
+        nota_fiscal_path: nfPath,
         observacoes: nf.nfNumero ? `NF: ${nf.nfNumero}` : null,
       }))
     if (payload.length > 0) await supabase.from('obra_materiais').insert(payload)
