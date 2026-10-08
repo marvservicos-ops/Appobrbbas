@@ -201,6 +201,37 @@ const categoriaConfig: Record<CategoriaDoc, { bg: string; text: string }> = {
   Outros: { bg: 'bg-gray-100', text: 'text-gray-600' },
 }
 
+interface EmailEnviado {
+  id: string
+  template_id: string | null
+  template_nome: string | null
+  destinatario: string
+  assunto: string
+  status: string
+  enviado_por_nome: string | null
+  created_at: string
+}
+
+const STATUS_EMAIL: Record<string, { label: string; cls: string }> = {
+  queued: { label: 'Na fila', cls: 'bg-gray-100 text-gray-600' },
+  scheduled: { label: 'Agendado', cls: 'bg-gray-100 text-gray-600' },
+  sent: { label: 'Enviado', cls: 'bg-blue-50 text-blue-700' },
+  delivery_delayed: { label: 'Atrasado', cls: 'bg-amber-50 text-amber-700' },
+  delivered: { label: 'Entregue', cls: 'bg-emerald-50 text-emerald-700' },
+  opened: { label: 'Aberto', cls: 'bg-emerald-50 text-emerald-700' },
+  clicked: { label: 'Clicado', cls: 'bg-emerald-50 text-emerald-700' },
+  bounced: { label: 'Devolvido', cls: 'bg-red-50 text-red-700' },
+  complained: { label: 'Marcado como spam', cls: 'bg-red-50 text-red-700' },
+  failed: { label: 'Falhou', cls: 'bg-red-50 text-red-700' },
+  suppressed: { label: 'Bloqueado', cls: 'bg-red-50 text-red-700' },
+  canceled: { label: 'Cancelado', cls: 'bg-gray-100 text-gray-600' },
+}
+const STATUS_EMAIL_FINAIS = new Set(['delivered', 'opened', 'clicked', 'bounced', 'complained', 'failed', 'canceled', 'suppressed'])
+
+function formatarDataHoraEmail(iso: string) {
+  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
 export default function ObraDetailPage() {
   const params = useParams()
   const id = params.id as string
@@ -236,7 +267,8 @@ export default function ObraDetailPage() {
   const [emailTemplates, setEmailTemplates] = useState<{ id: string; nome: string; assunto: string; corpo: string; destinatario_tipo: string }[]>([])
   const [showEmailMenu, setShowEmailMenu] = useState(false)
   const [enviandoEmail, setEnviandoEmail] = useState(false)
-  const [emailModal, setEmailModal] = useState<{ to: string; assunto: string; corpo: string } | null>(null)
+  const [emailModal, setEmailModal] = useState<{ to: string; assunto: string; corpo: string; templateId: string; templateNome: string } | null>(null)
+  const [emailsEnviados, setEmailsEnviados] = useState<EmailEnviado[]>([])
   const [pastasAbertas, setPastasAbertas] = useState<Record<string, boolean>>({})
 
   // Modals
@@ -341,6 +373,21 @@ export default function ObraDetailPage() {
     if (materiaisRes.data) setMateriais(materiaisRes.data as ObraMaterial[])
     if (templatesRes.data) setEmailTemplates(templatesRes.data as typeof emailTemplates)
     setLoading(false)
+    loadEmailsEnviados(true)
+  }
+
+  async function loadEmailsEnviados(atualizarStatus = false) {
+    const supabase = createClient()
+    const { data } = await supabase.from('obra_emails_enviados')
+      .select('id, template_id, template_nome, destinatario, assunto, status, enviado_por_nome, created_at')
+      .eq('obra_id', id).order('created_at', { ascending: false }).limit(30)
+    if (data) setEmailsEnviados(data as EmailEnviado[])
+    if (atualizarStatus && data?.some(e => !STATUS_EMAIL_FINAIS.has(e.status))) {
+      const res = await fetch('/api/send-email/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ obraId: id }),
+      }).catch(() => null)
+      if (res?.ok) loadEmailsEnviados(false)
+    }
   }
 
   async function alterarStatusObra(novoStatus: string) {
@@ -551,7 +598,7 @@ export default function ObraDetailPage() {
     const assunto = resolver(template.assunto)
     const corpo = resolver(template.corpo)
 
-    setEmailModal({ to: emailDestinatario, assunto, corpo })
+    setEmailModal({ to: emailDestinatario, assunto, corpo, templateId: template.id, templateNome: template.nome })
     setEnviandoEmail(false)
   }
 
@@ -561,12 +608,19 @@ export default function ObraDetailPage() {
     const res = await fetch('/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: emailModal.to, subject: emailModal.assunto, body: emailModal.corpo }),
+      body: JSON.stringify({
+        to: emailModal.to, subject: emailModal.assunto, body: emailModal.corpo,
+        obraId: id, templateId: emailModal.templateId, templateNome: emailModal.templateNome,
+      }),
     })
     setEnviandoEmail(false)
     if (res.ok) {
+      const { copiaPara } = await res.json()
       setEmailModal(null)
-      alert('Email enviado com sucesso!')
+      loadEmailsEnviados()
+      // Polling curto: o Resend costuma confirmar a entrega em poucos segundos.
+      setTimeout(() => loadEmailsEnviados(true), 8000)
+      alert(`Email enviado para ${emailModal.to}.\n\nO envio sai pelo sistema da MARV (não pelo Gmail), por isso não aparece em "Enviados". ${copiaPara ? `Uma cópia oculta foi enviada para ${copiaPara} e o envio` : 'O envio'} fica registrado no histórico da obra (botão Enviar Email).`)
     } else {
       const { error } = await res.json()
       alert(`Erro ao enviar: ${error}`)
@@ -597,22 +651,55 @@ export default function ObraDetailPage() {
             {showEmailMenu && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setShowEmailMenu(false)} />
-                <div className="absolute right-0 top-full mt-2 bg-white border border-[#E2E8F0] rounded-xl shadow-lg z-40 min-w-[220px] overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 bg-white border border-[#E2E8F0] rounded-xl shadow-lg z-40 w-[min(20rem,calc(100vw-2rem))] overflow-hidden">
                   <div className="px-3 py-2 border-b border-[#F1F5F9]">
                     <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">Selecionar modelo</p>
                   </div>
-                  {emailTemplates.map(t => (
-                    <button key={t.id} onClick={() => enviarEmailTemplate(t)}
-                      className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#F8FAFC] transition-colors text-left">
-                      <Send size={13} className="text-[#4F7CFF] shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-[#0F172A]">{t.nome}</p>
-                        <p className="text-[10px] text-[#94A3B8]">
-                          {t.destinatario_tipo === 'gestor' ? 'Para: Gestor' : t.destinatario_tipo === 'comprador' ? 'Para: Comprador' : 'Destinatário manual'}
-                        </p>
+                  {emailTemplates.map(t => {
+                    const ultimo = emailsEnviados.find(e => e.template_id === t.id)
+                    return (
+                      <button key={t.id} onClick={() => enviarEmailTemplate(t)}
+                        className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#F8FAFC] transition-colors text-left">
+                        <Send size={13} className="text-[#4F7CFF] shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-[#0F172A]">{t.nome}</p>
+                          <p className="text-[10px] text-[#94A3B8]">
+                            {t.destinatario_tipo === 'gestor' ? 'Para: Gestor' : t.destinatario_tipo === 'comprador' ? 'Para: Comprador' : 'Destinatário manual'}
+                          </p>
+                          {ultimo && (
+                            <p className="text-[10px] text-[#059669] flex items-center gap-1 mt-0.5">
+                              <CheckCircle2 size={10} className="shrink-0" />
+                              Já enviado em {formatarDataHoraEmail(ultimo.created_at)}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                  {emailsEnviados.length > 0 && (
+                    <>
+                      <div className="px-3 py-2 border-t border-b border-[#F1F5F9] bg-[#F8FAFC]">
+                        <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">Enviados nesta obra</p>
                       </div>
-                    </button>
-                  ))}
+                      <div className="max-h-64 overflow-y-auto divide-y divide-[#F1F5F9]">
+                        {emailsEnviados.map(e => {
+                          const st = STATUS_EMAIL[e.status] ?? { label: e.status, cls: 'bg-gray-100 text-gray-600' }
+                          return (
+                            <div key={e.id} className="px-3 py-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-medium text-[#0F172A] truncate">{e.template_nome ?? e.assunto}</p>
+                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${st.cls}`}>{st.label}</span>
+                              </div>
+                              <p className="text-[10px] text-[#64748B] truncate">Para: {e.destinatario}</p>
+                              <p className="text-[10px] text-[#94A3B8]">
+                                {formatarDataHoraEmail(e.created_at)}{e.enviado_por_nome ? ` · por ${e.enviado_por_nome}` : ''}
+                              </p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               </>
             )}
