@@ -70,7 +70,6 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
 
   const [
     { data: rdos },
-    { data: threads },
     { data: medPlanejadas },
     { data: medFaturadas },
     { data: materiais },
@@ -78,8 +77,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     { data: nfsManut },
     { data: equips },
   ] = await Promise.all([
-    obraIds.length ? sb.from('diario_obra_relatorios').select('obra_id, data, importado_em').in('obra_id', obraIds) : vazio,
-    obraIds.length ? sb.from('relatorio_email_threads').select('obra_id, updated_at').eq('tipo', 'rdo').in('obra_id', obraIds) : vazio,
+    obraIds.length ? sb.from('diario_obra_relatorios').select('*').in('obra_id', obraIds) : vazio,
     sb.from('obra_medicoes').select('id, obra_id, nome, data_prevista, obras:obra_id(titulo)').eq('status', 'planejada').lt('data_prevista', hoje),
     sb.from('obra_medicoes').select('id, obra_id, nome, data_vencimento, obras:obra_id(titulo)').eq('status', 'faturada').lt('data_vencimento', hoje),
     obraIds.length ? sb.from('obra_materiais').select('id, obra_id, status, oc_id, data_prevista_chegada').in('obra_id', obraIds) : vazio,
@@ -202,20 +200,22 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
 
   // ── CONFERIR ──────────────────────────────────────────────
 
-  // RDO sincronizado mas e-mail ainda não enviado
-  const ultimoEnvio = new Map((threads ?? []).map((t: any) => [t.obra_id, t.updated_at as string]))
-  for (const o of obras ?? []) {
-    const ult = ultimoRdo.get(o.id)
-    if (!ult) continue
-    const envio = ultimoEnvio.get(o.id)
-    if (!envio || ult.importado_em > envio) {
-      lista.push({
-        id: `rdo-email-${o.id}`, chave: ult.importado_em, grupo: 'conferir', gravidade: 'media', icone: 'email',
-        titulo: `RDO não enviado por e-mail — ${o.titulo}`,
-        detalhe: envio ? `Último envio em ${new Date(envio).toLocaleDateString('pt-BR')}` : 'Nenhum envio registrado',
-        href: `/obras/${o.id}?aba=relatorios`,
-      })
+  // RDOs sincronizados que ainda não foram enviados por e-mail
+  const naoEnviados = new Map<string, any[]>()
+  for (const r of rdos ?? []) {
+    if (r.drive_file_id && !r.email_enviado_em) {
+      if (!naoEnviados.has(r.obra_id)) naoEnviados.set(r.obra_id, [])
+      naoEnviados.get(r.obra_id)!.push(r)
     }
+  }
+  for (const [obraId, lst] of Array.from(naoEnviados)) {
+    lst.sort((x, y) => (x.numero ?? 0) - (y.numero ?? 0))
+    lista.push({
+      id: `rdo-email-${obraId}`, chave: lst.map(r => r.id).sort().join(','), grupo: 'conferir', gravidade: 'media', icone: 'email',
+      titulo: `${plural(lst.length, 'RDO não enviado', 'RDOs não enviados')} por e-mail — ${tituloObra.get(obraId)}`,
+      detalhe: lst.map(r => `#${r.numero ?? '?'}`).join(', '),
+      href: `/obras/${obraId}?aba=relatorios`,
+    })
   }
 
   // Medições faturadas vencidas sem recebimento

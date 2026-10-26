@@ -96,5 +96,12 @@ export async function POST(req: NextRequest) {
     updated_at: new Date().toISOString(),
   }, { onConflict: 'obra_id,tipo' })
 
+  // Marca cada RDO enviado (mostra "Enviado em" na tabela e alimenta as Pendências)
+  await supabase.from('diario_obra_relatorios').update({
+    email_enviado_em: new Date().toISOString(),
+    email_enviado_para: [...destinatarios, ...ccLimpo],
+    email_enviado_por: remetenteNome || remetenteEmail || null,
+  }).in('id', relatorios.map(r => r.id))
+
   return NextResponse.json({ ok: true, id: data?.id })
 }

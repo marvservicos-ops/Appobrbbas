@@ -73,6 +73,9 @@ export interface DiarioObraRelatorio {
   drive_file_id?: string | null
   drive_file_url?: string | null
   importado_em: string
+  email_enviado_em?: string | null
+  email_enviado_para?: string[] | null
+  email_enviado_por?: string | null
 }
 
 export interface CronogramaEtapa {

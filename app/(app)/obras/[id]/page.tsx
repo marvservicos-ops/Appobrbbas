@@ -1161,6 +1161,12 @@ export default function ObraDetailPage() {
               </div>
               {obra?.diario_obra_id && (
                 <div className="flex items-center gap-2">
+                  {selecionadosDiario.size === 0 && diarioRelatorios.some(r => r.drive_file_id && !r.email_enviado_em) && (
+                    <button onClick={() => setSelecionadosDiario(new Set(diarioRelatorios.filter(r => r.drive_file_id && !r.email_enviado_em).map(r => r.id)))}
+                      className="flex items-center gap-1.5 text-sm px-3 py-2 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors">
+                      <Mail size={14} /> Selecionar não enviados ({diarioRelatorios.filter(r => r.drive_file_id && !r.email_enviado_em).length})
+                    </button>
+                  )}
                   {selecionadosDiario.size > 0 && (
                     <button onClick={() => setShowEnviarDiario(true)}
                       className="flex items-center gap-1.5 text-sm px-3 py-2 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white rounded-lg transition-colors">
@@ -1204,6 +1210,7 @@ export default function ObraDetailPage() {
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
                       <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
+                      <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">E-mail</th>
                       <th className="px-4 py-3 w-36" />
                     </tr>
                   </thead>
@@ -1222,6 +1229,18 @@ export default function ObraDetailPage() {
                           {r.data ? new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR') : '—'}
                         </td>
                         <td className="px-4 py-3 text-sm text-[#64748B]">{r.status_descricao ?? '—'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {r.email_enviado_em ? (
+                            <span title={[r.email_enviado_para?.length ? `Para: ${r.email_enviado_para.join(', ')}` : '', r.email_enviado_por ? `Por: ${r.email_enviado_por}` : ''].filter(Boolean).join('\n')}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded">
+                              <CheckCircle2 size={12} /> Enviado {new Date(r.email_enviado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                              <Mail size={12} /> Não enviado
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           {r.drive_file_url && (
                             <a href={r.drive_file_url} target="_blank" rel="noopener noreferrer"
@@ -1426,7 +1445,7 @@ export default function ObraDetailPage() {
           obraTitulo={obra.titulo}
           relatorios={diarioRelatorios.filter(r => selecionadosDiario.has(r.id))}
           onClose={() => setShowEnviarDiario(false)}
-          onSent={() => { setShowEnviarDiario(false); setSelecionadosDiario(new Set()) }}
+          onSent={() => { setShowEnviarDiario(false); setSelecionadosDiario(new Set()); loadDiarioRelatorios() }}
         />
       )}
 
