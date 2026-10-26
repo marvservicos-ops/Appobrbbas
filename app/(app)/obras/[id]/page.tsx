@@ -522,6 +522,7 @@ export default function ObraDetailPage() {
         setMsgSincronizacao(`Erro: ${json.error ?? 'falha desconhecida'}`)
       } else {
         const resumo = `${json.importados} RDO(s) importado(s), ${json.atualizados ?? 0} atualizado(s), ${json.ignorados} sem mudança.`
+          + (json.removidos ? ` ${json.removidos} removido(s) por ter(em) sido excluído(s) no Diário de Obra (PDF enviado para a Lixeira do Drive).` : '')
         const detalhesErros: string[] = json.erros ?? []
         setMsgSincronizacao(detalhesErros.length > 0 ? `${resumo} Erros: ${detalhesErros.join(' | ')}` : resumo)
         loadDiarioRelatorios()

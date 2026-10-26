@@ -52,6 +52,18 @@ async function buscarDetalheRelatorio(diarioObraId: string, relatorioId: string)
   return res.json()
 }
 
+// true só quando a API confirma que o relatório NÃO existe mais (404/410).
+// Qualquer outro erro (API fora do ar, token etc.) → false, pra nunca
+// apagar nada por engano.
+async function relatorioFoiExcluido(diarioObraId: string, relatorioId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/obras/${diarioObraId}/relatorios/${relatorioId}`, { headers: diarioObraHeaders() })
+    return res.status === 404 || res.status === 410
+  } catch {
+    return false
+  }
+}
+
 // ── Google Drive ────────────────────────────────────────
 function driveClient() {
   // Contas de serviço não têm cota própria no Drive pessoal (só funcionam em
@@ -150,7 +162,7 @@ async function renomearArquivoDrive(fileId: string, nomeArquivo: string): Promis
   await drive.files.update({ fileId, requestBody: { name: nomeArquivo } })
 }
 
-type ResultadoSincronizacao = { importados: number; atualizados: number; ignorados: number; erros: string[]; pendente: boolean }
+type ResultadoSincronizacao = { importados: number; atualizados: number; ignorados: number; removidos: number; erros: string[]; pendente: boolean }
 
 // ── Sincronização de uma obra externa (do Diário de Obra) ───────────
 // obraId: id da obra correspondente no marv-gestão, se houver (só pra
@@ -175,7 +187,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
 
   const { data: jaImportados } = await supabase
     .from('diario_obra_relatorios')
-    .select('diario_relatorio_id, numero, status_descricao, atualizado_em, drive_file_id')
+    .select('id, diario_relatorio_id, numero, status_descricao, atualizado_em, drive_file_id')
     .eq('diario_obra_id_externo', diarioObraId)
   const existentes = new Map((jaImportados ?? []).map(r => [r.diario_relatorio_id as string, r]))
 
@@ -259,7 +271,30 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
     }
   }
 
-  return { importados, atualizados, ignorados, erros, pendente }
+  // RDOs que estão aqui mas sumiram da lista do Diário de Obra (excluídos lá):
+  // confirma um a um na API e só então remove do banco e manda o PDF pra
+  // Lixeira do Drive (recuperável por 30 dias). Lista vazia vinda da API com
+  // RDOs aqui é suspeita demais — nesse caso não remove nada.
+  let removidos = 0
+  const idsRemotos = new Set(relatorios.map(r => r._id))
+  const sumiram = (jaImportados ?? []).filter(r => !idsRemotos.has(r.diario_relatorio_id as string))
+  if (relatorios.length > 0) {
+    for (const r of sumiram) {
+      if (!(await relatorioFoiExcluido(diarioObraId, r.diario_relatorio_id as string))) continue
+      try {
+        if (r.drive_file_id) {
+          await driveClient().files.update({ fileId: r.drive_file_id as string, requestBody: { trashed: true } }).catch(() => {})
+        }
+        const { error } = await supabase.from('diario_obra_relatorios').delete().eq('id', r.id)
+        if (error) throw new Error(error.message)
+        removidos++
+      } catch (e) {
+        erros.push(`RDO ${r.numero} (excluído no Diário de Obra): ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+  }
+
+  return { importados, atualizados, ignorados, removidos, erros, pendente }
 }
 
 // ── Sincronização de uma obra vinculada no marv-gestão ───────────────
