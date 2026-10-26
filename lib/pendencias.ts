@@ -11,6 +11,10 @@ export type Grupo = 'lancar' | 'conferir'
 
 export interface Pendencia {
   id: string
+  /** Impressão do estado atual: um "está ok" só vale enquanto ela não mudar. */
+  chave: string
+  /** Marcada como ok pelo usuário (sai do painel e do e-mail). */
+  dispensada?: boolean
   grupo: Grupo
   gravidade: Gravidade
   icone: IconePendencia
@@ -107,7 +111,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     const incompletosPassados = diasAlocacao.filter(d => d !== hoje && (porDia.get(d)?.size ?? 0) < totalFuncs)
     if (incompletosPassados.length > 0) {
       lista.push({
-        id: 'aloc-atrasada', grupo: 'lancar', gravidade: 'alta', icone: 'alocacao',
+        id: 'aloc-atrasada', chave: incompletosPassados.join(','), grupo: 'lancar', gravidade: 'alta', icone: 'alocacao',
         titulo: `Alocação incompleta em ${plural(incompletosPassados.length, 'dia', 'dias')}`,
         detalhe: incompletosPassados.map(d => `${dataBR(d)} (${totalFuncs - (porDia.get(d)?.size ?? 0)} sem lançar)`).join(' · '),
         href: '/funcionarios/alocacao',
@@ -116,7 +120,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     if (diasAlocacao.includes(hoje)) {
       const faltamHoje = totalFuncs - (porDia.get(hoje)?.size ?? 0)
       if (faltamHoje > 0) lista.push({
-        id: 'aloc-hoje', grupo: 'lancar', gravidade: 'media', icone: 'alocacao',
+        id: 'aloc-hoje', chave: hoje, grupo: 'lancar', gravidade: 'media', icone: 'alocacao',
         titulo: 'Alocação de hoje',
         detalhe: `${plural(faltamHoje, 'funcionário', 'funcionários')} sem lançamento`,
         href: '/funcionarios/alocacao',
@@ -133,7 +137,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   const semVinculo = (obras ?? []).filter(o => !o.diario_obra_id)
   if (semVinculo.length > 0) {
     lista.push({
-      id: 'rdo-sem-vinculo', grupo: 'lancar', gravidade: 'media', icone: 'rdo',
+      id: 'rdo-sem-vinculo', chave: semVinculo.map(o => o.id).sort().join(','), grupo: 'lancar', gravidade: 'media', icone: 'rdo',
       titulo: `${plural(semVinculo.length, 'obra em andamento', 'obras em andamento')} sem vínculo com o Diário de Obra`,
       detalhe: semVinculo.map(o => o.titulo).join(' · '),
       href: semVinculo.length === 1 ? `/obras/${semVinculo[0].id}?aba=relatorios` : '/obras',
@@ -144,7 +148,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     const ult = ultimoRdo.get(o.id)
     if (!ult?.data || ult.data < ultimoDiaUtilAnterior) {
       lista.push({
-        id: `rdo-${o.id}`, grupo: 'lancar', gravidade: 'alta', icone: 'rdo',
+        id: `rdo-${o.id}`, chave: ult?.data ?? 'nenhum', grupo: 'lancar', gravidade: 'alta', icone: 'rdo',
         titulo: `Sem RDO recente — ${o.titulo}`,
         detalhe: ult?.data ? `Último RDO em ${dataBR(ult.data)} (há ${diasEntre(ult.data, hoje)} dias). Preencha no Diário de Obra e clique em "Sincronizar agora".` : 'Nenhum RDO sincronizado ainda.',
         href: `/obras/${o.id}?aba=relatorios`,
@@ -155,7 +159,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   // Medições planejadas cuja data já passou (pedir/lançar)
   for (const m of medPlanejadas ?? []) {
     lista.push({
-      id: `med-${m.id}`, grupo: 'lancar', gravidade: 'alta', icone: 'financeiro',
+      id: `med-${m.id}`, chave: m.data_prevista, grupo: 'lancar', gravidade: 'alta', icone: 'financeiro',
       titulo: `Medição não solicitada — ${(m as any).obras?.titulo ?? ''}`,
       detalhe: `${m.nome} · prevista para ${dataBR(m.data_prevista)}`,
       href: `/obras/${m.obra_id}/financeiro`,
@@ -167,7 +171,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   for (const m of materiais ?? []) if (!m.oc_id) semOc.set(m.obra_id, (semOc.get(m.obra_id) ?? 0) + 1)
   for (const [obraId, n] of Array.from(semOc)) {
     lista.push({
-      id: `mat-oc-${obraId}`, grupo: 'lancar', gravidade: 'media', icone: 'material',
+      id: `mat-oc-${obraId}`, chave: String(n), grupo: 'lancar', gravidade: 'media', icone: 'material',
       titulo: `Materiais sem OC — ${tituloObra.get(obraId)}`,
       detalhe: `${plural(n, 'material', 'materiais')} sem Ordem de Compra (não aparecem no Financeiro/Portal)`,
       href: `/obras/${obraId}?aba=materiais`,
@@ -181,14 +185,14 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     for (const c of contratos ?? []) {
       const nome = (c as any).empresa?.apelido || (c as any).empresa?.razao_social || c.numero_contrato || 'Contrato'
       if (!nfOk.has(c.id)) lista.push({
-        id: `nf-man-${c.id}`, grupo: 'lancar', gravidade: 'alta', icone: 'manutencao',
+        id: `nf-man-${c.id}`, chave: competenciaAnterior, grupo: 'lancar', gravidade: 'alta', icone: 'manutencao',
         titulo: `NF de ${nomeMesAnterior} não emitida — ${nome}`,
         href: `/manutencoes/${c.id}`,
       })
       const equipsContrato = (equips ?? []).filter((e: any) => e.contrato_id === c.id)
       const faltando = equipsContrato.filter((e: any) => !prevFeitas.has(e.id)).length
       if (faltando > 0) lista.push({
-        id: `prev-${c.id}`, grupo: 'lancar', gravidade: 'media', icone: 'manutencao',
+        id: `prev-${c.id}`, chave: `${competenciaAnterior}:${faltando}`, grupo: 'lancar', gravidade: 'media', icone: 'manutencao',
         titulo: `Preventivas de ${nomeMesAnterior} não marcadas — ${nome}`,
         detalhe: `${faltando} de ${plural(equipsContrato.length, 'equipamento', 'equipamentos')}`,
         href: `/manutencoes/${c.id}`,
@@ -206,7 +210,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     const envio = ultimoEnvio.get(o.id)
     if (!envio || ult.importado_em > envio) {
       lista.push({
-        id: `rdo-email-${o.id}`, grupo: 'conferir', gravidade: 'media', icone: 'email',
+        id: `rdo-email-${o.id}`, chave: ult.importado_em, grupo: 'conferir', gravidade: 'media', icone: 'email',
         titulo: `RDO não enviado por e-mail — ${o.titulo}`,
         detalhe: envio ? `Último envio em ${new Date(envio).toLocaleDateString('pt-BR')}` : 'Nenhum envio registrado',
         href: `/obras/${o.id}?aba=relatorios`,
@@ -217,7 +221,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   // Medições faturadas vencidas sem recebimento
   for (const m of medFaturadas ?? []) {
     lista.push({
-      id: `rec-${m.id}`, grupo: 'conferir', gravidade: 'alta', icone: 'financeiro',
+      id: `rec-${m.id}`, chave: m.data_vencimento, grupo: 'conferir', gravidade: 'alta', icone: 'financeiro',
       titulo: `Pagamento vencido — ${(m as any).obras?.titulo ?? ''}`,
       detalhe: `${m.nome} · venceu em ${dataBR(m.data_vencimento)}. Recebeu? Marque como recebida; senão, cobre.`,
       href: `/obras/${m.obra_id}/financeiro`,
@@ -232,7 +236,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   }
   for (const [obraId, n] of Array.from(atrasados)) {
     lista.push({
-      id: `mat-atr-${obraId}`, grupo: 'conferir', gravidade: 'media', icone: 'material',
+      id: `mat-atr-${obraId}`, chave: String(n), grupo: 'conferir', gravidade: 'media', icone: 'material',
       titulo: `Material com chegada vencida — ${tituloObra.get(obraId)}`,
       detalhe: `${plural(n, 'item', 'itens')} ainda como comprado/em trânsito. Chegou? Atualize o status.`,
       href: `/obras/${obraId}?aba=materiais`,
@@ -247,7 +251,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   }
   for (const [obraId, n] of Array.from(etapasVencidas)) {
     lista.push({
-      id: `crono-${obraId}`, grupo: 'conferir', gravidade: 'media', icone: 'cronograma',
+      id: `crono-${obraId}`, chave: String(n), grupo: 'conferir', gravidade: 'media', icone: 'cronograma',
       titulo: `Cronograma desatualizado — ${tituloObra.get(obraId)}`,
       detalhe: `${plural(n, 'etapa passou', 'etapas passaram')} da data de fim sem estar concluída`,
       href: `/obras/${obraId}?aba=cronograma`,
@@ -258,7 +262,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   for (const o of obras ?? []) {
     if (o.previsao_termino && o.previsao_termino < hoje) {
       lista.push({
-        id: `prazo-${o.id}`, grupo: 'conferir', gravidade: 'media', icone: 'prazo',
+        id: `prazo-${o.id}`, chave: o.previsao_termino, grupo: 'conferir', gravidade: 'media', icone: 'prazo',
         titulo: `Prazo vencido — ${o.titulo}`,
         detalhe: `Previsão era ${dataBR(o.previsao_termino)}. Já terminou? Mude o status para Concluída; senão, atualize a data.`,
         href: `/obras/${o.id}`,
@@ -267,6 +271,12 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
   }
 
   lista.sort((a, b) => (a.gravidade === b.gravidade ? 0 : a.gravidade === 'alta' ? -1 : 1))
+  // "Está ok" dados pelo usuário — valem enquanto o estado (chave) não mudar.
+  // Se a tabela ainda não existir, o erro é ignorado e nada fica dispensado.
+  const { data: dispensas } = await sb.from('pendencias_dispensadas').select('pendencia_id, chave')
+  const okMap = new Map((dispensas ?? []).map((d: any) => [d.pendencia_id as string, d.chave as string]))
+  for (const p of lista) p.dispensada = okMap.get(p.id) === p.chave
+
   lista.sort((a, b) => (a.gravidade === b.gravidade ? 0 : a.gravidade === 'alta' ? -1 : 1))
   return lista
 }

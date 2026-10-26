@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   }
 
   const agora = agoraBrasilia()
-  const pendencias = await calcularPendencias(createServiceClient(), agora)
+  const pendencias = (await calcularPendencias(createServiceClient(), agora)).filter(p => !p.dispensada)
   if (pendencias.length === 0) {
     return NextResponse.json({ ok: true, enviado: false, motivo: 'nenhuma pendência' })
   }
