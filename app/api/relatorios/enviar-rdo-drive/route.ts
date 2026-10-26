@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase/service'
+import { createClient } from '@/lib/supabase/server'
 import { baixarArquivoDrive } from '@/lib/diarioObra'
 import { buscarMessageIdReal } from '@/lib/emailThread'
 
@@ -68,10 +69,18 @@ export async function POST(req: NextRequest) {
 
   const ccLimpo = Array.isArray(cc) ? cc.filter(Boolean) : []
 
+  // O envio sai pelo Resend, não pela caixa do Gmail — nada aparece em
+  // "Enviados". Uma cópia oculta pra quem enviou serve de comprovante.
+  const { data: { user } } = await (await createClient()).auth.getUser()
+  const copiaPara = (emailValido ? remetenteEmail : user?.email) ?? null
+  const jaRecebe = [...destinatarios, ...ccLimpo].map((e: string) => e.trim().toLowerCase())
+  const bcc = copiaPara && !jaRecebe.includes(copiaPara.toLowerCase()) ? [copiaPara] : undefined
+
   const { data, error } = await resend.emails.send({
     from,
     to: destinatarios,
     ...(ccLimpo.length > 0 ? { cc: ccLimpo } : {}),
+    ...(bcc ? { bcc } : {}),
     subject: assunto,
     html,
     attachments,
@@ -103,5 +112,20 @@ export async function POST(req: NextRequest) {
     email_enviado_por: remetenteNome || remetenteEmail || null,
   }).in('id', relatorios.map(r => r.id))
 
-  return NextResponse.json({ ok: true, id: data?.id })
+  // Entra no histórico "Enviados nesta obra", que consulta no Resend se o
+  // e-mail foi entregue ou devolvido.
+  const numeros = relatorios.map(r => r.numero).filter(n => n != null).sort((a, b) => a - b)
+  await supabase.from('obra_emails_enviados').insert({
+    obra_id: obraId,
+    template_nome: `RDO ${numeros.map(n => `#${n}`).join(', ')}`,
+    destinatario: [...destinatarios, ...ccLimpo].join(', '),
+    assunto,
+    remetente: emailValido ? remetenteEmail : FROM,
+    resend_id: data?.id ?? null,
+    status: 'sent',
+    enviado_por: user?.id ?? null,
+    enviado_por_nome: remetenteNome || null,
+  })
+
+  return NextResponse.json({ ok: true, id: data?.id, copiaPara: bcc?.[0] ?? null })
 }

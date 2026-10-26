@@ -1446,7 +1446,7 @@ export default function ObraDetailPage() {
           obraTitulo={obra.titulo}
           relatorios={diarioRelatorios.filter(r => selecionadosDiario.has(r.id))}
           onClose={() => setShowEnviarDiario(false)}
-          onSent={() => { setShowEnviarDiario(false); setSelecionadosDiario(new Set()); loadDiarioRelatorios() }}
+          onSent={() => { setShowEnviarDiario(false); setSelecionadosDiario(new Set()); loadDiarioRelatorios(); loadEmailsEnviados(true) }}
         />
       )}
 
