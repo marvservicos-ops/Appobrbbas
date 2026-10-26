@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
+import PainelPendencias from '@/components/PainelPendencias'
 import { useAccess } from '@/lib/useAccess'
 import {
   Wrench, TrendingUp, AlertTriangle, Package,
@@ -192,6 +193,9 @@ export default function DashboardPage() {
           <h1 className="font-syne font-bold text-xl md:text-2xl text-[#0F172A] capitalize">{diaSemana},</h1>
           <p className="text-sm text-[#64748B] capitalize">{dataHoje}</p>
         </div>
+
+        {/* Pendências: o que falta lançar/conferir */}
+        {isAdmin && <PainelPendencias />}
 
         {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

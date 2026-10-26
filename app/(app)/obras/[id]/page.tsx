@@ -237,6 +237,11 @@ export default function ObraDetailPage() {
   const id = params.id as string
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
+  // Permite abrir direto numa aba via ?aba=materiais (links do painel de Pendências)
+  useEffect(() => {
+    const aba = new URLSearchParams(window.location.search).get('aba') as Tab | null
+    if (aba && ['visao-geral', 'documentos', 'cronograma', 'relatorios', 'materiais', 'equipe'].includes(aba)) setTab(aba)
+  }, [])
   const { can, isAdmin, profile } = useAccess()
   const podeEnviarEmail = Boolean(profile?.active)
   const [obra, setObra] = useState<Obra | null>(null)
