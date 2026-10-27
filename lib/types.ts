@@ -200,7 +200,20 @@ export interface EstoqueProduto {
   preco_unitario?: number | null
   foto_url?: string
   ativo: boolean
+  categoria_id?: string | null
+  // false: saída não exige saldo e quantidade_atual é só o "saldo conhecido" (o que voltou de obra)
+  controla_saldo?: boolean
+  // item em kg que recebe a sobra misturada que volta da obra; preco_unitario é o R$/kg
+  sobra_mista?: boolean
   created_at: string
+}
+
+export interface EstoqueProdutoCategoria {
+  id: string
+  estoque_id: string
+  nome: string
+  cor: string
+  ordem: number
 }
 
 export interface EstoqueRegistroValor {

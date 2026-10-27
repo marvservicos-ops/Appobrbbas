@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Eraser, Check, Loader2, Camera, ScanLine, AlertTriangle, FileText, Upload, Plus, Trash2, X, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Estoque, EstoqueCampo, EstoqueProduto } from '@/lib/types'
+import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueProdutoCategoria } from '@/lib/types'
+import { controlaSaldo, saldoAposSaida } from '@/lib/estoque/saldo'
 import Link from 'next/link'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import FormSaidaEpiLote from './FormSaidaEpiLote'
@@ -59,6 +60,11 @@ export default function RegistrarPage() {
   const [manutencaoId, setManutencaoId] = useState('')
   const [manutencoes, setManutencoes] = useState<{ id: string; numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string } | null }[]>([])
   const [precoEntrada, setPrecoEntrada] = useState('')
+  const [categorias, setCategorias] = useState<EstoqueProdutoCategoria[]>([])
+  // Cadastro rápido quando a saída é de um produto que ainda não está no catálogo
+  const [novoCadastrar, setNovoCadastrar] = useState(true)
+  const [novoPreco, setNovoPreco] = useState('')
+  const [novoCategoriaId, setNovoCategoriaId] = useState('')
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawing = useRef(false)
@@ -67,14 +73,16 @@ export default function RegistrarPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: est }, { data: cam }, { data: prod }, { data: obrasData }, { data: funcsData }, { data: manutData }] = await Promise.all([
+      const [{ data: est }, { data: cam }, { data: prod }, { data: obrasData }, { data: funcsData }, { data: manutData }, { data: cats }] = await Promise.all([
         supabase.from('estoques').select('*').eq('id', estoqueId).single(),
         supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
         supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
         supabase.from('obras').select('id, titulo, status').in('status', ['Em Andamento', 'Aprovada', 'Em Orçamento']).order('titulo'),
         supabase.from('funcionarios').select('id, nome, responsavel_entrega').eq('ativo', true).order('nome'),
         supabase.from('contratos_manutencao').select('id, numero_contrato, empresa:empresas(razao_social, apelido)').eq('ativo', true),
+        supabase.from('estoque_produto_categorias').select('*').eq('estoque_id', estoqueId).order('ordem').order('nome'),
       ])
+      setCategorias(cats ?? [])
       setEstoque(est)
       setCampos(cam ?? [])
       setProdutos(prod ?? [])
@@ -154,7 +162,7 @@ export default function RegistrarPage() {
     if (!responsavel.trim()) { setError('Informe o responsável.'); return }
     if (tipo === 'saida' && produtoId && produtoId !== '__outro__') {
       const prod = produtos.find(p => p.id === produtoId)
-      if (prod && prod.quantidade_atual - parseFloat(quantidade) < 0) {
+      if (prod && controlaSaldo(prod) && prod.quantidade_atual - parseFloat(quantidade) < 0) {
         setError(`Saldo insuficiente! Estoque atual: ${prod.quantidade_atual} ${prod.unidade}.`); return
       }
     }
@@ -187,8 +195,25 @@ export default function RegistrarPage() {
     }
 
     const qtd = parseFloat(quantidade)
-    const prod = produtos.find(p => p.id === produtoId)
-    const cmpAtual = prod?.preco_unitario || 0
+    let prod = produtos.find(p => p.id === produtoId)
+    let produtoIdFinal = produtoId && produtoId !== '__outro__' ? produtoId : ''
+    const produtoNovo = !produtoIdFinal
+    const isEpiSaida = estoque?.icone === 'shield' || estoque?.icone === 'shirt'
+
+    // Saída de item fora do catálogo: cadastra na hora, sem controle de saldo, com o preço informado
+    if (tipo === 'saida' && produtoNovo && novoCadastrar && !isEpiSaida) {
+      const { data: novo, error: novoErr } = await supabase.from('estoque_produtos').insert({
+        estoque_id: estoqueId, nome: produtoNome.trim(), unidade: unidade || 'un',
+        quantidade_atual: 0, quantidade_minima: 0,
+        preco_unitario: parseFloat(novoPreco) || null,
+        categoria_id: novoCategoriaId || null,
+        controla_saldo: false,
+      }).select().single()
+      if (novoErr) { setError(novoErr.message); setSaving(false); return }
+      prod = novo as EstoqueProduto
+      produtoIdFinal = novo.id
+    }
+    const cmpAtual = prod?.preco_unitario || (tipo === 'saida' && produtoNovo ? parseFloat(novoPreco) || 0 : 0)
     const precoEntradaNum = parseFloat(precoEntrada) || 0
     const preco_unitario_custo = tipo === 'entrada' ? precoEntradaNum : cmpAtual
     const valor_total = qtd * preco_unitario_custo
@@ -202,7 +227,7 @@ export default function RegistrarPage() {
     const manutencaoIdFinal = hasMultiDestino && destinoFinal === 'manutencao' ? (manutencaoId || null) : null
 
     const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
-      estoque_id: estoqueId, produto_id: produtoId || null, produto_nome: produtoNome.trim(),
+      estoque_id: estoqueId, produto_id: produtoIdFinal || null, produto_nome: produtoNome.trim(),
       tipo, quantidade: qtd, unidade, responsavel: responsavel.trim(), assinatura_url, data,
       observacoes: observacoes || null, obra_id: obraIdFinal, funcionario_id: funcionarioIdFinal,
       manutencao_id: manutencaoIdFinal,
@@ -221,9 +246,8 @@ export default function RegistrarPage() {
       .filter(Boolean) as { registro_id: string; campo_id: string; valor: string }[]
     if (valores.length > 0) await supabase.from('estoque_registro_valores').insert(valores)
 
-    if (produtoId && prod) {
-      const delta = tipo === 'entrada' ? qtd : -qtd
-      const novaQtd = prod.quantidade_atual + delta
+    if (produtoIdFinal && prod) {
+      const novaQtd = tipo === 'entrada' ? prod.quantidade_atual + qtd : saldoAposSaida(prod, qtd)
       const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
       if (tipo === 'entrada' && precoEntradaNum > 0) {
         const novoCMP = prod.quantidade_atual > 0
@@ -231,9 +255,9 @@ export default function RegistrarPage() {
           : precoEntradaNum
         prodUpdate.preco_unitario = novoCMP
       }
-      await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produtoId)
+      await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produtoIdFinal)
 
-      if (tipo === 'saida' && prod.quantidade_minima > 0) {
+      if (tipo === 'saida' && controlaSaldo(prod) && prod.quantidade_minima > 0) {
         fetch('/api/estoque/alerta-critico', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -246,7 +270,7 @@ export default function RegistrarPage() {
     }
 
     // Saída com destino Manutenção repõe o estoque local do contrato
-    if (hasMultiDestino && destinoFinal === 'manutencao' && manutencaoId && produtoId) {
+    if (hasMultiDestino && destinoFinal === 'manutencao' && manutencaoId && produtoIdFinal) {
       const { data: existente } = await supabase.from('manutencao_estoque_produtos')
         .select('id, quantidade_atual').eq('contrato_id', manutencaoId).eq('produto_id', produtoId).maybeSingle()
       if (existente) {
@@ -397,6 +421,10 @@ export default function RegistrarPage() {
           estoqueIcone={estoque?.icone ?? ''}
           estoqueNome={estoque?.nome ?? ''}
           produtoCodigo={produtos.find(p => p.id === produtoId)?.codigo ?? ''}
+          categorias={categorias}
+          novoCadastrar={novoCadastrar} setNovoCadastrar={setNovoCadastrar}
+          novoPreco={novoPreco} setNovoPreco={setNovoPreco}
+          novoCategoriaId={novoCategoriaId} setNovoCategoriaId={setNovoCategoriaId}
         />
       )}
 
@@ -498,7 +526,8 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
   observacoes, setObservacoes, valoresCampos, setValoresCampos, temAssinatura, canvasRef,
   startDraw, draw, stopDraw, limparCanvas, obraId, setObraId, funcionarioId, setFuncionarioId,
   destinoTipo, setDestinoTipo, manutencaoId, setManutencaoId, showScanner, setShowScanner,
-  scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone, estoqueNome, produtoCodigo }: any) {
+  scanMsg, handleScanned, saving, error, onSubmit, estoqueId, estoqueIcone, estoqueNome, produtoCodigo,
+  categorias, novoCadastrar, setNovoCadastrar, novoPreco, setNovoPreco, novoCategoriaId, setNovoCategoriaId }: any) {
   const isEpiOuUniforme = estoqueIcone === 'shield' || estoqueIcone === 'shirt'
   const isLimpeza = estoqueIcone === 'sparkles'
   const isCopa = estoqueNome === 'Copa/Escritório'
@@ -533,6 +562,30 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
         {(produtoId === '__outro__' || produtos.length === 0) && (
           <input className="field mt-2" value={produtoNome} onChange={e => setProdutoNome(e.target.value)} placeholder="Nome do produto" />
         )}
+        {(produtoId === '__outro__' || produtos.length === 0) && !isEpiOuUniforme && (
+          <div className="mt-2 px-3 py-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg space-y-2">
+            <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer">
+              <input type="checkbox" className="rounded" checked={novoCadastrar} onChange={e => setNovoCadastrar(e.target.checked)} />
+              Cadastrar no catálogo (sem controle de saldo)
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-[#64748B] mb-1">Preço unitário (R$)</label>
+                <input type="number" step="0.0001" min="0" className="field text-sm" value={novoPreco} onChange={e => setNovoPreco(e.target.value)} placeholder="0,00" />
+              </div>
+              {novoCadastrar && categorias?.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-[#64748B] mb-1">Categoria</label>
+                  <select className="field text-sm" value={novoCategoriaId} onChange={e => setNovoCategoriaId(e.target.value)}>
+                    <option value="">Sem categoria</option>
+                    {categorias.map((c: EstoqueProdutoCategoria) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-[#94A3B8]">O preço vira o custo desta saída na obra{novoCadastrar ? ' e fica como preço de referência do produto' : ''}.</p>
+          </div>
+        )}
       </div>
 
       {showScanner && <BarcodeScannerModal onScanned={handleScanned} onClose={() => setShowScanner(false)} />}
@@ -540,6 +593,13 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
       {produtoId && produtoId !== '__outro__' && (() => {
         const prod = produtos.find((p: EstoqueProduto) => p.id === produtoId)
         if (!prod) return null
+        if (!controlaSaldo(prod)) return (
+          <div className="px-3 py-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-xs text-[#64748B]">
+            Produto sem controle de saldo: a saída é livre e o custo vai pelo preço de referência.
+            {prod.quantidade_atual > 0 && <> Há {prod.quantidade_atual} {prod.unidade} que voltaram de obra; a saída desconta deles primeiro.</>}
+            {!prod.preco_unitario && <span className="block text-amber-700 mt-1">Este produto está sem preço: a saída vai sem custo. Defina o preço em Produtos.</span>}
+          </div>
+        )
         const qtd = parseFloat(quantidade) || 0
         const saldoApos = prod.quantidade_atual - qtd
         if (saldoApos < 0) return (
@@ -570,13 +630,14 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
 
       {(() => {
         const prod = produtos.find((p: EstoqueProduto) => p.id === produtoId)
-        if (!prod?.preco_unitario) return null
-        const total = (parseFloat(quantidade) || 0) * prod.preco_unitario
+        const preco = prod?.preco_unitario || (!prod ? parseFloat(novoPreco) || 0 : 0)
+        if (!preco) return null
+        const total = (parseFloat(quantidade) || 0) * preco
         return (
           <div className="px-3 py-2.5 bg-[#FFF7ED] border border-orange-100 rounded-lg">
-            <p className="text-xs font-medium text-orange-700">Custo desta saída (CMP)</p>
+            <p className="text-xs font-medium text-orange-700">Custo desta saída{prod && controlaSaldo(prod) ? ' (CMP)' : ''}</p>
             <p className="text-sm font-semibold text-orange-800 mt-0.5">
-              {prod.preco_unitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} / un
+              {preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} / {prod?.unidade || unidade || 'un'}
               {quantidade && <span> · Total: {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>}
             </p>
           </div>

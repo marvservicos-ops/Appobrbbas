@@ -97,6 +97,14 @@ Apenas redireciona para `/obras/[id]/financeiro`.
   - **Saída**: seleciona produto, valida saldo, campos customizados, responsável, assinatura; destino varia por tipo de estoque (EPI/Uniforme → funcionário; Limpeza → obra/manutenção/uso interno; outros → obra obrigatória). Em Limpeza, destino "Manutenção" exige produto real do catálogo (não aceita "outro/texto livre") e escolhe um contrato de manutenção — repõe automaticamente o estoque local desse contrato (ver [Manutenções](#8-manutenções)).
   - **Entrada**: três fluxos — Lançar NF manual (multi-item), Importar NF em PDF (via IA), ou Novo Registro simples (item único).
   - Toda entrada recalcula o CMP: `(qtd_atual×cmp_atual + qtd_nova×preço_novo) / qtd_total`.
+- **Materiais de obra (parafuso, tirante, Armaflex...)** — custo por obra sem inventário completo:
+  - **Categorias de produto** (Configurar → Categorias): editáveis por estoque (Fixação, Suportação, Isolamento e vedação, Refrigeração, Elétrica, Consumíveis de ferramenta). Filtram a aba Produtos e agrupam o custo na obra.
+  - **Controlar saldo** (por produto): ligado = item contado, saída exige saldo. Desligado = item não contado (ex.: parafuso): a saída é livre, o custo vai pelo **preço de referência** do produto e a quantidade mostrada é só o "saldo conhecido" (o que voltou de obra; a saída desconta dele e nunca fica negativa). Para começar a controlar, use **Lançar inventário** (vários itens de uma vez) ou edite o produto e informe a quantidade contada — vira log "Inventário inicial".
+  - **Cadastro rápido na saída**: "Outro (digitar manualmente)" cadastra o produto no catálogo sem controle de saldo, com preço e categoria.
+  - **Sobra mista (kg)**: produto em kg marcado como "Item de sobra mista"; o preço é o R$/kg. Botão **Sobra por peso** (no estoque) ou **Devolver sobra mista (kg)** (Centro de Custos da obra) lança uma entrada ligada à obra, credita a obra pelo peso × R$/kg e soma os kg no item.
+  - Devolução de saída (no estoque ou no Centro de Custos) fica ligada à saída original e não deixa devolver mais que o saldo ainda não devolvido; em produto sem controle não mexe no preço de referência.
+  - **Centro de Custos da obra → Análise de Materiais**: custo líquido por categoria + compras diretas; **grandezas da obra** (Máquinas, Capacidade TR, Duto m², Tubulação m, ou outras) para o índice R$/unidade; **previsto x realizado** por produto (quantidade) ou categoria (R$), âmbar acima de 100% e vermelho acima de 120%.
+  - **Consumo por obra** (`/estoque/consumo-obras`): tabela de todas as obras por categoria, com índice pela grandeza escolhida e média entre as obras.
 - **Categoria "Ferramentas"**: um estoque com ícone `wrench` tem comportamento completamente diferente das demais categorias — ver seção 5.
 
 ### Módulo legado — `/estoque/itens` e `/estoque/movimentacao`

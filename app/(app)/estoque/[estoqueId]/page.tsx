@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
-import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2, ClipboardList } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2, ClipboardList, Scale, BarChart3, ClipboardCheck } from 'lucide-react'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
-import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueRegistro } from '@/lib/types'
+import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueProdutoCategoria, EstoqueRegistro } from '@/lib/types'
+import { controlaSaldo } from '@/lib/estoque/saldo'
+import ModalSobraMista from '@/components/ModalSobraMista'
 import Link from 'next/link'
 import FerramentasPanel from './ferramentas/FerramentasPanel'
 import { PhotoLightbox, usePhotoLightbox } from '@/components/PhotoLightbox'
@@ -42,6 +44,10 @@ export default function EstoqueDetalhe() {
   const [estoque, setEstoque] = useState<Estoque | null>(null)
   const [campos, setCampos] = useState<EstoqueCampo[]>([])
   const [produtos, setProdutos] = useState<EstoqueProduto[]>([])
+  const [categorias, setCategorias] = useState<EstoqueProdutoCategoria[]>([])
+  const [filtroCategoria, setFiltroCategoria] = useState<string>('')
+  const [showInventario, setShowInventario] = useState(false)
+  const [showSobraMista, setShowSobraMista] = useState(false)
   const [registros, setRegistros] = useState<EstoqueRegistro[]>([])
   const [tab, setTab] = useState<Tab>('registros')
   const [loading, setLoading] = useState(true)
@@ -66,18 +72,20 @@ export default function EstoqueDetalhe() {
 
   async function load() {
     const supabase = createClient()
-    const [{ data: est }, { data: cam }, { data: prod }, { data: regs }] = await Promise.all([
+    const [{ data: est }, { data: cam }, { data: prod }, { data: regs }, { data: cats }] = await Promise.all([
       supabase.from('estoques').select('*').eq('id', estoqueId).single(),
       supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
       supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
       supabase.from('estoque_registros')
         .select('*, valores:estoque_registro_valores(*), obra:obras(titulo), funcionario:funcionarios(nome), manutencao:contratos_manutencao(numero_contrato, empresa:empresas(razao_social, apelido))')
         .eq('estoque_id', estoqueId).order('data', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('estoque_produto_categorias').select('*').eq('estoque_id', estoqueId).order('ordem').order('nome'),
     ])
     setEstoque(est)
     setCampos(cam ?? [])
     setProdutos(prod ?? [])
     setRegistros(regs ?? [])
+    setCategorias(cats ?? [])
     setSelecionados(new Set())
     setLoading(false)
   }
@@ -138,6 +146,7 @@ export default function EstoqueDetalhe() {
     })
 
   const produtosFiltrados = produtos.filter(p => {
+    if (filtroCategoria === '__sem__' ? p.categoria_id : filtroCategoria && p.categoria_id !== filtroCategoria) return false
     if (!buscaProduto.trim()) return true
     const q = buscaProduto.toLowerCase()
     return p.nome.toLowerCase().includes(q)
@@ -145,7 +154,9 @@ export default function EstoqueDetalhe() {
       || ((p as any).codigo_barras ?? '').toLowerCase().includes(q)
   })
 
-  const produtosAbaixoMinimo = produtos.filter(p => p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0)
+  const produtosAbaixoMinimo = produtos.filter(p => controlaSaldo(p) && p.quantidade_atual <= p.quantidade_minima && p.quantidade_minima > 0)
+  const categoriaPorId = new Map(categorias.map(c => [c.id, c]))
+  const temSobraMista = produtos.some(p => p.sobra_mista)
 
   const todosSelec = registrosOrdenados.length > 0 && selecionados.size === registrosOrdenados.length
 
@@ -206,6 +217,18 @@ export default function EstoqueDetalhe() {
               <Link href="/estoque/necessidade-compra"
                 className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
                 <ClipboardList size={14} /> Necessidade de Compra
+              </Link>
+            )}
+            {temSobraMista && (
+              <button onClick={() => setShowSobraMista(true)}
+                className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
+                <Scale size={14} /> Sobra por peso
+              </button>
+            )}
+            {categorias.length > 0 && (
+              <Link href="/estoque/consumo-obras"
+                className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] transition-colors">
+                <BarChart3 size={14} /> Consumo por obra
               </Link>
             )}
             <Link href={`/estoque/${estoqueId}/importar`}
@@ -389,7 +412,15 @@ export default function EstoqueDetalhe() {
       {/* Tab: Produtos */}
       {tab === 'produtos' && (
         <div className="space-y-4">
-          <AddProdutoInline estoqueId={estoqueId} estoqueIcone={estoque?.icone ?? ''} onAdded={load} />
+          <div className="flex flex-wrap items-center gap-2">
+            <AddProdutoInline estoqueId={estoqueId} estoqueIcone={estoque?.icone ?? ''} categorias={categorias} onAdded={load} />
+            {produtos.length > 0 && (
+              <button onClick={() => setShowInventario(true)}
+                className="flex items-center gap-2 text-sm font-medium text-[#64748B] hover:bg-[#F1F5F9] px-3 py-2 rounded-lg transition-colors">
+                <ClipboardCheck size={14} /> Lançar inventário
+              </button>
+            )}
+          </div>
 
           {/* Alerta de estoque mínimo */}
           {produtosAbaixoMinimo.length > 0 && (
@@ -399,6 +430,19 @@ export default function EstoqueDetalhe() {
                 <p className="text-sm font-semibold text-amber-800">{produtosAbaixoMinimo.length} produto{produtosAbaixoMinimo.length > 1 ? 's' : ''} abaixo do estoque mínimo</p>
                 <p className="text-xs text-amber-700 mt-0.5">{produtosAbaixoMinimo.map(p => p.nome).join(', ')}</p>
               </div>
+            </div>
+          )}
+
+          {/* Filtro por categoria */}
+          {categorias.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {[{ id: '', nome: 'Todas', cor: '#0F172A' }, ...categorias, { id: '__sem__', nome: 'Sem categoria', cor: '#94A3B8' }].map(c => (
+                <button key={c.id} onClick={() => setFiltroCategoria(c.id)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${filtroCategoria === c.id ? 'text-white border-transparent' : 'text-[#64748B] border-[#E2E8F0] hover:bg-[#F1F5F9]'}`}
+                  style={filtroCategoria === c.id ? { backgroundColor: c.cor } : undefined}>
+                  {c.nome}
+                </button>
+              ))}
             </div>
           )}
 
@@ -435,13 +479,14 @@ export default function EstoqueDetalhe() {
             {produtos.length === 0 ? (
               <div className="py-12 text-center text-[#94A3B8] text-sm">Nenhum produto cadastrado.</div>
             ) : produtosFiltrados.length === 0 ? (
-              <div className="py-12 text-center text-[#94A3B8] text-sm">Nenhum produto encontrado para &quot;{buscaProduto}&quot;.</div>
+              <div className="py-12 text-center text-[#94A3B8] text-sm">Nenhum produto encontrado{buscaProduto ? <> para &quot;{buscaProduto}&quot;</> : ' nesta categoria'}.</div>
             ) : (
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
                     <th className="px-3 py-3 w-10 hidden sm:table-cell" />
                     <th className="text-left text-xs font-semibold text-[#64748B] px-3 py-3">Produto</th>
+                    {categorias.length > 0 && <th className="hidden md:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Categoria</th>}
                     <th className="hidden md:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Código</th>
                     <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Tam.</th>
                     <th className="hidden sm:table-cell text-left text-xs font-semibold text-[#64748B] px-3 py-3">Unidade</th>
@@ -453,8 +498,10 @@ export default function EstoqueDetalhe() {
                 </thead>
                 <tbody>
                   {produtosFiltrados.map(p => {
-                    const abaixoMin = p.quantidade_minima > 0 && p.quantidade_atual <= p.quantidade_minima
-                    const negativo = p.quantidade_atual < 0
+                    const controlado = controlaSaldo(p)
+                    const abaixoMin = controlado && p.quantidade_minima > 0 && p.quantidade_atual <= p.quantidade_minima
+                    const negativo = controlado && p.quantidade_atual < 0
+                    const cat = p.categoria_id ? categoriaPorId.get(p.categoria_id) : null
                     return (
                       <tr key={p.id} className={`border-b border-[#F1F5F9] group transition-colors ${negativo ? 'bg-red-50 hover:bg-red-100' : abaixoMin ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-[#F8FAFC]'}`}>
                         <td className="px-3 py-2 hidden sm:table-cell">
@@ -473,15 +520,28 @@ export default function EstoqueDetalhe() {
                         <td className="px-3 py-3 text-sm font-medium text-[#0F172A]">
                           <div className="flex items-center gap-2">
                             {p.nome}
+                            {p.sobra_mista && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-[#F1F5F9] text-[#475569] rounded-full">Sobra mista</span>}
                             {negativo && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Negativo</span>}
                             {!negativo && abaixoMin && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">Crítico</span>}
                           </div>
                         </td>
+                        {categorias.length > 0 && (
+                          <td className="hidden md:table-cell px-3 py-3">
+                            {cat
+                              ? <span className="text-[11px] font-medium px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: cat.cor }}>{cat.nome}</span>
+                              : <span className="text-xs text-[#CBD5E1]">—</span>}
+                          </td>
+                        )}
                         <td className="hidden md:table-cell px-3 py-3 text-sm text-[#64748B]">{p.codigo ?? '—'}</td>
                         <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.tamanho ?? '—'}</td>
                         <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#64748B]">{p.unidade}</td>
                         <td className={`px-3 py-3 text-sm font-semibold ${negativo ? 'text-red-600' : abaixoMin ? 'text-amber-700' : 'text-[#374151]'}`}>
                           {p.quantidade_atual}
+                          {!controlado && (
+                            <span className="block text-[10px] font-medium text-[#94A3B8]" title="Saldo não controlado: a saída não exige saldo. O número é só o que voltou de obra.">
+                              sem controle
+                            </span>
+                          )}
                         </td>
                         <td className="hidden sm:table-cell px-3 py-3 text-sm text-[#374151]">{p.quantidade_minima}</td>
                         <td className="hidden md:table-cell px-3 py-3 text-sm text-[#374151]">
@@ -509,7 +569,10 @@ export default function EstoqueDetalhe() {
 
       {/* Tab: Configurar */}
       {tab === 'configurar' && (
-        <ConfigurarCampos estoqueId={estoqueId} campos={campos} onUpdated={load} />
+        <div className="space-y-4">
+          <ConfigurarCampos estoqueId={estoqueId} campos={campos} onUpdated={load} />
+          <ConfigurarCategorias estoqueId={estoqueId} categorias={categorias} onUpdated={load} />
+        </div>
       )}
       </>
       )}
@@ -534,10 +597,28 @@ export default function EstoqueDetalhe() {
         />
       )}
 
+      {showInventario && (
+        <ModalInventario
+          produtos={produtos}
+          categorias={categorias}
+          onClose={() => setShowInventario(false)}
+          onSaved={() => { setShowInventario(false); load() }}
+        />
+      )}
+
+      {showSobraMista && (
+        <ModalSobraMista
+          produtosSobra={produtos.filter(p => p.sobra_mista)}
+          onClose={() => setShowSobraMista(false)}
+          onSaved={() => { setShowSobraMista(false); load() }}
+        />
+      )}
+
       {/* Modal editar produto */}
       {editandoProduto && (
         <ModalEditarProduto
           produto={editandoProduto}
+          categorias={categorias}
           estoqueIcone={estoque?.icone ?? ''}
           onClose={() => setEditandoProduto(null)}
           onSaved={() => { setEditandoProduto(null); load() }}
@@ -559,7 +640,7 @@ export default function EstoqueDetalhe() {
 }
 
 // ── Modal editar produto ──────────────────────────────
-function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produto: EstoqueProduto; estoqueIcone: string; onClose: () => void; onSaved: () => void }) {
+function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSaved }: { produto: EstoqueProduto; categorias: EstoqueProdutoCategoria[]; estoqueIcone: string; onClose: () => void; onSaved: () => void }) {
   const [nome, setNome] = useState(produto.nome)
   const [codigo, setCodigo] = useState(produto.codigo ?? '')
   const [codigoBarras, setCodigoBarras] = useState(produto.codigo_barras ?? '')
@@ -573,7 +654,11 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [motivoAjuste, setMotivoAjuste] = useState('')
+  const [categoriaId, setCategoriaId] = useState(produto.categoria_id ?? '')
+  const [controla, setControla] = useState(controlaSaldo(produto))
+  const [sobraMista, setSobraMista] = useState(!!produto.sobra_mista)
   const qtdOriginal = produto.quantidade_atual
+  const ligandoControle = controla && !controlaSaldo(produto)
 
   async function uploadFoto(fileOriginal: File) {
     setUploadingFoto(true)
@@ -604,17 +689,20 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
       quantidade_minima: parseFloat(qtdMin) || 0,
       preco_unitario: precoUnitario ? parseFloat(precoUnitario) : null,
       foto_url: fotoUrl || null,
+      categoria_id: categoriaId || null,
+      controla_saldo: controla,
+      sobra_mista: sobraMista,
     }).eq('id', produto.id)
 
     // Log de auditoria quando a quantidade muda manualmente
-    if (novaQtd !== produto.quantidade_atual) {
+    if (novaQtd !== produto.quantidade_atual || ligandoControle) {
       await supabase.from('estoque_logs').insert({
         produto_id: produto.id,
         estoque_id: produto.estoque_id,
         tipo: 'ajuste_manual',
         quantidade_anterior: produto.quantidade_atual,
         quantidade_nova: novaQtd,
-        motivo: motivoAjuste || 'Ajuste manual via edição de produto',
+        motivo: motivoAjuste || (ligandoControle ? 'Inventário inicial' : 'Ajuste manual via edição de produto'),
       }).select()
     }
 
@@ -644,10 +732,25 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
               <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Tamanho</label>
-            <input className="field" value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="Ex: M, 38..." />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Tamanho</label>
+              <input className="field" value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="Ex: M, 38..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Categoria</label>
+              <select className="field" value={categoriaId} onChange={e => setCategoriaId(e.target.value)}>
+                <option value="">Sem categoria</option>
+                {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
           </div>
+          <ControleSaldoOpcoes controla={controla} setControla={setControla} sobraMista={sobraMista} setSobraMista={setSobraMista} />
+          {ligandoControle && (
+            <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded-lg">
+              Informe em <strong>Qtd Atual</strong> a quantidade contada no inventário. A partir de agora a saída passa a exigir saldo.
+            </p>
+          )}
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Código de Barras / QR Code</label>
             <div className="flex gap-2">
@@ -677,17 +780,23 @@ function ModalEditarProduto({ produto, estoqueIcone, onClose, onSaved }: { produ
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$) — CMP</label>
-            <input type="number" step="0.01" min="0" className="field" placeholder="0,00"
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">{sobraMista ? 'Preço por kg (R$)' : 'Preço Unitário (R$) — CMP'}</label>
+            <input type="number" step="0.0001" min="0" className="field" placeholder="0,00"
               value={precoUnitario} onChange={e => setPrecoUnitario(e.target.value)} />
-            <p className="text-xs text-[#94A3B8] mt-1">Custo médio ponderado atual. Será recalculado automaticamente em novas entradas.</p>
+            <p className="text-xs text-[#94A3B8] mt-1">
+              {sobraMista
+                ? 'Valor médio do kg de fixação misturada. É o crédito que a obra recebe por kg de sobra devolvida.'
+                : controla
+                  ? 'Custo médio ponderado atual. Será recalculado automaticamente em novas entradas.'
+                  : 'Preço de referência: é o custo lançado na obra a cada saída. Atualize quando o preço de compra mudar.'}
+            </p>
           </div>
-          {parseFloat(qtdAtual) !== qtdOriginal && (
+          {(parseFloat(qtdAtual) !== qtdOriginal || ligandoControle) && (
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">
                 Motivo do ajuste <span className="text-[#94A3B8] font-normal">(de {qtdOriginal} → {qtdAtual || 0})</span>
               </label>
-              <input className="field" placeholder="Ex: Ajuste após inventário físico"
+              <input className="field" placeholder={ligandoControle ? 'Inventário inicial' : 'Ex: Ajuste após inventário físico'}
                 value={motivoAjuste} onChange={e => setMotivoAjuste(e.target.value)} />
             </div>
           )}
@@ -773,7 +882,7 @@ function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
     if (produto) {
       const novaQtd = produto.quantidade_atual + qtdNum
       const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
-      if (precoAtual > 0) {
+      if (precoAtual > 0 && controlaSaldo(produto)) {
         // Recalcula CMP incluindo o retorno
         const cmpAtual = produto.preco_unitario || 0
         const novoCMP = produto.quantidade_atual > 0
@@ -817,7 +926,7 @@ function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
             />
             {qtdNum > 0 && precoAtual > 0 && (
               <p className="text-xs text-emerald-600 mt-1">
-                Crédito ao estoque: {valorCredito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                Crédito à obra: {valorCredito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </p>
             )}
           </div>
@@ -915,7 +1024,7 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
 }
 
 // ── Adicionar produto inline ──────────────────────────
-function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: string; estoqueIcone: string; onAdded: () => void }) {
+function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { estoqueId: string; estoqueIcone: string; categorias: EstoqueProdutoCategoria[]; onAdded: () => void }) {
   const [show, setShow] = useState(false)
   const [nome, setNome] = useState('')
   const [codigo, setCodigo] = useState('')
@@ -923,6 +1032,11 @@ function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: str
   const [tamanho, setTamanho] = useState('')
   const [unidade, setUnidade] = useState('un')
   const [qtdMin, setQtdMin] = useState('0')
+  const [qtdInicial, setQtdInicial] = useState('')
+  const [preco, setPreco] = useState('')
+  const [categoriaId, setCategoriaId] = useState('')
+  const [controla, setControla] = useState(true)
+  const [sobraMista, setSobraMista] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
 
@@ -930,14 +1044,27 @@ function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: str
     if (!nome.trim()) return
     setLoading(true)
     const supabase = createClient()
-    await supabase.from('estoque_produtos').insert({
+    const qtd = parseFloat(qtdInicial) || 0
+    const { data: novo } = await supabase.from('estoque_produtos').insert({
       estoque_id: estoqueId, nome: nome.trim(),
       codigo: codigo || null,
       codigo_barras: codigoBarras || null,
       tamanho: tamanho.trim() || null,
       unidade, quantidade_minima: parseFloat(qtdMin) || 0,
-    })
+      quantidade_atual: qtd,
+      preco_unitario: preco ? parseFloat(preco) : null,
+      categoria_id: categoriaId || null,
+      controla_saldo: controla,
+      sobra_mista: sobraMista,
+    }).select('id').single()
+    if (novo && qtd !== 0) {
+      await supabase.from('estoque_logs').insert({
+        produto_id: novo.id, estoque_id: estoqueId, tipo: 'ajuste_manual',
+        quantidade_anterior: 0, quantidade_nova: qtd, motivo: 'Inventário inicial',
+      })
+    }
     setNome(''); setCodigo(''); setCodigoBarras(''); setTamanho(''); setUnidade('un'); setQtdMin('0')
+    setQtdInicial(''); setPreco(''); setSobraMista(false)
     setShow(false); setLoading(false)
     onAdded()
   }
@@ -972,6 +1099,28 @@ function AddProdutoInline({ estoqueId, estoqueIcone, onAdded }: { estoqueId: str
           <input type="number" className="field text-sm" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
         </div>
       </div>
+      <div className="flex flex-wrap gap-3 items-end">
+        {categorias.length > 0 && (
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-xs font-medium text-[#64748B] mb-1">Categoria</label>
+            <select className="field text-sm" value={categoriaId} onChange={e => setCategoriaId(e.target.value)}>
+              <option value="">Sem categoria</option>
+              {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+        )}
+        <div className="w-32">
+          <label className="block text-xs font-medium text-[#64748B] mb-1">{sobraMista ? 'R$ por kg' : 'Preço unit. (R$)'}</label>
+          <input type="number" step="0.0001" min="0" className="field text-sm" value={preco} onChange={e => setPreco(e.target.value)} placeholder="0,00" />
+        </div>
+        {controla && (
+          <div className="w-32">
+            <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd contada</label>
+            <input type="number" step="any" className="field text-sm" value={qtdInicial} onChange={e => setQtdInicial(e.target.value)} placeholder="0" />
+          </div>
+        )}
+      </div>
+      <ControleSaldoOpcoes controla={controla} setControla={setControla} sobraMista={sobraMista} setSobraMista={setSobraMista} />
       <div className="flex gap-3 items-end">
         <div className="flex-1">
           <label className="block text-xs font-medium text-[#64748B] mb-1">Código de Barras / QR Code</label>
@@ -1139,6 +1288,204 @@ function ModalDetalheRegistro({ registro, estoqueIcone, onClose }: {
             </a>
           )}
           <button onClick={onClose} className="btn-primary">Fechar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Opções de controle de saldo (novo/editar produto) ─
+function ControleSaldoOpcoes({ controla, setControla, sobraMista, setSobraMista }: {
+  controla: boolean; setControla: (v: boolean) => void; sobraMista: boolean; setSobraMista: (v: boolean) => void
+}) {
+  return (
+    <div className="space-y-2 px-3 py-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg">
+      <label className="flex items-start gap-2 text-sm text-[#374151] cursor-pointer">
+        <input type="checkbox" className="rounded mt-0.5" checked={controla}
+          onChange={e => { setControla(e.target.checked); if (e.target.checked) setSobraMista(false) }} />
+        <span>
+          Controlar saldo
+          <span className="block text-xs text-[#94A3B8]">
+            {controla
+              ? 'Item contado: a saída exige saldo e o estoque mostra quanto há no galpão.'
+              : 'Item não contado (ex.: parafuso): a saída para a obra é livre e lança o custo pelo preço de referência. O saldo mostra só o que voltou de obra.'}
+          </span>
+        </span>
+      </label>
+      {!controla && (
+        <label className="flex items-start gap-2 text-sm text-[#374151] cursor-pointer">
+          <input type="checkbox" className="rounded mt-0.5" checked={sobraMista} onChange={e => setSobraMista(e.target.checked)} />
+          <span>
+            Item de sobra mista (kg)
+            <span className="block text-xs text-[#94A3B8]">Recebe a sobra misturada que volta da obra, pesada na balança e creditada pelo R$/kg.</span>
+          </span>
+        </label>
+      )}
+    </div>
+  )
+}
+
+// ── Inventário: contar vários produtos de uma vez ─────
+function ModalInventario({ produtos, categorias, onClose, onSaved }: {
+  produtos: EstoqueProduto[]; categorias: EstoqueProdutoCategoria[]; onClose: () => void; onSaved: () => void
+}) {
+  const [contagem, setContagem] = useState<Record<string, string>>({})
+  const [categoriaId, setCategoriaId] = useState('')
+  const [busca, setBusca] = useState('')
+  const [motivo, setMotivo] = useState('Inventário')
+  const [saving, setSaving] = useState(false)
+
+  const lista = produtos.filter(p => !p.sobra_mista)
+    .filter(p => !categoriaId || p.categoria_id === categoriaId)
+    .filter(p => !busca.trim() || p.nome.toLowerCase().includes(busca.toLowerCase()))
+  const preenchidos = produtos.filter(p => (contagem[p.id] ?? '').trim() !== '' && !isNaN(parseFloat(contagem[p.id])))
+
+  async function salvar() {
+    if (preenchidos.length === 0) return
+    setSaving(true)
+    const supabase = createClient()
+    for (const p of preenchidos) {
+      const nova = parseFloat(contagem[p.id])
+      await supabase.from('estoque_produtos').update({ quantidade_atual: nova, controla_saldo: true }).eq('id', p.id)
+      await supabase.from('estoque_logs').insert({
+        produto_id: p.id, estoque_id: p.estoque_id, tipo: 'ajuste_manual',
+        quantidade_anterior: p.quantidade_atual, quantidade_nova: nova,
+        motivo: controlaSaldo(p) ? (motivo.trim() || 'Inventário') : 'Inventário inicial',
+      })
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <div>
+            <h3 className="font-syne font-semibold text-[#0F172A]">Lançar inventário</h3>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Preencha só o que foi contado. Itens contados passam a ter o saldo controlado.</p>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <div className="px-5 py-3 flex flex-wrap gap-2 border-b border-[#F1F5F9]">
+          <input className="field text-sm flex-1 min-w-[160px]" placeholder="Buscar produto..." value={busca} onChange={e => setBusca(e.target.value)} />
+          {categorias.length > 0 && (
+            <select className="field text-sm w-auto" value={categoriaId} onChange={e => setCategoriaId(e.target.value)}>
+              <option value="">Todas as categorias</option>
+              {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          )}
+        </div>
+        <div className="overflow-y-auto flex-1">
+          <table className="w-full">
+            <thead className="sticky top-0 bg-[#F8FAFC]">
+              <tr className="border-b border-[#E2E8F0]">
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2">Produto</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2">No sistema</th>
+                <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2 w-36">Contado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lista.map(p => {
+                const val = contagem[p.id] ?? ''
+                const dif = val.trim() !== '' ? parseFloat(val) - p.quantidade_atual : 0
+                return (
+                  <tr key={p.id} className="border-b border-[#F1F5F9]">
+                    <td className="px-4 py-2 text-sm text-[#0F172A]">
+                      {p.nome}
+                      {!controlaSaldo(p) && <span className="ml-2 text-[10px] text-[#94A3B8]">sem controle</span>}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-[#64748B]">{p.quantidade_atual} {p.unidade}</td>
+                    <td className="px-4 py-2">
+                      <input type="number" step="any" className="field text-sm py-1.5" value={val}
+                        onChange={e => setContagem(c => ({ ...c, [p.id]: e.target.value }))} />
+                      {val.trim() !== '' && dif !== 0 && controlaSaldo(p) && (
+                        <p className={`text-[10px] mt-0.5 ${dif < 0 ? 'text-red-500' : 'text-emerald-600'}`}>{dif > 0 ? '+' : ''}{dif} {p.unidade}</p>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+              {lista.length === 0 && (
+                <tr><td colSpan={3} className="px-4 py-8 text-center text-sm text-[#94A3B8]">Nenhum produto encontrado.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-[#E2E8F0]">
+          <input className="field text-sm flex-1 min-w-[160px]" value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="Motivo (ex.: Inventário mensal)" />
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
+            <button onClick={salvar} disabled={saving || preenchidos.length === 0} className="btn-primary text-sm flex items-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+              Salvar {preenchidos.length > 0 ? `${preenchidos.length} item(ns)` : ''}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Categorias de produto ─────────────────────────────
+function ConfigurarCategorias({ estoqueId, categorias, onUpdated }: { estoqueId: string; categorias: EstoqueProdutoCategoria[]; onUpdated: () => void }) {
+  const [nome, setNome] = useState('')
+  const [cor, setCor] = useState(CORES[0])
+  const [editando, setEditando] = useState<EstoqueProdutoCategoria | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  async function salvar() {
+    if (!nome.trim()) return
+    setSaving(true)
+    const supabase = createClient()
+    if (editando) {
+      await supabase.from('estoque_produto_categorias').update({ nome: nome.trim(), cor }).eq('id', editando.id)
+    } else {
+      await supabase.from('estoque_produto_categorias').insert({ estoque_id: estoqueId, nome: nome.trim(), cor, ordem: categorias.length + 1 })
+    }
+    setNome(''); setCor(CORES[0]); setEditando(null); setSaving(false)
+    onUpdated()
+  }
+
+  async function excluir(c: EstoqueProdutoCategoria) {
+    if (!confirm(`Excluir a categoria "${c.nome}"? Os produtos dela ficam sem categoria.`)) return
+    await createClient().from('estoque_produto_categorias').delete().eq('id', c.id)
+    onUpdated()
+  }
+
+  return (
+    <div className="card max-w-lg">
+      <h3 className="font-syne font-semibold text-[#0F172A] mb-1">Categorias de produto</h3>
+      <p className="text-xs text-[#64748B] mb-4">Agrupam os produtos na lista e o custo de material na obra (ex.: quanto a obra gastou de Fixação).</p>
+      <div className="space-y-2">
+        {categorias.length === 0 && <p className="text-sm text-[#94A3B8]">Nenhuma categoria criada.</p>}
+        {categorias.map(c => (
+          <div key={c.id} className="flex items-center justify-between px-3 py-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: c.cor }} />
+              <span className="text-sm font-medium text-[#374151]">{c.nome}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setEditando(c); setNome(c.nome); setCor(c.cor) }} className="text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={14} /></button>
+              <button onClick={() => excluir(c)} className="text-[#94A3B8] hover:text-red-500"><Trash2 size={14} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 pt-4 border-t border-[#E2E8F0] space-y-3">
+        <input className="field text-sm" value={nome} onChange={e => setNome(e.target.value)} placeholder={editando ? 'Nome da categoria' : 'Nova categoria (ex.: Fixação)'} />
+        <div className="flex gap-2 flex-wrap">
+          {CORES.map(c => (
+            <button key={c} type="button" onClick={() => setCor(c)}
+              className={`w-7 h-7 rounded-full border-4 transition-all ${cor === c ? 'border-white ring-2 ring-offset-1 ring-[#4F7CFF] scale-110' : 'border-white'}`}
+              style={{ backgroundColor: c }} />
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={salvar} disabled={saving || !nome.trim()} className="btn-primary text-sm py-2">{editando ? 'Salvar' : 'Adicionar'}</button>
+          {editando && (
+            <button onClick={() => { setEditando(null); setNome(''); setCor(CORES[0]) }} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
+          )}
         </div>
       </div>
     </div>

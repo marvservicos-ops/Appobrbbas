@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2, Users, ShoppingCart, ArrowUpCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import ModalSobraMista from '@/components/ModalSobraMista'
+import ObraMateriaisAnalise from '@/components/ObraMateriaisAnalise'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const dataBR = (v?: string) => v ? new Date(v + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -21,6 +23,7 @@ interface RegistroEstoque {
   tipo: 'entrada' | 'saida'
   estoque_id: string
   obra_id?: string | null
+  registro_origem_id?: string | null
   estoque_nome?: string
 }
 
@@ -79,6 +82,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
   const [devolvendoRegistro, setDevolvendoRegistro] = useState<RegistroEstoque | null>(null)
   const [enviandoEstoque, setEnviandoEstoque] = useState<MaterialObra | null>(null)
+  const [showSobraMista, setShowSobraMista] = useState(false)
 
   const [secaoEstoque, setSecaoEstoque] = useState(true)
   const [secaoMateriais, setSecaoMateriais] = useState(true)
@@ -151,10 +155,24 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
     load()
   }, [obraId])
 
+  async function recarregarRegistros() {
+    const supabase = createClient()
+    const { data } = await supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false })
+    if (data) {
+      const mapped = data.map((r: any) => ({ ...r, estoque_nome: r.estoque?.nome }))
+      setSaidas(mapped.filter((r: RegistroEstoque) => r.tipo === 'saida'))
+      setDevolucoes(mapped.filter((r: RegistroEstoque) => r.tipo === 'entrada'))
+    }
+  }
+
   // ── totais ────────────────────────────────────────
   const totalSaidas = saidas.reduce((s, r) => s + (r.valor_total || 0), 0)
   const totalDevolucoes = devolucoes.reduce((s, r) => s + (r.valor_total || 0), 0)
   const custoEstoque = totalSaidas - totalDevolucoes
+  const devolvidoMap = new Map<string, number>()
+  for (const d of devolucoes) {
+    if (d.registro_origem_id) devolvidoMap.set(d.registro_origem_id, (devolvidoMap.get(d.registro_origem_id) ?? 0) + d.quantidade)
+  }
 
   // Agrupar materiais por orçamento
   const grupos = new Map<string, MaterialObra[]>()
@@ -232,7 +250,14 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         aberto={secaoEstoque}
         onToggle={() => setSecaoEstoque(a => !a)}
       >
-        {saidas.length === 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-[#F1F5F9]">
+          <p className="text-xs text-[#94A3B8]">Para devolver item separado, use ↩ na saída. Sobra misturada: pese e lance por kg.</p>
+          <button onClick={() => setShowSobraMista(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9]">
+            <Scale size={13} /> Devolver sobra mista (kg)
+          </button>
+        </div>
+        {saidas.length === 0 && devolucoes.length === 0 ? (
           <EmptyState text="Nenhuma saída de estoque vinculada a esta obra." />
         ) : (
           <>
@@ -247,13 +272,24 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-sm font-bold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</span>
-                    <button onClick={() => setDevolvendoRegistro(r)} className="p-1.5 rounded hover:bg-emerald-50 text-[#CBD5E1] hover:text-emerald-600"><Undo2 size={14} /></button>
+                    {(devolvidoMap.get(r.id) ?? 0) < r.quantidade && (
+                      <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução" className="p-1.5 rounded hover:bg-emerald-50 text-[#CBD5E1] hover:text-emerald-600"><Undo2 size={14} /></button>
+                    )}
                   </div>
                 </div>
               ))}
               <div className="px-4 py-2.5 bg-[#F8FAFC] flex justify-between text-xs font-semibold text-[#374151]">
                 <span>Saídas</span><span className="text-red-600">{moeda(totalSaidas)}</span>
               </div>
+              {devolucoes.filter(d => !d.registro_origem_id).map(d => (
+                <div key={d.id} className="px-4 py-2.5 flex items-start justify-between gap-3 bg-[#F7FEF9]">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-[#0F172A] truncate">↩ {d.produto_nome}</p>
+                    <p className="text-xs text-[#94A3B8]">{d.quantidade} {d.unidade ?? ''} · {dataBR(d.data)}</p>
+                  </div>
+                  <span className="text-sm font-semibold text-green-600 shrink-0">−{moeda(d.valor_total || 0)}</span>
+                </div>
+              ))}
               {devolucoes.length > 0 && (
                 <div className="px-4 py-2.5 bg-[#F0FDF4] flex justify-between text-xs font-semibold text-[#374151]">
                   <span>Devoluções</span><span className="text-green-600">−{moeda(totalDevolucoes)}</span>
@@ -272,15 +308,31 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                 <tbody>
                   {saidas.map(r => (
                     <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
-                      <Td bold>{r.produto_nome}</Td>
+                      <Td bold>
+                        {r.produto_nome}
+                        {(devolvidoMap.get(r.id) ?? 0) > 0 && <span className="block text-[10px] font-semibold text-amber-700">↩ {devolvidoMap.get(r.id)} de {r.quantidade} devolvido</span>}
+                      </Td>
                       <Td>{r.estoque_nome ?? '—'}</Td>
                       <Td>{r.quantidade} {r.unidade ?? ''}</Td>
                       <Td>{r.preco_unitario_custo ? moeda(r.preco_unitario_custo) : '—'}</Td>
                       <td className="px-4 py-3 text-sm font-semibold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</td>
                       <Td>{dataBR(r.data)}</Td>
                       <td className="px-3 py-3">
-                        <button onClick={() => setDevolvendoRegistro(r)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"><Undo2 size={13} /></button>
+                        {(devolvidoMap.get(r.id) ?? 0) < r.quantidade && (
+                          <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução" className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"><Undo2 size={13} /></button>
+                        )}
                       </td>
+                    </tr>
+                  ))}
+                  {devolucoes.filter(d => !d.registro_origem_id).map(d => (
+                    <tr key={d.id} className="border-b border-[#F1F5F9] bg-[#F7FEF9]">
+                      <Td bold>↩ {d.produto_nome}</Td>
+                      <Td>{d.estoque_nome ?? '—'}</Td>
+                      <Td>{d.quantidade} {d.unidade ?? ''}</Td>
+                      <Td>{d.preco_unitario_custo ? moeda(d.preco_unitario_custo) : '—'}</Td>
+                      <td className="px-4 py-3 text-sm font-semibold text-green-600">−{moeda(d.valor_total || 0)}</td>
+                      <Td>{dataBR(d.data)}</Td>
+                      <td />
                     </tr>
                   ))}
                 </tbody>
@@ -462,6 +514,9 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         )}
       </Section>
 
+      {/* ── Análise de materiais: por categoria, índice e previsto x realizado ── */}
+      <ObraMateriaisAnalise obraId={obraId} saidas={saidas} devolucoes={devolucoes} custoComprasDiretas={custoMateriaisReal} />
+
       {/* ── Seção 3: Mão de Obra ── */}
       <Section
         icon={<Users size={15} className="text-violet-500" />}
@@ -612,17 +667,17 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
       {devolvendoRegistro && (
         <ModalDevolucao
           registro={devolvendoRegistro}
+          jaDevolvido={devolvidoMap.get(devolvendoRegistro.id) ?? 0}
           onClose={() => setDevolvendoRegistro(null)}
-          onSaved={async () => {
-            setDevolvendoRegistro(null)
-            const supabase = createClient()
-            const { data } = await supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false })
-            if (data) {
-              const mapped = data.map((r: any) => ({ ...r, estoque_nome: r.estoque?.nome }))
-              setSaidas(mapped.filter((r: RegistroEstoque) => r.tipo === 'saida'))
-              setDevolucoes(mapped.filter((r: RegistroEstoque) => r.tipo === 'entrada'))
-            }
-          }}
+          onSaved={() => { setDevolvendoRegistro(null); recarregarRegistros() }}
+        />
+      )}
+
+      {showSobraMista && (
+        <ModalSobraMista
+          obraId={obraId}
+          onClose={() => setShowSobraMista(false)}
+          onSaved={() => { setShowSobraMista(false); recarregarRegistros() }}
         />
       )}
 
@@ -675,8 +730,8 @@ function EmptyState({ text }: { text: string }) {
 }
 
 // ── Modal Devolução ao Estoque ─────────────────────────
-function ModalDevolucao({ registro, onClose, onSaved }: {
-  registro: RegistroEstoque; onClose: () => void; onSaved: () => void
+function ModalDevolucao({ registro, jaDevolvido, onClose, onSaved }: {
+  registro: RegistroEstoque; jaDevolvido: number; onClose: () => void; onSaved: () => void
 }) {
   const [qtd, setQtd] = useState('')
   const [responsavel, setResponsavel] = useState(registro.responsavel)
@@ -686,11 +741,12 @@ function ModalDevolucao({ registro, onClose, onSaved }: {
   const qtdNum = parseFloat(qtd) || 0
   const precoAtual = registro.preco_unitario_custo || 0
   const valorCredito = qtdNum * precoAtual
+  const restante = registro.quantidade - jaDevolvido
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade.'); return }
-    if (qtdNum > registro.quantidade) { setError(`Máximo: ${registro.quantidade} ${registro.unidade ?? ''}`); return }
+    if (qtdNum > restante) { setError(`Máximo: ${restante} ${registro.unidade ?? ''} (ainda não devolvido)`); return }
     setSaving(true)
     const supabase = createClient()
 
@@ -706,14 +762,15 @@ function ModalDevolucao({ registro, onClose, onSaved }: {
       obra_id: registro.obra_id ?? null,
       preco_unitario_custo: precoAtual || null,
       valor_total: valorCredito || null,
+      registro_origem_id: registro.id,
       observacoes: `Devolução de saída de ${dataBR(registro.data)}`,
     })
 
     if (registro.produto_id) {
-      const { data: prod } = await supabase.from('estoque_produtos').select('quantidade_atual, preco_unitario').eq('id', registro.produto_id).single()
+      const { data: prod } = await supabase.from('estoque_produtos').select('quantidade_atual, preco_unitario, controla_saldo').eq('id', registro.produto_id).single()
       if (prod) {
         const novaQtd = prod.quantidade_atual + qtdNum
-        const novoCMP = prod.quantidade_atual > 0 && precoAtual > 0
+        const novoCMP = prod.controla_saldo !== false && prod.quantidade_atual > 0 && precoAtual > 0
           ? (prod.quantidade_atual * (prod.preco_unitario || 0) + qtdNum * precoAtual) / novaQtd
           : prod.preco_unitario
         await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd, preco_unitario: novoCMP }).eq('id', registro.produto_id)
@@ -736,13 +793,14 @@ function ModalDevolucao({ registro, onClose, onSaved }: {
         <form onSubmit={handleSave} className="p-5 space-y-4">
           <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800">
             <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {dataBR(registro.data)}</p>
-            {precoAtual > 0 && <p>CMP: <strong>{moeda(precoAtual)}</strong></p>}
+            {jaDevolvido > 0 && <p>Já devolvido: <strong>{jaDevolvido} {registro.unidade ?? ''}</strong> · restante: <strong>{restante} {registro.unidade ?? ''}</strong></p>}
+            {precoAtual > 0 && <p>Custo unitário da saída: <strong>{moeda(precoAtual)}</strong></p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade a devolver *</label>
-            <input type="number" step="0.01" min="0.01" max={registro.quantidade} className="field" autoFocus
+            <input type="number" step="any" min="0" max={restante} className="field" autoFocus
               value={qtd} onChange={e => setQtd(e.target.value)} />
-            {qtdNum > 0 && precoAtual > 0 && <p className="text-xs text-emerald-600 mt-1">Crédito: {moeda(valorCredito)}</p>}
+            {qtdNum > 0 && precoAtual > 0 && <p className="text-xs text-emerald-600 mt-1">Crédito à obra: {moeda(valorCredito)}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável *</label>

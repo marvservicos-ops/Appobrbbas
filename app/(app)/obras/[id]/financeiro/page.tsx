@@ -30,7 +30,7 @@ function DreSummary({ obraId }: { obraId: string }) {
       const sb = createClient()
       const [{ data: meds }, { data: estReg }, { data: mats }, { data: alocs }] = await Promise.all([
         sb.from('obra_medicoes').select('status, valor_previsto').eq('obra_id', obraId),
-        sb.from('estoque_registros').select('valor_total').eq('obra_id', obraId).eq('tipo', 'saida'),
+        sb.from('estoque_registros').select('tipo, valor_total').eq('obra_id', obraId),
         sb.from('obra_materiais').select('valor_total').eq('obra_id', obraId).eq('tipo_compra', 'interna'),
         sb.from('funcionario_alocacoes')
           .select('percentual, funcionarios:funcionario_id(custo_diario, salario_bruto, dias_mes)')
@@ -43,7 +43,7 @@ function DreSummary({ obraId }: { obraId: string }) {
       const totalRecebido = (meds ?? []).filter((m: any) => m.status === 'recebida')
         .reduce((s: number, m: any) => s + (m.valor_previsto || 0), 0)
 
-      const custoEstoque = (estReg ?? []).reduce((s: number, r: any) => s + (r.valor_total || 0), 0)
+      const custoEstoque = (estReg ?? []).reduce((s: number, r: any) => s + (r.tipo === 'saida' ? 1 : -1) * (r.valor_total || 0), 0)
       const custoMateriais = (mats ?? []).reduce((s: number, m: any) => s + (m.valor_total || 0), 0)
       const custoMaoObra = (alocs ?? []).reduce((s: number, a: any) => {
         const f = a.funcionarios as any
