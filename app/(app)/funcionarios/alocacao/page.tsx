@@ -484,14 +484,23 @@ export default function AlocacaoPage() {
                       const dividido = prevNoturno || noturnos.length > 0
                       const showPct = alocArray.length > 1
                       const curto = view !== 'semanal'
-                      const transp = alocArray[0]
-                      const veicNome = transp?.veiculo_nome
-                      const transpLabel = !transp ? null
-                        : transp.transporte_tipo === 'veiculo' && veicNome ? (veicNome.split(' ')[1] ?? veicNome.split(' ')[0])
-                        : transp.transporte_tipo === 'transporte_publico' ? 'Ônibus'
-                        : transp.transporte_tipo === 'casa' ? 'Direto'
-                        : null
-                      const hasObs = alocArray.some(a => a.observacao)
+                      const rodape = (lista: Alocacao[]) => {
+                        const transp = lista[0]
+                        const veicNome = transp?.veiculo_nome
+                        const transpLabel = !transp ? null
+                          : transp.transporte_tipo === 'veiculo' && veicNome ? (veicNome.split(' ')[1] ?? veicNome.split(' ')[0])
+                          : transp.transporte_tipo === 'transporte_publico' ? 'Ônibus'
+                          : transp.transporte_tipo === 'casa' ? 'Direto'
+                          : null
+                        const not = lista.some(a => a.noturno)
+                        return (
+                          <div className="w-full flex items-center justify-center bg-[#F1F5F9] shrink-0 gap-1 overflow-hidden" style={{ height: 13 }}>
+                            {not && <span className="text-[8px] font-semibold text-[#6366F1] shrink-0">Noturno ›</span>}
+                            {transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{not ? '· ' : ''}{transpLabel}</span>}
+                            {lista.some(a => a.observacao) && <span className="text-[8px] text-[#F59E0B] shrink-0" title="Tem observação">●</span>}
+                          </div>
+                        )
+                      }
                       const dica = [
                         prevNoturno ? `Fim do turno noturno de ${pad2(prevD.getDate())}/${pad2(prevD.getMonth() + 1)}: ${prevNoturnos.map(a => labelAloc(a, false, false)).join(', ')}` : '',
                         ...alocArray.map(a => [(a.tipo === 'folga' && a.motivo ? 'Folga: ' : '') + labelAloc(a, false, showPct) + (a.noturno ? ' (noturno, até o dia seguinte)' : ''), a.observacao].filter(Boolean).join(' — ')),
@@ -511,9 +520,10 @@ export default function AlocacaoPage() {
                       })
                       // Barra noturna posicionada sobre a célula; não captura clique (cada metade abre o próprio dia)
                       const barra = (lista: Alocacao[], left: string, width: string, key: string) => (
-                        <div key={key} className="absolute flex flex-col gap-px rounded overflow-hidden pointer-events-none border-l-2 border-[#6366F1]"
-                          style={{ left, width, top: 3, bottom: 17, zIndex: 1 }}>
-                          {pilha(lista, lista.length > 1)}
+                        <div key={key} className="absolute flex flex-col rounded overflow-hidden pointer-events-none border-l-2 border-[#6366F1]"
+                          style={{ left, width, top: 3, bottom: 3, zIndex: 1 }}>
+                          <div className="flex flex-col flex-1 gap-px min-h-0">{pilha(lista, lista.length > 1)}</div>
+                          {rodape(lista)}
                         </div>
                       )
                       const ultimo = di === dias.length - 1
@@ -527,33 +537,31 @@ export default function AlocacaoPage() {
                           {/* Continuação de um noturno de antes do período exibido */}
                           {di === 0 && prevNoturno && barra(prevNoturnos, '3px', 'calc(50% - 3px)', 'cont')}
                           {noturnos.length > 0 && barra(noturnos, '50%', ultimo ? 'calc(50% - 3px)' : '100%', 'not')}
-                          {alocArray.length > 0 || dividido ? (
-                            <div className="rounded w-full h-full flex flex-col overflow-hidden">
-                              {dividido ? (
-                                <div className="flex flex-1 min-h-0 gap-px">
-                                  {/* Metade esquerda: fim do noturno anterior, ou o turno de dia antes de um noturno */}
-                                  <div className="w-1/2 flex flex-col gap-px min-h-0 overflow-hidden">
-                                    {!prevNoturno && noturnos.length > 0 && pilha(diurnos, showPct)}
-                                  </div>
-                                  {/* Metade direita: início do noturno, ou o lançamento do dia após a noite (ex.: folga de virada) */}
-                                  <div className="w-1/2 flex flex-col gap-px min-h-0 overflow-hidden">
-                                    {prevNoturno && noturnos.length === 0 && (diurnos.length > 0 ? pilha(diurnos, showPct) : (
-                                      <div className="w-full h-full rounded flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity hover:bg-[#EEF2FF]">
-                                        <span className="text-[#C7D2FE] text-base leading-none">+</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex flex-col flex-1 overflow-hidden gap-px min-h-0">
-                                  {pilha(alocArray, showPct)}
-                                </div>
-                              )}
-                              <div className={`w-full flex items-center justify-center shrink-0 gap-1 mt-px ${alocArray.length > 0 ? 'bg-[#F1F5F9]' : ''}`} style={{ height: 13 }}>
-                                {noturnos.length > 0 && <span className="text-[8px] font-semibold text-[#6366F1] shrink-0">Noturno ›</span>}
-                                {transpLabel && <span className="text-[8px] font-medium text-[#64748B] truncate px-0.5">{noturnos.length > 0 ? '· ' : ''}{transpLabel}</span>}
-                                {hasObs && <span className="text-[8px] text-[#F59E0B] shrink-0" title="Tem observação">●</span>}
+                          {dividido ? (
+                            <div className="w-full h-full flex gap-px">
+                              {/* Metade esquerda: fim do noturno anterior, ou o turno de dia antes de um noturno */}
+                              <div className="w-1/2 flex flex-col rounded overflow-hidden">
+                                {!prevNoturno && noturnos.length > 0 && diurnos.length > 0 && (
+                                  <><div className="flex flex-col flex-1 gap-px min-h-0">{pilha(diurnos, showPct)}</div>{rodape(diurnos)}</>
+                                )}
                               </div>
+                              {/* Metade direita: início do noturno, ou o lançamento do dia após a noite (ex.: folga de virada) */}
+                              <div className="w-1/2 flex flex-col rounded overflow-hidden">
+                                {prevNoturno && noturnos.length === 0 && (diurnos.length > 0 ? (
+                                  <><div className="flex flex-col flex-1 gap-px min-h-0">{pilha(diurnos, showPct)}</div>{rodape(diurnos)}</>
+                                ) : (
+                                  <div className="w-full h-full rounded flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity hover:bg-[#EEF2FF]">
+                                    <span className="text-[#C7D2FE] text-base leading-none">+</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : alocArray.length > 0 ? (
+                            <div className="rounded w-full h-full flex flex-col overflow-hidden">
+                              <div className="flex flex-col flex-1 overflow-hidden gap-px min-h-0">
+                                {pilha(alocArray, showPct)}
+                              </div>
+                              {rodape(alocArray)}
                             </div>
                           ) : (
                             <div className="rounded w-full h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity hover:bg-[#EEF2FF]">
