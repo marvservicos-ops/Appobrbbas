@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Loader2, BarChart3 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueProdutoCategoria } from '@/lib/types'
+import { chaveNome } from '@/components/ObraMateriaisAnalise'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 
@@ -51,7 +52,9 @@ export default function ConsumoObrasPage() {
         ? await buscarTudo<{ id: string; categoria_id: string | null }>((de, ate) =>
             supabase.from('estoque_produtos').select('id, categoria_id').in('estoque_id', estoqueIds).order('id').range(de, ate))
         : []
-      const catDe = new Map(prods.map(p => [p.id, p.categoria_id]))
+      // Categorias de mesmo nome em estoques diferentes somam juntas
+      const nomeCat = new Map(cats.map(c => [c.id, chaveNome(c.nome)]))
+      const catDe = new Map(prods.map(p => [p.id, p.categoria_id ? nomeCat.get(p.categoria_id) ?? null : null]))
 
       const mapa = new Map<string, Map<string, number>>()
       const somar = (obraId: string, chave: string, v: number) => {
@@ -84,7 +87,9 @@ export default function ConsumoObrasPage() {
   )
 
   const colunas = [
-    ...categorias.map(c => ({ id: c.id, nome: c.nome, cor: c.cor })),
+    ...categorias
+      .filter((c, i) => categorias.findIndex(x => chaveNome(x.nome) === chaveNome(c.nome)) === i)
+      .map(c => ({ id: chaveNome(c.nome), nome: c.nome, cor: c.cor })),
     { id: SEM, nome: 'Sem categoria', cor: '#94A3B8' },
     { id: COMPRAS, nome: 'Compras diretas', cor: '#3B82F6' },
   ]

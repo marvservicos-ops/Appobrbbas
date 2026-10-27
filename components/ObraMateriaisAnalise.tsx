@@ -34,6 +34,8 @@ interface Previsao {
 }
 interface ProdutoInfo { id: string; nome: string; unidade: string; categoria_id: string | null; estoque_id: string }
 
+export const chaveNome = (nome: string) => nome.trim().toLowerCase()
+
 // Acima disso a previsão vira alerta vermelho (abaixo, até 100%, segue verde; entre 100% e isso, âmbar)
 const MARGEM_ALERTA = 1.2
 
@@ -93,17 +95,24 @@ export default function ObraMateriaisAnalise({ obraId, saidas, devolucoes, custo
   if (categorias.length === 0) return null
 
   // ── custo líquido por categoria ────────────────────
+  // Categorias são por estoque; as de mesmo nome (ex.: Fixação no Hidráulico e no Materiais) somam juntas
+  const categoriaPorId = new Map(categorias.map(c => [c.id, c]))
+  const chaveCategoria = (id: string | null | undefined) => {
+    const c = id ? categoriaPorId.get(id) : null
+    return c ? chaveNome(c.nome) : '__sem__'
+  }
+  const categoriasUnicas = categorias.filter((c, i) => categorias.findIndex(x => chaveNome(x.nome) === chaveNome(c.nome)) === i)
   const porCategoria = new Map<string, number>()
   const sinal = (r: Registro) => (r.tipo === 'saida' ? 1 : -1)
   for (const r of [...saidas, ...devolucoes]) {
-    const cat = (r.produto_id && catDeProduto.get(r.produto_id)) || '__sem__'
+    const cat = chaveCategoria(r.produto_id ? catDeProduto.get(r.produto_id) : null)
     porCategoria.set(cat, (porCategoria.get(cat) ?? 0) + sinal(r) * (r.valor_total || 0))
   }
   const linhas = [
-    ...categorias.map(c => ({ id: c.id, nome: c.nome, cor: c.cor, valor: porCategoria.get(c.id) ?? 0 })),
+    ...categoriasUnicas.map(c => ({ id: c.id, nome: c.nome, cor: c.cor, valor: porCategoria.get(chaveNome(c.nome)) ?? 0 })),
     { id: '__sem__', nome: 'Sem categoria', cor: '#94A3B8', valor: porCategoria.get('__sem__') ?? 0 },
     { id: '__compras__', nome: 'Compras diretas (Materiais da Obra)', cor: '#3B82F6', valor: custoComprasDiretas },
-  ].filter(l => l.valor !== 0 || categorias.some(c => c.id === l.id))
+  ].filter(l => l.valor !== 0 || categoriasUnicas.some(c => c.id === l.id))
   const total = linhas.reduce((s, l) => s + l.valor, 0)
   const grandeza = grandezas.find(g => g.id === grandezaSel)
   const divisor = grandeza && grandeza.valor > 0 ? grandeza.valor : 0
@@ -115,7 +124,6 @@ export default function ObraMateriaisAnalise({ obraId, saidas, devolucoes, custo
     qtdPorProduto.set(r.produto_id, (qtdPorProduto.get(r.produto_id) ?? 0) + sinal(r) * r.quantidade)
   }
   const produtoPorId = new Map(produtos.map(p => [p.id, p]))
-  const categoriaPorId = new Map(categorias.map(c => [c.id, c]))
 
   return (
     <div className="card p-0 overflow-hidden">
@@ -171,9 +179,9 @@ export default function ObraMateriaisAnalise({ obraId, saidas, devolucoes, custo
           <GrandezasEditor obraId={obraId} grandezas={grandezas} onChange={load} />
 
           <PrevisaoEditor
-            obraId={obraId} previsoes={previsoes} produtos={produtos} categorias={categorias}
+            obraId={obraId} previsoes={previsoes} produtos={produtos} categorias={categoriasUnicas}
             realizadoProduto={id => qtdPorProduto.get(id) ?? 0}
-            realizadoCategoria={id => porCategoria.get(id) ?? 0}
+            realizadoCategoria={id => porCategoria.get(chaveCategoria(id)) ?? 0}
             produtoPorId={produtoPorId} categoriaPorId={categoriaPorId}
             onChange={load}
           />
