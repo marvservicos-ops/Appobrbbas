@@ -32,6 +32,7 @@ interface Alocacao {
   percentual: number
   noturno: boolean
   observacao: string | null
+  motivo: string | null
 }
 
 type TransporteTipo = 'veiculo' | 'transporte_publico' | 'casa'
@@ -51,6 +52,59 @@ const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon:
   { tipo: 'ferias',     label: 'Férias',      cor: '#14B8A6', bg: '#F0FDFA', Icon: Palmtree  },
 ]
 const TIPO_MAP = Object.fromEntries(TIPOS.map(t => [t.tipo, t])) as Record<TipoAlocacao, typeof TIPOS[number]>
+
+// Motivos sugeridos para folga, falta e atestado (também aceita texto livre em "Outro")
+const MOTIVOS: Partial<Record<TipoAlocacao, string[]>> = {
+  folga:    ['Feriado', 'Ponte de feriado', 'Aniversário', 'Compensação de horas', 'Virada de turno'],
+  falta:    ['Sem justificativa', 'Problema pessoal', 'Doença sem atestado', 'Problema com transporte'],
+  atestado: ['Doença', 'Consulta/exame médico', 'Odontológico', 'Acidente de trabalho', 'Acompanhar familiar'],
+}
+function temMotivo(tipo: TipoAlocacao | '') { return !!tipo && !!MOTIVOS[tipo] }
+// Só envia a coluna quando há motivo, para não quebrar o salvamento antes da migração
+function motivoCampo(tipo: TipoAlocacao | '', motivo: string) {
+  const m = motivo.trim()
+  return temMotivo(tipo) && m ? { motivo: m } : {}
+}
+// Texto da alocação na célula: folga com motivo mostra o motivo (ex.: "Feriado")
+function labelAloc(a: Alocacao, curto: boolean, showPct: boolean) {
+  const nome = (n: string) => curto ? abrev(n) : n
+  const pct = showPct ? ` ${a.percentual}%` : ''
+  if (a.tipo === 'obra' && a.obra_nome) return `${nome(a.obra_nome)}${pct}`
+  if (a.tipo === 'manutencao' && a.manutencao_nome) return `${nome(a.manutencao_nome)}${pct}`
+  if (a.tipo === 'folga') {
+    const base = a.motivo ? (curto ? abrev(a.motivo) : a.motivo) : 'Folga'
+    return a.obra_nome ? `${base} ($) ${nome(a.obra_nome)}` : `${base}${pct}`
+  }
+  if (a.tipo === 'escritorio' && a.obra_nome) return `Galpão ($) ${nome(a.obra_nome)}`
+  if ((a.tipo === 'falta' || a.tipo === 'atestado') && a.motivo && !curto) return `${TIPO_MAP[a.tipo].label} · ${a.motivo}${pct}`
+  return `${TIPO_MAP[a.tipo].label}${pct}`
+}
+
+function MotivoSelect({ tipo, value, onChange, className = '' }: {
+  tipo: TipoAlocacao | ''; value: string; onChange: (v: string) => void; className?: string
+}) {
+  const presets = (tipo && MOTIVOS[tipo]) || []
+  const [outro, setOutro] = useState(!!value && !presets.includes(value))
+  if (!presets.length) return null
+  return (
+    <div className={`flex items-center gap-1.5 ${className}`}>
+      <select className="field text-xs py-1 flex-1 min-w-[130px]"
+        value={outro ? '__outro' : value}
+        onChange={e => {
+          if (e.target.value === '__outro') { setOutro(true); onChange('') }
+          else { setOutro(false); onChange(e.target.value) }
+        }}>
+        <option value="">Motivo{tipo === 'folga' ? ' da folga' : tipo === 'falta' ? ' da falta' : ' do atestado'}...</option>
+        {presets.map(m => <option key={m} value={m}>{m}</option>)}
+        <option value="__outro">Outro...</option>
+      </select>
+      {outro && (
+        <input className="field text-xs py-1 flex-1 min-w-[120px]" placeholder="Qual motivo?"
+          value={value} onChange={e => onChange(e.target.value)} autoFocus />
+      )}
+    </div>
+  )
+}
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const DS = ['D','S','T','Q','Q','S','S']
@@ -221,9 +275,13 @@ export default function AlocacaoPage() {
     const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }, { data: manuts }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo, ordem').eq('ativo', true).order('ordem', { ascending: true, nullsFirst: false }).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
-      sb.from('funcionario_alocacoes')
-        .select('id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, noturno, observacao, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)')
-        .gte('data', inicio).lte('data', fim),
+      (async () => {
+        const cols = 'id, funcionario_id, data, tipo, obra_id, manutencao_id, veiculo_id, transporte_tipo, percentual, noturno, observacao, obras:obra_id(titulo), contratos_manutencao:manutencao_id(empresa:empresas(apelido, razao_social)), veiculos:veiculo_id(nome)'
+        const r = await sb.from('funcionario_alocacoes').select(cols + ', motivo').gte('data', inicio).lte('data', fim)
+        // Migração alocacao_motivo.sql ainda não aplicada: carrega sem a coluna
+        if (r.error?.code === '42703') return await sb.from('funcionario_alocacoes').select(cols).gte('data', inicio).lte('data', fim)
+        return r
+      })(),
       sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
       sb.from('contratos_manutencao').select('id, empresa:empresas(apelido, razao_social)').eq('ativo', true).order('created_at'),
     ])
@@ -249,6 +307,7 @@ export default function AlocacaoPage() {
         percentual: a.percentual ?? 100,
         noturno: a.noturno ?? false,
         observacao: a.observacao ?? null,
+        motivo: a.motivo ?? null,
       }))
     )
     setLoading(false)
@@ -433,8 +492,9 @@ export default function AlocacaoPage() {
                               : null
                             const hasNoturno = alocArray.some(a => a.noturno)
                             const hasObs = alocArray.some(a => a.observacao)
+                            const dica = alocArray.map(a => [(a.tipo === 'folga' && a.motivo ? 'Folga: ' : '') + labelAloc(a, false, alocArray.length > 1), a.observacao].filter(Boolean).join(' — ')).join('\n')
                             return (
-                              <div className="rounded w-full h-full flex flex-col overflow-hidden">
+                              <div className="rounded w-full h-full flex flex-col overflow-hidden" title={dica}>
                                 <div className="flex flex-col flex-1 overflow-hidden gap-px min-h-0">
                                   {alocArray.map((aloc, i) => {
                                     const cfg = TIPO_MAP[aloc.tipo]
@@ -445,15 +505,7 @@ export default function AlocacaoPage() {
                                         style={{ flex: aloc.percentual, minHeight: 0, backgroundColor: cfg.bg }}>
                                         <span className={`font-semibold leading-tight text-center truncate w-full ${view === 'semanal' ? 'text-[11px]' : 'text-[9px]'}`}
                                           style={{ color: cfg.cor }}>
-                                          {aloc.tipo === 'obra' && aloc.obra_nome
-                                            ? `${view === 'semanal' ? aloc.obra_nome : abrev(aloc.obra_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
-                                            : aloc.tipo === 'manutencao' && aloc.manutencao_nome
-                                            ? `${view === 'semanal' ? aloc.manutencao_nome : abrev(aloc.manutencao_nome)}${showPct ? ` ${aloc.percentual}%` : ''}`
-                                            : aloc.tipo === 'folga' && aloc.obra_nome
-                                            ? `Folga ($) ${view === 'semanal' ? aloc.obra_nome : abrev(aloc.obra_nome)}`
-                                            : aloc.tipo === 'escritorio' && aloc.obra_nome
-                                            ? `Galpão ($) ${view === 'semanal' ? aloc.obra_nome : abrev(aloc.obra_nome)}`
-                                            : `${cfg.label}${showPct ? ` ${aloc.percentual}%` : ''}`}
+                                          {labelAloc(aloc, view !== 'semanal', showPct)}
                                         </span>
                                       </div>
                                     )
@@ -573,15 +625,15 @@ export default function AlocacaoPage() {
 // ── Modal preencher dia inteiro ────────────────────────────────────────────────
 
 interface DiaFuncRow {
-  alocs: { _key: number; tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; percentual: number; noturno: boolean }[]
+  alocs: { _key: number; tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; percentual: number; noturno: boolean; motivo: string }[]
   transporte_tipo: string
   veiculo_id: string
   observacao: string
 }
 
 let _diaKey = 0
-function newDiaAloc(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100, noturno = false) {
-  return { _key: ++_diaKey, tipo, obra_id, manutencao_id, percentual, noturno }
+function newDiaAloc(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100, noturno = false, motivo = '') {
+  return { _key: ++_diaKey, tipo, obra_id, manutencao_id, percentual, noturno, motivo }
 }
 
 function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, alocMap, onClose, onSaved }: {
@@ -598,7 +650,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
       const existing = alocMap.get(`${f.id}_${toDate(ano, mes, dia)}`) ?? []
       init[f.id] = {
         alocs: existing.length > 0
-          ? existing.map(a => newDiaAloc(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual, a.noturno))
+          ? existing.map(a => newDiaAloc(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual, a.noturno, a.motivo ?? ''))
           : [newDiaAloc()],
         transporte_tipo: existing[0]?.transporte_tipo ?? '',
         veiculo_id: existing[0]?.veiculo_id ?? '',
@@ -658,6 +710,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
           manutencao_id: a.tipo === 'manutencao' && a.manutencao_id ? a.manutencao_id : null,
           percentual: a.percentual,
           noturno: (a.tipo === 'obra' || a.tipo === 'manutencao') ? a.noturno : false,
+          ...motivoCampo(a.tipo, a.motivo),
           transporte_tipo: row.transporte_tipo || null,
           veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
           observacao: row.observacao || null,
@@ -714,14 +767,14 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                     {alocs.map((aloc, idx) => (
                       <div key={aloc._key} className="flex items-center gap-1.5 flex-wrap">
                         {/* tipo buttons — compact */}
-                        <button onClick={() => updateAloc(f.id, aloc._key, { tipo: '', obra_id: '', manutencao_id: '' })}
+                        <button onClick={() => updateAloc(f.id, aloc._key, { tipo: '', obra_id: '', manutencao_id: '', motivo: '' })}
                           className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
                             ${aloc.tipo === '' ? 'bg-[#F1F5F9] border-[#94A3B8] text-[#374151]' : 'border-[#E2E8F0] text-[#CBD5E1] hover:border-[#94A3B8]'}`}>
                           —
                         </button>
                         {TIPOS.map(t => (
                           <button key={t.tipo}
-                            onClick={() => updateAloc(f.id, aloc._key, { tipo: aloc.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio') ? aloc.obra_id : '', manutencao_id: t.tipo !== 'manutencao' ? '' : aloc.manutencao_id })}
+                            onClick={() => updateAloc(f.id, aloc._key, { tipo: aloc.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio') ? aloc.obra_id : '', manutencao_id: t.tipo !== 'manutencao' ? '' : aloc.manutencao_id, motivo: aloc.tipo === t.tipo ? aloc.motivo : '' })}
                             className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
                               ${aloc.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
                             style={aloc.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
@@ -749,6 +802,10 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                             <option value="">Sem custo (ex: aniversário)</option>
                             {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
                           </select>
+                        )}
+                        {temMotivo(aloc.tipo) && (
+                          <MotivoSelect key={aloc.tipo} tipo={aloc.tipo} value={aloc.motivo}
+                            onChange={v => updateAloc(f.id, aloc._key, { motivo: v })} className="flex-1 min-w-[140px]" />
                         )}
                         {aloc.tipo === 'escritorio' && (
                           <select className="field text-xs py-1 flex-1 min-w-[140px]"
@@ -849,11 +906,12 @@ interface AlocRow {
   manutencao_id: string
   percentual: number
   noturno: boolean
+  motivo: string
 }
 
 let _rowKey = 0
-function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100, noturno = false): AlocRow {
-  return { _key: ++_rowKey, tipo, obra_id, manutencao_id, percentual, noturno }
+function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100, noturno = false, motivo = ''): AlocRow {
+  return { _key: ++_rowKey, tipo, obra_id, manutencao_id, percentual, noturno, motivo }
 }
 
 function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, alocacoes, onClose, onSaved, onPeriodoFerias, onPeriodo }: {
@@ -865,7 +923,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
 
   const [rows, setRows] = useState<AlocRow[]>(() => {
     if (alocacoes.length === 0) return [newRow()]
-    return alocacoes.map(a => newRow(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual, a.noturno))
+    return alocacoes.map(a => newRow(a.tipo, a.obra_id ?? '', a.manutencao_id ?? '', a.percentual, a.noturno, a.motivo ?? ''))
   })
   const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>(
     (alocacoes[0]?.transporte_tipo as TransporteTipo) ?? ''
@@ -901,6 +959,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
       manutencao_id: r.tipo === 'manutencao' && r.manutencao_id ? r.manutencao_id : null,
       percentual: r.percentual,
       noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
+      ...motivoCampo(r.tipo, r.motivo),
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       observacao: observacao || null,
@@ -946,7 +1005,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                 <div className="flex gap-1 flex-wrap flex-1">
                   {TIPOS.map(t => (
                     <button key={t.tipo}
-                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio') ? row.obra_id : '' })}
+                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio') ? row.obra_id : '', motivo: row.tipo === t.tipo ? row.motivo : '' })}
                       className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
                         ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
                       style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
@@ -996,6 +1055,11 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                     <option value="">Sem custo (ex: aniversário)</option>
                     {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
                   </select>
+                </div>
+              )}
+              {temMotivo(row.tipo) && (
+                <div className="pl-7">
+                  <MotivoSelect key={row.tipo} tipo={row.tipo} value={row.motivo} onChange={v => updateRow(row._key, { motivo: v })} />
                 </div>
               )}
               {row.tipo === 'escritorio' && (
@@ -1202,6 +1266,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
       manutencao_id: r.tipo === 'manutencao' && r.manutencao_id ? r.manutencao_id : null,
       percentual: r.percentual,
       noturno: (r.tipo === 'obra' || r.tipo === 'manutencao') ? r.noturno : false,
+      ...motivoCampo(r.tipo, r.motivo),
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       observacao: observacao || null,
@@ -1248,7 +1313,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                 <div className="flex gap-1 flex-wrap flex-1">
                   {TIPOS.map(t => (
                     <button key={t.tipo}
-                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio') ? row.obra_id : '', manutencao_id: t.tipo !== 'manutencao' ? '' : row.manutencao_id })}
+                      onClick={() => updateRow(row._key, { tipo: row.tipo === t.tipo ? '' : t.tipo, obra_id: (t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio') ? row.obra_id : '', manutencao_id: t.tipo !== 'manutencao' ? '' : row.manutencao_id, motivo: row.tipo === t.tipo ? row.motivo : '' })}
                       className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors
                         ${row.tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
                       style={row.tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
@@ -1289,6 +1354,11 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                     <option value="">Sem custo (ex: aniversário)</option>
                     {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
                   </select>
+                </div>
+              )}
+              {temMotivo(row.tipo) && (
+                <div className="pl-7">
+                  <MotivoSelect key={row.tipo} tipo={row.tipo} value={row.motivo} onChange={v => updateRow(row._key, { motivo: v })} />
                 </div>
               )}
               {row.tipo === 'escritorio' && (
@@ -1549,6 +1619,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
   const [obraId, setObraId] = useState('')
   const [manutencaoId, setManutencaoId] = useState('')
   const [noturno, setNoturno] = useState(false)
+  const [motivo, setMotivo] = useState('')
   const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>('')
   const [veiculoId, setVeiculoId] = useState('')
   const [observacao, setObservacao] = useState('')
@@ -1634,6 +1705,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
       manutencao_id: manutFinal,
       percentual: 100,
       noturno: (tipo === 'obra' || tipo === 'manutencao') ? noturno : false,
+      ...motivoCampo(tipo, motivo),
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       observacao: observacao || null,
@@ -1756,7 +1828,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
             <div className="flex gap-1 flex-wrap">
               {TIPOS_PERIODO.map(t => (
                 <button key={t.tipo}
-                  onClick={() => { setTipo(t.tipo); if (!(t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio')) setObraId(''); if (t.tipo !== 'manutencao') setManutencaoId('') }}
+                  onClick={() => { if (t.tipo !== tipo) setMotivo(''); setTipo(t.tipo); if (!(t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio')) setObraId(''); if (t.tipo !== 'manutencao') setManutencaoId('') }}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors
                     ${tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
                   style={tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
@@ -1790,6 +1862,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
                 {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
               </select>
             )}
+            {temMotivo(tipo) && <MotivoSelect key={tipo} tipo={tipo} value={motivo} onChange={setMotivo} />}
             {(tipo === 'obra' || tipo === 'manutencao') && (
               <label className="flex items-center gap-2 cursor-pointer w-fit">
                 <input type="checkbox" checked={noturno} onChange={e => setNoturno(e.target.checked)} className="w-4 h-4 accent-[#6366F1]" />
