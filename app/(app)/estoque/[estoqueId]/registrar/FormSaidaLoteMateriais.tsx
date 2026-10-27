@@ -25,7 +25,7 @@ interface ItemCarrinho {
 type DestinoTipo = 'obra' | 'manutencao' | 'uso_interno'
 
 // Saída de vários materiais de uma vez (separação de material para a obra): uma assinatura, um lote
-export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produtos, categorias, obras, funcionarios, manutencoes, responsaveis }: {
+export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produtos: produtosIniciais, categorias, obras, funcionarios, manutencoes, responsaveis }: {
   estoqueId: string
   estoqueNome: string
   produtos: EstoqueProduto[]
@@ -46,6 +46,9 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
   const [manutencaoId, setManutencaoId] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemCarrinho[]>([])
+  // Catálogo desta tela: produto novo é cadastrado ao ser adicionado e já aparece na busca
+  const [produtos, setProdutos] = useState<EstoqueProduto[]>(produtosIniciais)
+  const [cadastrando, setCadastrando] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -110,7 +113,7 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
   }
   const jaNoCarrinho = (id: string) => itens.filter(i => i.produtoId === id).reduce((s, i) => s + i.quantidade, 0)
 
-  function adicionarItem() {
+  async function adicionarItem() {
     setError('')
     const qtd = parseFloat(quantidade)
     if (!produtoId) { setError('Selecione o produto.'); return }
@@ -120,16 +123,41 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
     if (prodSel && controlaSaldo(prodSel) && prodSel.quantidade_atual - jaNoCarrinho(prodSel.id) - qtd < 0) {
       setError(`Saldo insuficiente de ${prodSel.nome}: ${prodSel.quantidade_atual - jaNoCarrinho(prodSel.id)} ${prodSel.unidade} disponível.`); return
     }
-    setItens(prev => [...prev, {
-      key: `${Date.now()}-${Math.random()}`,
-      produtoId: ehNovo ? '' : produtoId,
-      produtoNome: ehNovo ? novoNome.trim() : prodSel!.nome,
-      quantidade: qtd,
-      unidade: ehNovo ? (novoUnidade.trim() || 'un') : prodSel!.unidade,
-      preco: ehNovo ? parseFloat(novoPreco) || 0 : prodSel!.preco_unitario || 0,
-      cadastrar: ehNovo && novoCadastrar,
-      categoriaId: ehNovo ? novoCategoriaId : '',
-    }])
+
+    let prod = prodSel
+    if (ehNovo && novoCadastrar) {
+      const existente = produtos.find(p => normalizar(p.nome) === normalizar(novoNome.trim()))
+      if (existente) {
+        prod = existente
+      } else {
+        setCadastrando(true)
+        const { data: novo, error: novoErr } = await createClient().from('estoque_produtos').insert({
+          estoque_id: estoqueId, nome: novoNome.trim(), unidade: novoUnidade.trim() || 'un',
+          quantidade_atual: 0, quantidade_minima: 0, preco_unitario: parseFloat(novoPreco) || null,
+          categoria_id: novoCategoriaId || null, controla_saldo: false, ativo: true,
+        }).select().single()
+        setCadastrando(false)
+        if (novoErr) { setError(`Não foi possível cadastrar ${novoNome.trim()}: ${novoErr.message}`); return }
+        prod = novo as EstoqueProduto
+        setProdutos(prev => [...prev, prod!].sort((a, b) => a.nome.localeCompare(b.nome)))
+      }
+    }
+
+    // Mesmo produto de novo: soma na linha que já existe
+    if (prod && itens.some(i => i.produtoId === prod!.id)) {
+      setItens(prev => prev.map(i => i.produtoId === prod!.id ? { ...i, quantidade: i.quantidade + qtd } : i))
+    } else {
+      setItens(prev => [...prev, {
+        key: `${Date.now()}-${Math.random()}`,
+        produtoId: prod ? prod.id : '',
+        produtoNome: prod ? prod.nome : novoNome.trim(),
+        quantidade: qtd,
+        unidade: prod ? prod.unidade : (novoUnidade.trim() || 'un'),
+        preco: prod ? prod.preco_unitario || 0 : parseFloat(novoPreco) || 0,
+        cadastrar: false,
+        categoriaId: '',
+      }])
+    }
     setProdutoId(''); setBusca(''); setQuantidade('1')
     setNovoNome(''); setNovoUnidade('un'); setNovoPreco(''); setNovoCategoriaId('')
   }
@@ -144,6 +172,14 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
     if (destinoTipo === 'obra' && !obraId) { setError('Selecione a obra de destino.'); return }
     if (destinoTipo === 'manutencao' && !manutencaoId) { setError('Selecione o contrato de manutenção de destino.'); return }
     if (itens.length === 0) { setError('Adicione pelo menos um item.'); return }
+    const semQtd = itens.find(i => !(i.quantidade > 0))
+    if (semQtd) { setError(`Informe a quantidade de ${semQtd.produtoNome}.`); return }
+    for (const i of itens) {
+      const p = produtos.find(x => x.id === i.produtoId)
+      if (p && controlaSaldo(p) && p.quantidade_atual - jaNoCarrinho(p.id) < 0) {
+        setError(`Saldo insuficiente de ${p.nome}: ${p.quantidade_atual} ${p.unidade} disponível.`); return
+      }
+    }
 
     setSaving(true)
     const supabase = createClient()
@@ -298,9 +334,18 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
           <div className="space-y-1.5">
             {itens.map(item => (
               <div key={item.key} className="flex items-center justify-between gap-2 text-xs bg-white rounded-lg px-3 py-2 border border-[#E2E8F0]">
-                <span className="text-[#0F172A] font-medium min-w-0">
-                  {item.produtoNome} <span className="text-[#94A3B8] font-normal">· {item.quantidade} {item.unidade}</span>
-                  {!item.produtoId && <span className="ml-1 text-[10px] text-[#4F7CFF]">{item.cadastrar ? 'novo no catálogo' : 'avulso'}</span>}
+                <span className="text-[#0F172A] font-medium min-w-0 flex-1">
+                  {item.produtoNome}
+                  {!item.produtoId && <span className="ml-1 text-[10px] text-[#4F7CFF]">avulso</span>}
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  <input type="number" min="0" step="any" className="w-20 px-2 py-1 border border-[#E2E8F0] rounded-md text-xs text-right"
+                    value={item.quantidade}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value)
+                      setItens(prev => prev.map(i => i.key === item.key ? { ...i, quantidade: isNaN(v) ? 0 : v } : i))
+                    }} />
+                  <span className="text-[#94A3B8] w-6">{item.unidade}</span>
                 </span>
                 <span className="flex items-center gap-3 shrink-0">
                   <span className="text-[#64748B]">{item.preco ? moeda(item.quantidade * item.preco) : 'sem preço'}</span>
@@ -405,9 +450,9 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
           </div>
         )}
 
-        <button type="button" onClick={adicionarItem}
+        <button type="button" onClick={adicionarItem} disabled={cadastrando}
           className="w-full flex items-center justify-center gap-1.5 text-sm font-medium text-[#4F7CFF] border border-[#C7D2FE] rounded-lg py-2 hover:bg-[#EEF2FF] transition-colors">
-          <Plus size={14} /> Adicionar item
+          <Plus size={14} /> {cadastrando ? 'Cadastrando...' : 'Adicionar item'}
         </button>
       </div>
 
