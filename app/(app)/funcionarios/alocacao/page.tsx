@@ -7,7 +7,7 @@ import Topbar from '@/components/Topbar'
 import {
   ChevronLeft, ChevronRight, ArrowLeft,
   Wrench, Building2, Sun, FileText, UserX, Minus,
-  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered, Palmtree,
+  Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered, Palmtree, CalendarRange, AlertTriangle,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -174,6 +174,7 @@ export default function AlocacaoPage() {
   const [selectedFids, setSelectedFids] = useState<Set<string>>(new Set())
   const [modalBulk, setModalBulk] = useState<number | null>(null)
   const [modalFerias, setModalFerias] = useState<{ fid: string; inicio: string } | null>(null)
+  const [modalPeriodo, setModalPeriodo] = useState<{ fids: string[]; inicio: string } | null>(null)
 
   function toggleSelect(fid: string) {
     setSelectedFids(prev => {
@@ -279,6 +280,10 @@ export default function AlocacaoPage() {
             <button onClick={() => setModalFerias({ fid: selectedFids.size === 1 ? Array.from(selectedFids)[0] : '', inicio: '' })}
               className="h-8 px-2.5 rounded-lg border border-[#E2E8F0] flex items-center gap-1.5 hover:bg-[#F1F5F9] transition-colors text-xs font-semibold text-[#14B8A6]" title="Lançar período de férias">
               <Palmtree size={14} /> <span className="hidden sm:inline">Férias</span>
+            </button>
+            <button onClick={() => setModalPeriodo({ fids: Array.from(selectedFids), inicio: '' })}
+              className="h-8 px-2.5 rounded-lg border border-[#E2E8F0] flex items-center gap-1.5 hover:bg-[#F1F5F9] transition-colors text-xs font-semibold text-[#4F7CFF]" title="Alocar funcionários por período">
+              <CalendarRange size={14} /> <span className="hidden sm:inline">Período</span>
             </button>
             <button onClick={() => setModalOrdem(true)}
               className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Reordenar funcionários">
@@ -499,6 +504,7 @@ export default function AlocacaoPage() {
           onClose={() => setModalCell(null)}
           onSaved={() => { setModalCell(null); load() }}
           onPeriodoFerias={() => { setModalFerias({ fid: modalCell.fid, inicio: toDate(ano, mes, modalCell.dia) }); setModalCell(null) }}
+          onPeriodo={() => { setModalPeriodo({ fids: [modalCell.fid], inicio: toDate(ano, mes, modalCell.dia) }); setModalCell(null) }}
         />
       )}
 
@@ -510,6 +516,18 @@ export default function AlocacaoPage() {
           inicioInicial={modalFerias.inicio}
           onClose={() => setModalFerias(null)}
           onSaved={() => { setModalFerias(null); setSelectedFids(new Set()); load() }}
+        />
+      )}
+
+      {/* Modal alocação por período */}
+      {modalPeriodo !== null && (
+        <ModalPeriodo
+          funcionarios={funcionarios}
+          fidsIniciais={modalPeriodo.fids}
+          inicioInicial={modalPeriodo.inicio}
+          obras={obras} manutencoes={manutencoes} veiculos={veiculos}
+          onClose={() => setModalPeriodo(null)}
+          onSaved={() => { setModalPeriodo(null); setSelectedFids(new Set()); load() }}
         />
       )}
 
@@ -534,11 +552,15 @@ export default function AlocacaoPage() {
       )}
 
       {/* Barra flutuante seleção */}
-      {selectedFids.size > 0 && modalBulk === null && (
+      {selectedFids.size > 0 && modalBulk === null && modalPeriodo === null && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-[#0F172A] text-white px-5 py-3 rounded-2xl shadow-xl">
           <span className="text-sm font-medium">{selectedFids.size} funcionário{selectedFids.size > 1 ? 's' : ''} selecionado{selectedFids.size > 1 ? 's' : ''}</span>
           <span className="text-[#475569] text-sm">—</span>
           <span className="text-xs text-[#94A3B8]">Clique num dia para alocar</span>
+          <button onClick={() => setModalPeriodo({ fids: Array.from(selectedFids), inicio: '' })}
+            className="flex items-center gap-1.5 text-xs font-semibold bg-[#4F7CFF] hover:bg-[#3d6ae0] px-3 py-1.5 rounded-lg transition-colors">
+            <CalendarRange size={13} /> Alocar por período
+          </button>
           <button onClick={() => setSelectedFids(new Set())} className="ml-2 text-[#64748B] hover:text-white transition-colors">
             <X size={15} />
           </button>
@@ -834,10 +856,10 @@ function newRow(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', 
   return { _key: ++_rowKey, tipo, obra_id, manutencao_id, percentual, noturno }
 }
 
-function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, alocacoes, onClose, onSaved, onPeriodoFerias }: {
+function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, alocacoes, onClose, onSaved, onPeriodoFerias, onPeriodo }: {
   fid: string; fNome: string; dia: number; mes: number; ano: number
   obras: Obra[]; manutencoes: Manutencao[]; veiculos: Veiculo[]; alocacoes: Alocacao[]
-  onClose: () => void; onSaved: () => void; onPeriodoFerias: () => void
+  onClose: () => void; onSaved: () => void; onPeriodoFerias: () => void; onPeriodo: () => void
 }) {
   const data = toDate(ano, mes, dia)
 
@@ -905,6 +927,10 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
             <button onClick={onPeriodoFerias}
               className="flex items-center gap-1 text-[11px] font-semibold text-[#14B8A6] hover:text-[#0D9488] transition-colors">
               <Palmtree size={12} /> Férias por período
+            </button>
+            <button onClick={onPeriodo}
+              className="flex items-center gap-1 text-[11px] font-semibold text-[#4F7CFF] hover:text-[#3d6ae0] transition-colors">
+              <CalendarRange size={12} /> Por período
             </button>
             <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
           </div>
@@ -1493,6 +1519,364 @@ function ModalFerias({ funcionarios, fidInicial, inicioInicial, onClose, onSaved
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
             {saving ? 'Salvando...' : 'Lançar férias'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal alocação por período ─────────────────────────────────────────────────
+
+const TIPOS_PERIODO = TIPOS.filter(t => t.tipo !== 'ferias')
+
+interface AlocExistente { funcionario_id: string; data: string; tipo: TipoAlocacao; obra_id: string | null; manutencao_id: string | null }
+
+function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manutencoes, veiculos, onClose, onSaved }: {
+  funcionarios: Funcionario[]
+  fidsIniciais: string[]
+  inicioInicial: string
+  obras: Obra[]; manutencoes: Manutencao[]; veiculos: Veiculo[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [fids, setFids] = useState<Set<string>>(new Set(fidsIniciais))
+  const [inicio, setInicio] = useState(inicioInicial)
+  const [fim, setFim] = useState('')
+  const [pularFds, setPularFds] = useState(true)
+  const [excluidos, setExcluidos] = useState<Set<string>>(new Set())
+  const [tipo, setTipo] = useState<TipoAlocacao>('escritorio')
+  const [obraId, setObraId] = useState('')
+  const [manutencaoId, setManutencaoId] = useState('')
+  const [noturno, setNoturno] = useState(false)
+  const [transporteTipo, setTransporteTipo] = useState<TransporteTipo | ''>('')
+  const [veiculoId, setVeiculoId] = useState('')
+  const [observacao, setObservacao] = useState('')
+  const [substituir, setSubstituir] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [existentes, setExistentes] = useState<AlocExistente[] | null>(null)
+
+  const periodoOk = !!inicio && !!fim && fim >= inicio
+  const todosDias = periodoOk ? diasEntre(inicio, fim) : []
+  const periodoLongo = todosDias.length > 366
+  const diasPeriodo = periodoLongo ? [] : todosDias.filter(d => !pularFds || ![0, 6].includes(parseISO(d).getDay()))
+  const diasSel = diasPeriodo.filter(d => !excluidos.has(d))
+  const fidsArr = funcionarios.filter(f => fids.has(f.id)).map(f => f.id)
+  const fidsKey = fidsArr.join(',')
+
+  // Alocações já lançadas no período para os funcionários escolhidos (conflitos)
+  useEffect(() => {
+    setExistentes(null)
+    if (!fidsKey || !periodoOk || periodoLongo) return
+    let cancel = false
+    const sb = createClient()
+    Promise.all(fidsKey.split(',').map(fid =>
+      sb.from('funcionario_alocacoes').select('funcionario_id, data, tipo, obra_id, manutencao_id')
+        .eq('funcionario_id', fid).gte('data', inicio).lte('data', fim)
+    )).then(res => { if (!cancel) setExistentes(res.flatMap(r => (r.data ?? []) as AlocExistente[])) })
+    return () => { cancel = true }
+  }, [fidsKey, inicio, fim, periodoOk, periodoLongo])
+
+  const existMap = new Map<string, AlocExistente[]>()
+  ;(existentes ?? []).forEach(e => {
+    const k = `${e.funcionario_id}_${e.data}`
+    if (!existMap.has(k)) existMap.set(k, [])
+    existMap.get(k)!.push(e)
+  })
+
+  // Dias a criar / dias pulados por funcionário. Férias nunca são substituídas.
+  const aCriar: { fid: string; data: string }[] = []
+  const aSubstituir: { fid: string; data: string }[] = []
+  const conflitos: { fid: string; data: string; tipos: TipoAlocacao[]; mantido: boolean }[] = []
+  fidsArr.forEach(fid => diasSel.forEach(data => {
+    const ex = existMap.get(`${fid}_${data}`)
+    if (!ex) { aCriar.push({ fid, data }); return }
+    const temFerias = ex.some(e => e.tipo === 'ferias')
+    const mantido = !substituir || temFerias
+    conflitos.push({ fid, data, tipos: ex.map(e => e.tipo), mantido })
+    if (!mantido) { aCriar.push({ fid, data }); aSubstituir.push({ fid, data }) }
+  }))
+  const conflitosPorFunc = fidsArr
+    .map(fid => ({ fid, itens: conflitos.filter(c => c.fid === fid) }))
+    .filter(g => g.itens.length > 0)
+
+  const usaObra = tipo === 'obra' || tipo === 'folga' || tipo === 'escritorio'
+  const destinoOk = (tipo !== 'obra' || !!obraId) && (tipo !== 'manutencao' || !!manutencaoId)
+  const obraFinal = usaObra && obraId ? obraId : null
+  const manutFinal = tipo === 'manutencao' && manutencaoId ? manutencaoId : null
+
+  // Alocações iguais a este destino no período (para remoção)
+  const iguais = (existentes ?? []).filter(e =>
+    diasSel.includes(e.data) && e.tipo === tipo && (e.obra_id ?? null) === obraFinal && (e.manutencao_id ?? null) === manutFinal)
+
+  function toggleFid(fid: string) {
+    setFids(p => { const n = new Set(p); if (n.has(fid)) n.delete(fid); else n.add(fid); return n })
+  }
+  function toggleDia(d: string) {
+    setExcluidos(p => { const n = new Set(p); if (n.has(d)) n.delete(d); else n.add(d); return n })
+  }
+
+  async function salvar() {
+    if (aCriar.length === 0 || !destinoOk) return
+    setSaving(true)
+    const sb = createClient()
+    if (aSubstituir.length > 0) {
+      const porFunc = new Map<string, string[]>()
+      aSubstituir.forEach(s => { if (!porFunc.has(s.fid)) porFunc.set(s.fid, []); porFunc.get(s.fid)!.push(s.data) })
+      const dels = await Promise.all(Array.from(porFunc.entries()).map(([fid, datas]) =>
+        sb.from('funcionario_alocacoes').delete().eq('funcionario_id', fid).in('data', datas).neq('tipo', 'ferias')))
+      const delErr = dels.find(r => r.error)?.error
+      if (delErr) { alert('Erro ao salvar: ' + delErr.message); setSaving(false); return }
+    }
+    const linhas = aCriar.map(({ fid, data }) => ({
+      funcionario_id: fid, data, tipo,
+      obra_id: obraFinal,
+      manutencao_id: manutFinal,
+      percentual: 100,
+      noturno: (tipo === 'obra' || tipo === 'manutencao') ? noturno : false,
+      transporte_tipo: transporteTipo || null,
+      veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
+      observacao: observacao || null,
+    }))
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { error } = await sb.from('funcionario_alocacoes').insert(linhas.slice(i, i + 500))
+      if (error) { alert('Erro ao salvar: ' + error.message); setSaving(false); return }
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  async function removerIguais() {
+    if (iguais.length === 0) return
+    const destino = tipo === 'obra' ? obras.find(o => o.id === obraId)?.titulo
+      : tipo === 'manutencao' ? manutencoes.find(m => m.id === manutencaoId)?.nome
+      : TIPO_MAP[tipo].label
+    if (!confirm(`Remover ${iguais.length} alocação(ões) de "${destino}" entre ${fmtBR(inicio)} e ${fmtBR(fim)} dos funcionários escolhidos?`)) return
+    setSaving(true)
+    const sb = createClient()
+    const res = await Promise.all(fidsArr.map(fid => {
+      let q = sb.from('funcionario_alocacoes').delete()
+        .eq('funcionario_id', fid).eq('tipo', tipo).in('data', diasSel)
+      q = obraFinal ? q.eq('obra_id', obraFinal) : q.is('obra_id', null)
+      q = manutFinal ? q.eq('manutencao_id', manutFinal) : q.is('manutencao_id', null)
+      return q
+    }))
+    setSaving(false)
+    const err = res.find(r => r.error)?.error
+    if (err) { alert('Erro ao remover: ' + err.message); return }
+    onSaved()
+  }
+
+  const nomeDe = (fid: string) => funcionarios.find(f => f.id === fid)?.nome ?? ''
+  const diaCurto = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}/${m}` }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#EEF2FF]">
+              <CalendarRange size={16} className="text-[#4F7CFF]" />
+            </div>
+            <div>
+              <h2 className="font-syne font-semibold text-[#0F172A]">Alocar por período</h2>
+              <p className="text-xs text-[#94A3B8] mt-0.5">Cria a mesma alocação em cada dia escolhido</p>
+            </div>
+          </div>
+          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Funcionários */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-medium text-[#374151]">Funcionários ({fids.size})</p>
+              <button onClick={() => setFids(fids.size === funcionarios.length ? new Set() : new Set(funcionarios.map(f => f.id)))}
+                className="text-[11px] font-medium text-[#4F7CFF] hover:text-[#3d6ae0]">
+                {fids.size === funcionarios.length ? 'Limpar' : 'Todos'}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+              {funcionarios.map(f => (
+                <button key={f.id} onClick={() => toggleFid(f.id)}
+                  className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors
+                    ${fids.has(f.id) ? 'bg-[#4F7CFF] text-white border-transparent' : 'border-[#E2E8F0] text-[#64748B] hover:border-[#CBD5E1]'}`}>
+                  {f.nome}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Período */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs font-medium text-[#374151] mb-1.5">De</p>
+              <input type="date" className="field text-sm w-full" value={inicio}
+                onChange={e => { setInicio(e.target.value); if (fim && e.target.value > fim) setFim('') }} />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-[#374151] mb-1.5">Até</p>
+              <input type="date" className="field text-sm w-full" value={fim} min={inicio || undefined}
+                onChange={e => setFim(e.target.value)} />
+            </div>
+          </div>
+          {inicio && fim && fim < inicio && (
+            <p className="text-xs text-[#EF4444]">A data final deve ser igual ou posterior à inicial.</p>
+          )}
+          {periodoLongo && (
+            <p className="text-xs text-[#EF4444]">Período muito longo — escolha no máximo 1 ano.</p>
+          )}
+
+          <label className="flex items-center gap-2 cursor-pointer w-fit">
+            <input type="checkbox" checked={pularFds} onChange={e => setPularFds(e.target.checked)} className="w-4 h-4 accent-[#4F7CFF]" />
+            <span className="text-xs font-medium text-[#374151]">Pular sábados e domingos</span>
+          </label>
+
+          {diasPeriodo.length > 0 && (
+            <div>
+              <p className="text-[11px] text-[#94A3B8] mb-1.5">Clique num dia para tirá-lo do lançamento</p>
+              <div className="flex flex-wrap gap-1">
+                {diasPeriodo.map(d => {
+                  const fora = excluidos.has(d)
+                  return (
+                    <button key={d} onClick={() => toggleDia(d)}
+                      className={`text-[11px] font-medium px-1.5 py-1 rounded-md border transition-colors w-[52px]
+                        ${fora ? 'border-[#E2E8F0] text-[#CBD5E1] line-through' : 'bg-[#EEF2FF] border-[#C7D2FE] text-[#4F7CFF]'}`}>
+                      {DS[parseISO(d).getDay()]} {diaCurto(d)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Destino */}
+          <div className="border-t border-[#F1F5F9] pt-3 space-y-2">
+            <p className="text-xs font-medium text-[#374151]">Destino</p>
+            <div className="flex gap-1 flex-wrap">
+              {TIPOS_PERIODO.map(t => (
+                <button key={t.tipo}
+                  onClick={() => { setTipo(t.tipo); if (!(t.tipo === 'obra' || t.tipo === 'folga' || t.tipo === 'escritorio')) setObraId(''); if (t.tipo !== 'manutencao') setManutencaoId('') }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors
+                    ${tipo === t.tipo ? 'text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}
+                  style={tipo === t.tipo ? { backgroundColor: t.cor } : {}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {tipo === 'obra' && (
+              <select className="field text-sm py-1.5 w-full" value={obraId} onChange={e => setObraId(e.target.value)}>
+                <option value="">Selecione a obra...</option>
+                {obras.map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+              </select>
+            )}
+            {tipo === 'manutencao' && (
+              <select className="field text-sm py-1.5 w-full" value={manutencaoId} onChange={e => setManutencaoId(e.target.value)}>
+                <option value="">Selecione a manutenção...</option>
+                {manutencoes.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            )}
+            {tipo === 'escritorio' && (
+              <select className="field text-sm py-1.5 w-full" value={obraId} onChange={e => setObraId(e.target.value)}
+                title="Se está fabricando/preparando algo para uma obra específica, selecione-a">
+                <option value="">Custo interno (galpão)</option>
+                {obras.map(o => <option key={o.id} value={o.id}>Custo de obra — {o.titulo}</option>)}
+              </select>
+            )}
+            {tipo === 'folga' && (
+              <select className="field text-sm py-1.5 w-full" value={obraId} onChange={e => setObraId(e.target.value)}
+                title="Se a folga é decorrente de virada de turno, selecione a obra para gerar custo">
+                <option value="">Sem custo (ex: aniversário)</option>
+                {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
+              </select>
+            )}
+            {(tipo === 'obra' || tipo === 'manutencao') && (
+              <label className="flex items-center gap-2 cursor-pointer w-fit">
+                <input type="checkbox" checked={noturno} onChange={e => setNoturno(e.target.checked)} className="w-4 h-4 accent-[#6366F1]" />
+                <span className="text-xs font-medium text-[#374151]">Noturno</span>
+              </label>
+            )}
+          </div>
+
+          {/* Transporte */}
+          <div className="border-t border-[#F1F5F9] pt-3 space-y-2">
+            <p className="text-xs font-medium text-[#374151]">Transporte (opcional)</p>
+            <div className="flex gap-2 flex-wrap">
+              {TRANSPORTES.map(t => (
+                <button key={t.tipo} onClick={() => { setTransporteTipo(transporteTipo === t.tipo ? '' : t.tipo); setVeiculoId('') }}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors
+                    ${transporteTipo === t.tipo ? 'bg-[#0F172A] text-white border-transparent' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#CBD5E1]'}`}>
+                  <t.Icon size={12} /> {t.label}
+                </button>
+              ))}
+            </div>
+            {transporteTipo === 'veiculo' && (
+              <select className="field text-sm w-full" value={veiculoId} onChange={e => setVeiculoId(e.target.value)}>
+                <option value="">Selecione o veículo...</option>
+                {veiculos.map(v => <option key={v.id} value={v.id}>{v.nome} — {v.placa}</option>)}
+              </select>
+            )}
+          </div>
+
+          {/* Observação */}
+          <div className="border-t border-[#F1F5F9] pt-3">
+            <p className="text-xs font-medium text-[#374151] mb-1.5">Observação</p>
+            <textarea rows={2} placeholder="Opcional"
+              value={observacao} onChange={e => setObservacao(e.target.value)}
+              className="field text-sm w-full resize-none" />
+          </div>
+
+          {/* Resumo e conflitos */}
+          {fids.size > 0 && periodoOk && !periodoLongo && (
+            existentes === null ? (
+              <div className="flex items-center gap-2 text-xs text-[#94A3B8]">
+                <Loader2 size={13} className="animate-spin" /> Verificando alocações já lançadas...
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="rounded-xl bg-[#EEF2FF] border border-[#C7D2FE] px-3 py-2.5 text-xs text-[#3730A3]">
+                  <strong>{aCriar.length} alocaç{aCriar.length === 1 ? 'ão' : 'ões'}</strong> a criar
+                  ({diasSel.length} dia{diasSel.length === 1 ? '' : 's'} × {fids.size} funcionário{fids.size === 1 ? '' : 's'}
+                  {conflitos.filter(c => c.mantido).length > 0 && `, ${conflitos.filter(c => c.mantido).length} pulado${conflitos.filter(c => c.mantido).length === 1 ? '' : 's'}`}).
+                </div>
+                {conflitosPorFunc.length > 0 && (
+                  <div className="rounded-xl bg-[#FFFBEB] border border-[#FDE68A] px-3 py-2.5 text-xs text-[#92400E] space-y-1.5">
+                    <p className="flex items-center gap-1.5 font-semibold">
+                      <AlertTriangle size={13} /> Dias que já têm alocação
+                    </p>
+                    {conflitosPorFunc.map(g => (
+                      <p key={g.fid}>
+                        <strong>{nomeDe(g.fid)}:</strong>{' '}
+                        {g.itens.map(c => `${diaCurto(c.data)} (${c.tipos.map(t => TIPO_MAP[t].label).join('/')}${c.mantido ? '' : ' → substituir'})`).join(', ')}
+                      </p>
+                    ))}
+                    <label className="flex items-center gap-2 cursor-pointer w-fit pt-1">
+                      <input type="checkbox" checked={substituir} onChange={e => setSubstituir(e.target.checked)} className="w-3.5 h-3.5 accent-[#F59E0B]" />
+                      <span className="font-medium">Substituir as alocações existentes (férias nunca são substituídas)</span>
+                    </label>
+                    {!substituir && <p className="text-[11px]">Esses dias serão pulados e continuam como estão.</p>}
+                  </div>
+                )}
+                {destinoOk && iguais.length > 0 && (
+                  <button onClick={removerIguais} disabled={saving}
+                    className="flex items-center gap-1.5 text-xs font-medium text-[#EF4444] hover:text-[#DC2626] transition-colors disabled:opacity-50">
+                    <Trash2 size={13} /> Remover as alocações com este destino nos dias escolhidos ({iguais.length})
+                  </button>
+                )}
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="px-5 pb-5 pt-3 border-t border-[#E2E8F0] flex gap-3 shrink-0">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
+            Cancelar
+          </button>
+          <button onClick={salvar} disabled={saving || existentes === null || aCriar.length === 0 || !destinoOk}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {saving ? 'Salvando...' : `Criar ${aCriar.length || ''} alocaç${aCriar.length === 1 ? 'ão' : 'ões'}`}
           </button>
         </div>
       </div>
