@@ -2,12 +2,13 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, Eraser, AlertTriangle, Check, Search } from 'lucide-react'
+import { Plus, Trash2, Eraser, AlertTriangle, Check, Search, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueProduto, EstoqueProdutoCategoria } from '@/lib/types'
 import { controlaSaldo, saldoAposSaida } from '@/lib/estoque/saldo'
 
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const normalizar = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 
 interface ItemCarrinho {
   key: string
@@ -50,6 +51,8 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
 
   // Item em edição
   const [busca, setBusca] = useState('')
+  const [aberto, setAberto] = useState(false)
+  const qtdRef = useRef<HTMLInputElement>(null)
   const [produtoId, setProdutoId] = useState('')
   const [novoNome, setNovoNome] = useState('')
   const [novoUnidade, setNovoUnidade] = useState('un')
@@ -83,16 +86,28 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
   function stopDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = false }
   function limparCanvas() { const canvas = canvasRef.current!; canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height); setTemAssinatura(false) }
 
-  // Lista do seletor: filtrada pela busca e agrupada por categoria (o catálogo tem centenas de itens)
-  const q = busca.trim().toLowerCase()
-  const filtrados = produtos.filter(p => !p.sobra_mista && (!q || p.nome.toLowerCase().includes(q) || (p.codigo ?? '').toLowerCase().includes(q)))
-  const grupos = [
-    ...categorias.map(c => ({ nome: c.nome, itens: filtrados.filter(p => p.categoria_id === c.id) })),
-    { nome: 'Sem categoria', itens: filtrados.filter(p => !p.categoria_id || !categorias.some(c => c.id === p.categoria_id)) },
-  ].filter(g => g.itens.length > 0)
+  // Sugestões da busca: todas as palavras digitadas, sem diferenciar acento nem maiúscula
+  // ("disco 7" acha "Disco de corte 7\"", "hidraulica" acha "Hidráulica")
+  const palavras = normalizar(busca).split(/\s+/).filter(Boolean)
+  const categoriaPorId = new Map(categorias.map(c => [c.id, c]))
+  const sugestoes = produtos
+    .filter(p => !p.sobra_mista)
+    .filter(p => {
+      const texto = normalizar(`${p.nome} ${p.codigo ?? ''} ${p.categoria_id ? categoriaPorId.get(p.categoria_id)?.nome ?? '' : ''}`)
+      return palavras.every(w => texto.includes(w))
+    })
+    .slice(0, 60)
 
   const prodSel = produtos.find(p => p.id === produtoId)
   const ehNovo = produtoId === '__outro__'
+
+  function escolher(p: EstoqueProduto) {
+    setProdutoId(p.id); setBusca(p.nome); setAberto(false)
+    setTimeout(() => qtdRef.current?.select(), 0)
+  }
+  function escolherNovo() {
+    setProdutoId('__outro__'); setNovoNome(busca.trim()); setAberto(false)
+  }
   const jaNoCarrinho = (id: string) => itens.filter(i => i.produtoId === id).reduce((s, i) => s + i.quantidade, 0)
 
   function adicionarItem() {
@@ -302,29 +317,65 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
           </div>
         )}
 
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-          <input className="field text-sm pl-8" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar produto pelo nome..." />
-        </div>
         <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
-          <div>
-            <select className="field text-sm" value={produtoId} onChange={e => setProdutoId(e.target.value)}>
-              <option value="">{filtrados.length === 0 && q ? 'Nenhum produto encontrado' : 'Selecionar produto...'}</option>
-              {grupos.map(g => (
-                <optgroup key={g.nome} label={g.nome}>
-                  {g.itens.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome}{controlaSaldo(p) ? ` — saldo ${p.quantidade_atual - jaNoCarrinho(p.id)} ${p.unidade}` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              {destinoTipo !== 'manutencao' && <option value="__outro__">Outro (produto não cadastrado)</option>}
-            </select>
+          <div className="relative">
+            <label className="block text-xs font-medium text-[#64748B] mb-1">Produto</label>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+              <input className={`field text-sm pl-8 ${prodSel ? 'border-[#4F7CFF] bg-[#F5F7FF] font-medium' : ''}`}
+                value={busca} placeholder="Digite o nome do produto..."
+                onFocus={() => setAberto(true)}
+                onBlur={() => setTimeout(() => setAberto(false), 150)}
+                onChange={e => { setBusca(e.target.value); setProdutoId(''); setAberto(true) }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    if (sugestoes[0] && palavras.length > 0) escolher(sugestoes[0])
+                  }
+                  if (e.key === 'Escape') setAberto(false)
+                }} />
+              {busca && (
+                <button type="button" onClick={() => { setBusca(''); setProdutoId(''); setAberto(true) }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#374151]">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            {aberto && !prodSel && (
+              <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                {sugestoes.map(p => {
+                  const cat = p.categoria_id ? categoriaPorId.get(p.categoria_id) : null
+                  const disponivel = p.quantidade_atual - jaNoCarrinho(p.id)
+                  return (
+                    <button key={p.id} type="button" onMouseDown={e => e.preventDefault()} onClick={() => escolher(p)}
+                      className="w-full text-left px-3 py-2 hover:bg-[#F5F7FF] border-b border-[#F1F5F9] last:border-b-0">
+                      <span className="block text-sm text-[#0F172A]">{p.nome}</span>
+                      <span className="flex flex-wrap items-center gap-2 text-[11px] text-[#64748B] mt-0.5">
+                        {cat && <span className="px-1.5 rounded-full text-white" style={{ backgroundColor: cat.cor }}>{cat.nome}</span>}
+                        {controlaSaldo(p)
+                          ? <span className={disponivel <= 0 ? 'text-red-600 font-medium' : ''}>saldo {disponivel} {p.unidade}</span>
+                          : <span>sem controle de saldo</span>}
+                        {p.preco_unitario ? <span>{moeda(p.preco_unitario)}/{p.unidade}</span> : <span className="text-amber-700">sem preço</span>}
+                      </span>
+                    </button>
+                  )
+                })}
+                {sugestoes.length === 0 && (
+                  <p className="px-3 py-2 text-sm text-[#94A3B8]">Nenhum produto com &quot;{busca}&quot;.</p>
+                )}
+                {destinoTipo !== 'manutencao' && (
+                  <button type="button" onMouseDown={e => e.preventDefault()} onClick={escolherNovo}
+                    className="w-full text-left px-3 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] border-t border-[#E2E8F0] flex items-center gap-1.5">
+                    <Plus size={13} /> {busca.trim() ? <>Não está na lista: cadastrar &quot;{busca.trim()}&quot;</> : 'Produto não cadastrado'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="w-24">
             <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd{prodSel ? ` (${prodSel.unidade})` : ''}</label>
-            <input type="number" min="0" step="any" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
+            <input ref={qtdRef} type="number" min="0" step="any" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionarItem() } }} />
           </div>
         </div>
 
