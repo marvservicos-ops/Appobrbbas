@@ -13,8 +13,19 @@ interface RegistroEpi {
   responsavel: string
   observacoes?: string | null
   funcionario?: { nome: string; cargo: string | null; funcao: string | null; cpf: string | null } | null
-  estoque?: { nome: string } | null
+  estoque?: { nome: string; icone: string | null } | null
+  produto?: { codigo: string | null } | null
   valores?: { valor: string; campo?: { nome: string } | null }[]
+}
+
+// Campo extra do registro que guarda o nº do CA (ex.: "Nº CA")
+const ehCampoCA = (nome?: string) => !!nome && /\bCA\b/i.test(nome)
+
+// Nº CA do item: o informado na saída tem prioridade; senão, o do cadastro do produto (EPI)
+function caDoRegistro(r: RegistroEpi) {
+  const doRegistro = (r.valores ?? []).find(v => ehCampoCA(v.campo?.nome) && v.valor)?.valor
+  if (doRegistro) return doRegistro
+  return r.estoque?.icone === 'shield' ? r.produto?.codigo ?? null : null
 }
 
 export default function EpiPrintPage() {
@@ -33,7 +44,7 @@ export default function EpiPrintPage() {
       const supabase = createClient()
       const [{ data }, { data: dadosEmpresa }] = await Promise.all([
         supabase.from('estoque_registros')
-          .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
+          .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome, icone), produto:produto_id(codigo), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
           .eq('id', registroId)
           .single(),
         supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
@@ -68,7 +79,9 @@ export default function EpiPrintPage() {
   }
 
   const dataEmissao = new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')
-  const valoresComNome = (registro.valores ?? []).filter(v => v.campo?.nome && v.valor)
+  const valoresComNome = (registro.valores ?? []).filter(v => v.campo?.nome && v.valor && !ehCampoCA(v.campo.nome))
+  const ca = caDoRegistro(registro)
+  const mostrarCA = !!ca || registro.estoque?.icone === 'shield'
 
   return (
     <>
@@ -133,6 +146,7 @@ export default function EpiPrintPage() {
             <tr>
               <th style={s.th}>Item</th>
               <th style={s.th}>Quantidade</th>
+              {mostrarCA && <th style={s.th}>Nº CA</th>}
               {valoresComNome.map(v => <th key={v.campo!.nome} style={s.th}>{v.campo!.nome}</th>)}
             </tr>
           </thead>
@@ -140,6 +154,7 @@ export default function EpiPrintPage() {
             <tr>
               <td style={s.td}>{registro.produto_nome}</td>
               <td style={s.td}>{registro.quantidade} {registro.unidade ?? ''}</td>
+              {mostrarCA && <td style={s.td}>{ca ?? '—'}</td>}
               {valoresComNome.map(v => <td key={v.campo!.nome} style={s.td}>{v.valor}</td>)}
             </tr>
           </tbody>

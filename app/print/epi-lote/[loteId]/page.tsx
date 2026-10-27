@@ -13,8 +13,19 @@ interface RegistroEpi {
   responsavel: string
   observacoes?: string | null
   funcionario?: { nome: string; cargo: string | null; funcao: string | null; cpf: string | null } | null
-  estoque?: { nome: string } | null
+  estoque?: { nome: string; icone: string | null } | null
+  produto?: { codigo: string | null } | null
   valores?: { valor: string; campo?: { nome: string } | null }[]
+}
+
+// Campo extra do registro que guarda o nº do CA (ex.: "Nº CA")
+const ehCampoCA = (nome?: string) => !!nome && /\bCA\b/i.test(nome)
+
+// Nº CA do item: o informado na saída tem prioridade; senão, o do cadastro do produto (EPI)
+function caDoRegistro(r: RegistroEpi) {
+  const doRegistro = (r.valores ?? []).find(v => ehCampoCA(v.campo?.nome) && v.valor)?.valor
+  if (doRegistro) return doRegistro
+  return r.estoque?.icone === 'shield' ? r.produto?.codigo ?? null : null
 }
 
 export default function EpiLotePrintPage() {
@@ -33,7 +44,7 @@ export default function EpiLotePrintPage() {
       const supabase = createClient()
       const [{ data }, { data: dadosEmpresa }] = await Promise.all([
         supabase.from('estoque_registros')
-          .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
+          .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome, icone), produto:produto_id(codigo), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
           .eq('lote_id', loteId)
           .order('created_at'),
         supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
@@ -70,10 +81,11 @@ export default function EpiLotePrintPage() {
   const primeiro = registros[0]
   const dataEmissao = new Date(primeiro.data + 'T00:00:00').toLocaleDateString('pt-BR')
 
-  // Colunas de campos extras (ex.: Nº CA) que aparecem em pelo menos um item
+  // Colunas de campos extras que aparecem em pelo menos um item (o Nº CA tem coluna própria)
   const nomesCampos = Array.from(new Set(
-    registros.flatMap(r => (r.valores ?? []).filter(v => v.campo?.nome && v.valor).map(v => v.campo!.nome))
+    registros.flatMap(r => (r.valores ?? []).filter(v => v.campo?.nome && v.valor && !ehCampoCA(v.campo.nome)).map(v => v.campo!.nome))
   ))
+  const mostrarCA = primeiro.estoque?.icone === 'shield' || registros.some(r => caDoRegistro(r))
 
   return (
     <>
@@ -138,6 +150,7 @@ export default function EpiLotePrintPage() {
             <tr>
               <th style={s.th}>Item</th>
               <th style={s.th}>Quantidade</th>
+              {mostrarCA && <th style={s.th}>Nº CA</th>}
               {nomesCampos.map(nome => <th key={nome} style={s.th}>{nome}</th>)}
             </tr>
           </thead>
@@ -146,6 +159,7 @@ export default function EpiLotePrintPage() {
               <tr key={r.id}>
                 <td style={s.td}>{r.produto_nome}</td>
                 <td style={s.td}>{r.quantidade} {r.unidade ?? ''}</td>
+                {mostrarCA && <td style={s.td}>{caDoRegistro(r) ?? '—'}</td>}
                 {nomesCampos.map(nome => (
                   <td key={nome} style={s.td}>{(r.valores ?? []).find(v => v.campo?.nome === nome)?.valor ?? '—'}</td>
                 ))}
