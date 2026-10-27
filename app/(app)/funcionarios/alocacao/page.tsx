@@ -54,16 +54,20 @@ const TIPOS: { tipo: TipoAlocacao; label: string; cor: string; bg: string; Icon:
 const TIPO_MAP = Object.fromEntries(TIPOS.map(t => [t.tipo, t])) as Record<TipoAlocacao, typeof TIPOS[number]>
 
 // Motivos sugeridos para folga, falta e atestado (também aceita texto livre em "Outro")
+// No Galpão sem obra (custo interno), o "motivo" é o item do custo interno (ex.: Febrava)
 const MOTIVOS: Partial<Record<TipoAlocacao, string[]>> = {
+  escritorio: ['Febrava', 'Ferro Velho', 'Casa do Marcelo'],
   folga:    ['Feriado', 'Ponte de feriado', 'Aniversário', 'Compensação de horas', 'Virada de turno'],
   falta:    ['Sem justificativa', 'Problema pessoal', 'Doença sem atestado', 'Problema com transporte'],
   atestado: ['Doença', 'Consulta/exame médico', 'Odontológico', 'Acidente de trabalho', 'Acompanhar familiar'],
 }
 function temMotivo(tipo: TipoAlocacao | '') { return !!tipo && !!MOTIVOS[tipo] }
+// Galpão com custo de obra não tem item de custo interno
+function mostraMotivo(tipo: TipoAlocacao | '', obraId: string) { return temMotivo(tipo) && !(tipo === 'escritorio' && obraId) }
 // Só envia a coluna quando há motivo, para não quebrar o salvamento antes da migração
-function motivoCampo(tipo: TipoAlocacao | '', motivo: string) {
+function motivoCampo(tipo: TipoAlocacao | '', motivo: string, obraId = '') {
   const m = motivo.trim()
-  return temMotivo(tipo) && m ? { motivo: m } : {}
+  return mostraMotivo(tipo, obraId) && m ? { motivo: m } : {}
 }
 // Texto da alocação na célula: folga com motivo mostra o motivo (ex.: "Feriado")
 function labelAloc(a: Alocacao, curto: boolean, showPct: boolean) {
@@ -76,6 +80,7 @@ function labelAloc(a: Alocacao, curto: boolean, showPct: boolean) {
     return a.obra_nome ? `${base} ($) ${nome(a.obra_nome)}` : `${base}${pct}`
   }
   if (a.tipo === 'escritorio' && a.obra_nome) return `Galpão ($) ${nome(a.obra_nome)}`
+  if (a.tipo === 'escritorio' && a.motivo) return `Galpão · ${curto ? abrev(a.motivo) : a.motivo}${pct}`
   if ((a.tipo === 'falta' || a.tipo === 'atestado') && a.motivo && !curto) return `${TIPO_MAP[a.tipo].label} · ${a.motivo}${pct}`
   return `${TIPO_MAP[a.tipo].label}${pct}`
 }
@@ -94,7 +99,7 @@ function MotivoSelect({ tipo, value, onChange, className = '' }: {
           if (e.target.value === '__outro') { setOutro(true); onChange('') }
           else { setOutro(false); onChange(e.target.value) }
         }}>
-        <option value="">Motivo{tipo === 'folga' ? ' da folga' : tipo === 'falta' ? ' da falta' : ' do atestado'}...</option>
+        <option value="">{tipo === 'escritorio' ? 'Item do custo interno (opcional)' : `Motivo${tipo === 'folga' ? ' da folga' : tipo === 'falta' ? ' da falta' : ' do atestado'}`}...</option>
         {presets.map(m => <option key={m} value={m}>{m}</option>)}
         <option value="__outro">Outro...</option>
       </select>
@@ -847,13 +852,13 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                             {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
                           </select>
                         )}
-                        {temMotivo(aloc.tipo) && (
+                        {mostraMotivo(aloc.tipo, aloc.obra_id) && (
                           <MotivoSelect key={aloc.tipo} tipo={aloc.tipo} value={aloc.motivo}
                             onChange={v => updateAloc(f.id, aloc._key, { motivo: v })} className="flex-1 min-w-[140px]" />
                         )}
                         {aloc.tipo === 'escritorio' && (
                           <select className="field text-xs py-1 flex-1 min-w-[140px]"
-                            value={aloc.obra_id} onChange={e => updateAloc(f.id, aloc._key, { obra_id: e.target.value })}
+                            value={aloc.obra_id} onChange={e => updateAloc(f.id, aloc._key, { obra_id: e.target.value, ...(e.target.value ? { motivo: '' } : {}) })}
                             title="Se está fabricando/preparando algo para uma obra específica, selecione-a">
                             <option value="">Custo interno (galpão)</option>
                             {obras.map(o => <option key={o.id} value={o.id}>Custo de obra — {o.titulo}</option>)}
@@ -1101,7 +1106,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                   </select>
                 </div>
               )}
-              {temMotivo(row.tipo) && (
+              {mostraMotivo(row.tipo, row.obra_id) && (
                 <div className="pl-7">
                   <MotivoSelect key={row.tipo} tipo={row.tipo} value={row.motivo} onChange={v => updateRow(row._key, { motivo: v })} />
                 </div>
@@ -1109,7 +1114,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
               {row.tipo === 'escritorio' && (
                 <div className="pl-7">
                   <select className="field text-sm py-1.5 w-full"
-                    value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value })}
+                    value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value, ...(e.target.value ? { motivo: '' } : {}) })}
                     title="Se está fabricando/preparando algo para uma obra específica, selecione-a">
                     <option value="">Custo interno (galpão)</option>
                     {obras.map(o => <option key={o.id} value={o.id}>Custo de obra — {o.titulo}</option>)}
@@ -1400,14 +1405,14 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                   </select>
                 </div>
               )}
-              {temMotivo(row.tipo) && (
+              {mostraMotivo(row.tipo, row.obra_id) && (
                 <div className="pl-7">
                   <MotivoSelect key={row.tipo} tipo={row.tipo} value={row.motivo} onChange={v => updateRow(row._key, { motivo: v })} />
                 </div>
               )}
               {row.tipo === 'escritorio' && (
                 <div className="pl-7">
-                  <select className="field text-sm py-1.5 w-full" value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value })}
+                  <select className="field text-sm py-1.5 w-full" value={row.obra_id} onChange={e => updateRow(row._key, { obra_id: e.target.value, ...(e.target.value ? { motivo: '' } : {}) })}
                     title="Se está fabricando/preparando algo para uma obra específica, selecione-a">
                     <option value="">Custo interno (galpão)</option>
                     {obras.map(o => <option key={o.id} value={o.id}>Custo de obra — {o.titulo}</option>)}
@@ -1749,7 +1754,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
       manutencao_id: manutFinal,
       percentual: 100,
       noturno: (tipo === 'obra' || tipo === 'manutencao') ? noturno : false,
-      ...motivoCampo(tipo, motivo),
+      ...motivoCampo(tipo, motivo, obraFinal ?? ''),
       transporte_tipo: transporteTipo || null,
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       observacao: observacao || null,
@@ -1906,7 +1911,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
                 {obras.map(o => <option key={o.id} value={o.id}>Com custo — {o.titulo}</option>)}
               </select>
             )}
-            {temMotivo(tipo) && <MotivoSelect key={tipo} tipo={tipo} value={motivo} onChange={setMotivo} />}
+            {mostraMotivo(tipo, obraId) && <MotivoSelect key={tipo} tipo={tipo} value={motivo} onChange={setMotivo} />}
             {(tipo === 'obra' || tipo === 'manutencao') && (
               <label className="flex items-center gap-2 cursor-pointer w-fit">
                 <input type="checkbox" checked={noturno} onChange={e => setNoturno(e.target.checked)} className="w-4 h-4 accent-[#6366F1]" />
