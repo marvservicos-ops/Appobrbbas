@@ -175,6 +175,8 @@ export interface Estoque {
   descricao?: string
   cor: string
   icone: string
+  // false: desativado (ex.: unificado em outro); some da lista, histórico preservado
+  ativo?: boolean
   created_at: string
 }
 

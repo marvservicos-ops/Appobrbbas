@@ -10,6 +10,7 @@ import Link from 'next/link'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import FormSaidaEpiLote from './FormSaidaEpiLote'
 import FormSaidaLoteLimpeza from './FormSaidaLoteLimpeza'
+import FormSaidaLoteMateriais from './FormSaidaLoteMateriais'
 
 // ── Tipos ─────────────────────────────────────────────
 type ItemNF = { produtoId: string; produtoNome: string; quantidade: string; unidade: string; precoUnitario: string; valorTotal: string }
@@ -395,6 +396,8 @@ export default function RegistrarPage() {
         <FormSaidaEpiLote estoqueId={estoqueId} estoqueNome={estoque?.nome ?? ''} produtos={produtos} campos={campos} funcionarios={funcionarios} responsaveis={funcionarios.filter(f => f.responsavel_entrega)} />
       ) : tipo === 'saida' && estoque?.icone === 'sparkles' ? (
         <FormSaidaLoteLimpeza estoqueId={estoqueId} estoqueNome={estoque?.nome ?? ''} produtos={produtos} campos={campos} obras={obras} manutencoes={manutencoes} responsaveis={funcionarios.filter(f => f.responsavel_entrega)} />
+      ) : tipo === 'saida' && estoque?.nome !== 'Copa/Escritório' ? (
+        <FormSaidaLoteMateriais estoqueId={estoqueId} estoqueNome={estoque?.nome ?? ''} produtos={produtos} categorias={categorias} obras={obras} funcionarios={funcionarios} manutencoes={manutencoes} responsaveis={funcionarios.filter(f => f.responsavel_entrega)} />
       ) : tipo === 'saida' && (
         <FormSaida
           produtos={produtos} campos={campos} obras={obras} funcionarios={funcionarios} manutencoes={manutencoes}

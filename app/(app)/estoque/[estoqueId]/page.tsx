@@ -957,6 +957,7 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
   const [descricao, setDescricao] = useState(estoque.descricao ?? '')
   const [cor, setCor] = useState(estoque.cor)
   const [icone, setIcone] = useState(estoque.icone)
+  const [ativo, setAtivo] = useState(estoque.ativo !== false)
   const [loading, setLoading] = useState(false)
 
   const ICONE_MAP_FULL: Record<string, React.ReactNode> = {
@@ -970,7 +971,7 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
     e.preventDefault()
     setLoading(true)
     const supabase = createClient()
-    await supabase.from('estoques').update({ nome, descricao: descricao || null, cor, icone }).eq('id', estoque.id)
+    await supabase.from('estoques').update({ nome, descricao: descricao || null, cor, icone, ...(estoque.ativo !== undefined ? { ativo } : {}) }).eq('id', estoque.id)
     setLoading(false)
     onSaved()
   }
@@ -1013,6 +1014,12 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
               ))}
             </div>
           </div>
+          {estoque.ativo !== undefined && (
+            <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer">
+              <input type="checkbox" className="rounded" checked={ativo} onChange={e => setAtivo(e.target.checked)} />
+              Estoque ativo <span className="text-xs text-[#94A3B8]">(desativado some da lista, sem apagar nada)</span>
+            </label>
+          )}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
             <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar'}</button>

@@ -43,7 +43,7 @@ export default function FinanceiroPage() {
     async function load() {
       const supabase = createClient()
       const [{ data: estData }, { data: prodData }] = await Promise.all([
-        supabase.from('estoques').select('id, nome, cor, icone').order('nome'),
+        supabase.from('estoques').select('*').order('nome'),
         supabase.from('estoque_produtos')
           .select('id, estoque_id, nome, quantidade_atual, unidade, preco_unitario')
           .eq('ativo', true)
@@ -53,7 +53,7 @@ export default function FinanceiroPage() {
       ])
 
       const estoquesMap: Record<string, EstoqueCC> = {}
-      for (const e of estData ?? []) {
+      for (const e of (estData ?? []).filter((x: { ativo?: boolean }) => x.ativo !== false)) {
         estoquesMap[e.id] = { ...e, produtos: [], total: 0, expanded: true }
       }
       for (const p of prodData ?? []) {

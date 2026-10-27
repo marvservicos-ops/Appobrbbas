@@ -835,7 +835,7 @@ function ModalEnviarEstoque({ material, onClose, onSaved }: {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('estoques').select('id, nome').order('nome').then(({ data }) => { if (data) setEstoques(data as Estoque[]) })
+    supabase.from('estoques').select('*').order('nome').then(({ data }) => { if (data) setEstoques((data as (Estoque & { ativo?: boolean })[]).filter(e => e.ativo !== false)) })
   }, [])
 
   useEffect(() => {

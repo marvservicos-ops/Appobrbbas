@@ -23,6 +23,7 @@ export default function EstoquePage() {
   const [loading, setLoading] = useState(true)
   const [showNovo, setShowNovo] = useState(false)
   const [contagens, setContagens] = useState<Record<string, number>>({})
+  const [mostrarDesativados, setMostrarDesativados] = useState(false)
 
   async function load() {
     const supabase = createClient()
@@ -64,9 +65,9 @@ export default function EstoquePage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {estoques.map(e => (
+          {estoques.filter(e => mostrarDesativados || e.ativo !== false).map(e => (
             <Link key={e.id} href={`/estoque/${e.id}`}
-              className="card hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group block">
+              className={`card ${e.ativo === false ? 'opacity-60' : ''} hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group block`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white"
@@ -74,7 +75,7 @@ export default function EstoquePage() {
                     {ICONE_MAP[e.icone] ?? <Package size={22} />}
                   </div>
                   <div>
-                    <h3 className="font-syne font-semibold text-[#0F172A]">{e.nome}</h3>
+                    <h3 className="font-syne font-semibold text-[#0F172A]">{e.nome}{e.ativo === false && <span className="ml-2 text-[10px] font-medium text-[#94A3B8]">desativado</span>}</h3>
                     {e.descricao && <p className="text-xs text-[#64748B] mt-0.5">{e.descricao}</p>}
                   </div>
                 </div>
@@ -95,6 +96,12 @@ export default function EstoquePage() {
             <span className="text-sm font-medium">Criar novo estoque</span>
           </button>
         </div>
+      )}
+
+      {!loading && estoques.some(e => e.ativo === false) && (
+        <button onClick={() => setMostrarDesativados(m => !m)} className="mt-4 text-xs text-[#64748B] hover:text-[#4F7CFF]">
+          {mostrarDesativados ? 'Ocultar estoques desativados' : `Mostrar estoques desativados (${estoques.filter(e => e.ativo === false).length})`}
+        </button>
       )}
 
       {showNovo && <ModalNovoEstoque onClose={() => setShowNovo(false)} onCreated={() => { setShowNovo(false); load() }} />}

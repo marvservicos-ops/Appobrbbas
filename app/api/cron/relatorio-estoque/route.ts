@@ -13,8 +13,8 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createServiceClient()
-  const { data: estoques } = await supabase.from('estoques').select('id, nome, icone').order('nome')
-  const categoriasComQuantidade = (estoques ?? []).filter(e => !['wrench', 'building2', 'hammer'].includes(e.icone))
+  const { data: estoques } = await supabase.from('estoques').select('*').order('nome')
+  const categoriasComQuantidade = (estoques ?? []).filter(e => e.ativo !== false && !['wrench', 'building2', 'hammer'].includes(e.icone))
 
   if (categoriasComQuantidade.length === 0) {
     return NextResponse.json({ ok: true, enviado: false, motivo: 'sem categorias de estoque com quantidade' })
