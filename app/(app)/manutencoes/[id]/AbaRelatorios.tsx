@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Plus, Pencil, FileText, ExternalLink, Send, Mail, X, Loader2, CheckCircle2, AlertTriangle, Clock, Trash2 } from 'lucide-react'
+import { RefreshCw, Plus, Pencil, Send, Mail, X, Loader2, CheckCircle2, AlertTriangle, Clock, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { DiarioObraRelatorio } from '@/lib/types'
 import { mensagemErro } from '@/lib/erros'
@@ -26,7 +26,7 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
   const [editando, setEditando] = useState<ContratoRelatorioTipo | 'novo' | null>(null)
   const [mesAberto, setMesAberto] = useState(mesLocal())
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
-  const [enviando, setEnviando] = useState(false)
+  const [enviandoTipo, setEnviandoTipo] = useState<ContratoRelatorioTipo | null>(null)
   const [marcando, setMarcando] = useState(false)
 
   const atual = mesLocal()
@@ -89,15 +89,13 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
     return m
   }, [tiposAtivos, relatorios, meses, dataInicio])
 
-  const nomeTipo = (r: DiarioObraRelatorio) => tipos.find(t => t.diario_obra_id === r.diario_obra_id_externo)?.nome ?? r.diario_obra_nome ?? 'Relatório'
-  const doMes = relatorios
-    .filter(r => (r.data ?? '').startsWith(mesAberto) && tiposAtivos.some(t => t.diario_obra_id === r.diario_obra_id_externo))
-    .sort((a, b) => nomeTipo(a).localeCompare(nomeTipo(b)) || (a.data ?? '').localeCompare(b.data ?? ''))
-  const naoEnviadosDoMes = doMes.filter(r => r.drive_file_id && !r.email_enviado_em)
+  // Relatórios do mês aberto, separados por tipo (cada tipo é enviado num e-mail próprio)
+  const doMesPorTipo = (t: ContratoRelatorioTipo) => relatorios
+    .filter(r => r.diario_obra_id_externo === t.diario_obra_id && (r.data ?? '').startsWith(mesAberto))
+    .sort((a, b) => (b.data ?? '').localeCompare(a.data ?? '') || (b.numero ?? 0) - (a.numero ?? 0))
 
   // Para relatórios que já foram enviados por fora do app (antes desta aba existir)
-  async function marcarComoEnviados() {
-    const ids = Array.from(selecionados)
+  async function marcarComoEnviados(ids: string[]) {
     if (!confirm(`Marcar ${ids.length} relatório(s) como já enviado(s) ao cliente?\n\nNenhum e-mail será enviado — use para o que já foi mandado por fora do app.`)) return
     setMarcando(true)
     const { error } = await createClient().from('diario_obra_relatorios')
@@ -105,7 +103,7 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
       .in('id', ids)
     setMarcando(false)
     if (error) { setAviso({ tipo: 'erro', texto: mensagemErro(error, 'Erro ao marcar como enviado') }); return }
-    setSelecionados(new Set())
+    setSelecionados(prev => new Set(Array.from(prev).filter(id => !ids.includes(id))))
     load()
   }
 
@@ -171,14 +169,14 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
           </p>
         ) : (
           <div className="overflow-x-auto -mx-1 px-1">
-            <table className="w-full text-sm min-w-[640px]">
+            <table className="w-full min-w-[720px]">
               <thead>
                 <tr>
-                  <th className="text-left text-xs font-medium text-[#94A3B8] pb-2 pr-3">Relatório</th>
+                  <th className="text-left text-sm font-semibold text-[#64748B] pb-3 pr-3">Relatório</th>
                   {meses.map(c => (
-                    <th key={c} className="pb-2 px-1">
+                    <th key={c} className="pb-3 px-1">
                       <button onClick={() => abrirMes(c)}
-                        className={`w-full text-xs font-semibold rounded-lg py-1 capitalize ${mesAberto === c ? 'bg-[#EEF2FF] text-[#4F7CFF]' : 'text-[#64748B] hover:bg-[#F1F5F9]'}`}>
+                        className={`w-full text-sm font-semibold rounded-lg py-1.5 capitalize ${mesAberto === c ? 'bg-[#EEF2FF] text-[#4F7CFF]' : 'text-[#64748B] hover:bg-[#F1F5F9]'}`}>
                         {nomeCompetencia(c)}
                       </button>
                     </th>
@@ -189,16 +187,16 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
               <tbody className="divide-y divide-[#F1F5F9]">
                 {tipos.map(t => (
                   <tr key={t.id} className={t.ativo ? '' : 'opacity-50'}>
-                    <td className="py-2 pr-3">
-                      <p className="font-medium text-[#0F172A] leading-tight">{t.nome}</p>
-                      <p className="text-[11px] text-[#94A3B8]">
+                    <td className="py-3 pr-3">
+                      <p className="text-[15px] font-semibold text-[#0F172A] leading-tight">{t.nome}</p>
+                      <p className="text-xs text-[#94A3B8] mt-0.5">
                         {PERIODICIDADES.find(p => p.valor === t.periodicidade)?.label ?? t.periodicidade}{t.ativo ? '' : ' · inativo'}
                       </p>
                     </td>
                     {meses.map(c => {
                       const cel = t.ativo ? grade.get(`${t.id}|${c}`) : undefined
                       return (
-                        <td key={c} className="py-2 px-1">
+                        <td key={c} className="py-3 px-1">
                           <button onClick={() => abrirMes(c)} className="w-full">
                             <CelulaStatus celula={cel} passado={c < atual} />
                           </button>
@@ -215,72 +213,116 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
                 ))}
               </tbody>
             </table>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-[11px] text-[#64748B]">
-              <span className="flex items-center gap-1"><CheckCircle2 size={12} className="text-[#059669]" /> Enviado ao cliente</span>
-              <span className="flex items-center gap-1"><Mail size={12} className="text-[#D97706]" /> Feito, falta enviar</span>
-              <span className="flex items-center gap-1"><AlertTriangle size={12} className="text-[#DC2626]" /> Não feito</span>
-              <span className="flex items-center gap-1"><Clock size={12} className="text-[#94A3B8]" /> Aguardando (mês atual)</span>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 mt-4 text-sm text-[#64748B]">
+              <span className="flex items-center gap-1"><CheckCircle2 size={14} className="text-[#059669]" /> Enviado ao cliente</span>
+              <span className="flex items-center gap-1"><Mail size={14} className="text-[#D97706]" /> Feito, falta enviar</span>
+              <span className="flex items-center gap-1"><AlertTriangle size={14} className="text-[#DC2626]" /> Não feito</span>
+              <span className="flex items-center gap-1"><Clock size={14} className="text-[#94A3B8]" /> Aguardando (mês atual)</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Relatórios do mês selecionado */}
+      {/* Relatórios do mês selecionado, um bloco por tipo */}
       {tiposAtivos.length > 0 && (
-        <div className="card">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <h3 className="font-syne font-semibold text-[#0F172A] capitalize">{nomeCompetencia(mesAberto, 'longo')}</h3>
-            <div className="flex gap-2">
-              {naoEnviadosDoMes.length > 0 && (
-                <button onClick={() => setSelecionados(new Set(naoEnviadosDoMes.map(r => r.id)))}
-                  className="px-3 py-2 border border-[#E2E8F0] text-xs font-medium text-[#374151] rounded-xl hover:bg-[#F1F5F9]">
-                  Selecionar não enviados ({naoEnviadosDoMes.length})
-                </button>
-              )}
-              <button onClick={marcarComoEnviados} disabled={selecionados.size === 0 || marcando}
-                title="Para relatórios já enviados por fora do app"
-                className="px-3 py-2 border border-[#E2E8F0] text-xs font-medium text-[#374151] rounded-xl hover:bg-[#F1F5F9] disabled:opacity-50">
-                {marcando ? 'Marcando…' : 'Marcar como enviado'}
-              </button>
-              <button onClick={() => setEnviando(true)} disabled={selecionados.size === 0}
-                className="flex items-center gap-1.5 px-3 py-2 bg-[#4F7CFF] text-white text-xs font-medium rounded-xl hover:bg-[#3D6AE8] disabled:opacity-50">
-                <Send size={13} /> Enviar{selecionados.size > 0 ? ` (${selecionados.size})` : ''}
-              </button>
-            </div>
-          </div>
-
-          {doMes.length === 0 ? (
-            <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum relatório importado neste mês. Se já foi feito no Diário de Obra, clique em &quot;Sincronizar com o Diário&quot;.</p>
-          ) : (
-            <ul className="divide-y divide-[#F1F5F9]">
-              {doMes.map(r => (
-                <li key={r.id} className="flex items-center gap-3 py-2.5">
-                  <input type="checkbox" className="w-4 h-4 accent-[#4F7CFF] shrink-0" aria-label={`Selecionar ${nomeTipo(r)} de ${formatarData(r.data)}`}
-                    disabled={!r.drive_file_id} checked={selecionados.has(r.id)} onChange={() => alternar(r.id)} />
-                  <FileText size={16} className="text-[#94A3B8] shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#0F172A] truncate">{nomeTipo(r)}</p>
+        <div className="space-y-4">
+          <h3 className="font-syne font-semibold text-lg text-[#0F172A] capitalize px-1">{nomeCompetencia(mesAberto, 'longo')}</h3>
+          {tiposAtivos.map(t => {
+            const lista = doMesPorTipo(t)
+            const selecionaveis = lista.filter(r => r.drive_file_id)
+            const naoEnviados = selecionaveis.filter(r => !r.email_enviado_em)
+            const sel = lista.filter(r => selecionados.has(r.id)).map(r => r.id)
+            return (
+              <div key={t.id} className="card p-0 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-[#E2E8F0]">
+                  <div>
+                    <p className="font-semibold text-[#0F172A]">{t.nome}</p>
                     <p className="text-xs text-[#94A3B8]">
-                      {formatarData(r.data)}{r.numero ? ` · nº ${r.numero}` : ''}{r.status_descricao ? ` · ${r.status_descricao}` : ''}
+                      {lista.length === 0 ? 'Nenhum relatório neste mês' : `${lista.length} relatório${lista.length > 1 ? 's' : ''}${naoEnviados.length ? ` · ${naoEnviados.length} não enviado${naoEnviados.length > 1 ? 's' : ''}` : ' · todos enviados'}`}
                     </p>
                   </div>
-                  {r.email_enviado_em ? (
-                    <span className="text-[11px] text-[#059669] text-right shrink-0" title={(r.email_enviado_para ?? []).join(', ')}>
-                      Enviado em {formatarData(r.email_enviado_em)}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-[#D97706] shrink-0">Não enviado</span>
+                  {lista.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {naoEnviados.length > 0 && (
+                        <button onClick={() => setSelecionados(prev => new Set([...Array.from(prev).filter(id => !lista.some(r => r.id === id)), ...naoEnviados.map(r => r.id)]))}
+                          className="text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#374151]">
+                          Selecionar não enviados ({naoEnviados.length})
+                        </button>
+                      )}
+                      <button onClick={() => marcarComoEnviados(sel)} disabled={sel.length === 0 || marcando}
+                        title="Para relatórios já enviados por fora do app"
+                        className="text-sm px-3 py-2 border border-[#E2E8F0] rounded-lg hover:bg-[#F1F5F9] text-[#374151] disabled:opacity-50">
+                        {marcando ? 'Marcando…' : 'Marcar como enviado'}
+                      </button>
+                      <button onClick={() => setEnviandoTipo(t)} disabled={sel.length === 0}
+                        className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
+                        <Mail size={14} /> Enviar por e-mail{sel.length ? ` (${sel.length})` : ''}
+                      </button>
+                    </div>
                   )}
-                  {r.drive_file_url ? (
-                    <a href={r.drive_file_url} target="_blank" rel="noopener noreferrer" aria-label="Abrir PDF" title="Abrir PDF"
-                      className="w-9 h-9 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#F1F5F9] shrink-0">
-                      <ExternalLink size={14} />
-                    </a>
-                  ) : <span className="text-[11px] text-[#94A3B8] shrink-0">sem PDF</span>}
-                </li>
-              ))}
-            </ul>
-          )}
+                </div>
+                {lista.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px]">
+                      <thead>
+                        <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                          <th className="px-4 py-3 w-8">
+                            <input type="checkbox" className="rounded" aria-label={`Selecionar todos de ${t.nome}`}
+                              checked={selecionaveis.length > 0 && selecionaveis.every(r => selecionados.has(r.id))}
+                              onChange={e => setSelecionados(prev => {
+                                const n = new Set(prev)
+                                for (const r of selecionaveis) { if (e.target.checked) n.add(r.id); else n.delete(r.id) }
+                                return n
+                              })} />
+                          </th>
+                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Nº</th>
+                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Data</th>
+                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">Status</th>
+                          <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-3">E-mail</th>
+                          <th className="px-4 py-3 w-36" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lista.map(r => (
+                          <tr key={r.id} className="border-b border-[#F1F5F9] last:border-0 hover:bg-[#F8FAFC]">
+                            <td className="px-4 py-3">
+                              {r.drive_file_id && (
+                                <input type="checkbox" className="rounded" aria-label={`Selecionar nº ${r.numero ?? ''}`}
+                                  checked={selecionados.has(r.id)} onChange={() => alternar(r.id)} />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-bold text-[#0F172A]">#{r.numero ?? '—'}</td>
+                            <td className="px-4 py-3 text-sm text-[#374151]">{formatarData(r.data) || '—'}</td>
+                            <td className="px-4 py-3"><StatusRelatorio status={r.status_descricao} /></td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {r.email_enviado_em ? (
+                                <span title={[r.email_enviado_para?.length ? `Para: ${r.email_enviado_para.join(', ')}` : '', r.email_enviado_por ? `Por: ${r.email_enviado_por}` : ''].filter(Boolean).join('\n')}
+                                  className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded">
+                                  <CheckCircle2 size={12} /> Enviado {new Date(r.email_enviado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                                  <Mail size={12} /> Não enviado
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              {r.drive_file_url ? (
+                                <a href={r.drive_file_url} target="_blank" rel="noopener noreferrer"
+                                  className="inline-block text-xs font-medium text-white bg-[#4F7CFF] hover:bg-[#3D6AE8] px-3 py-1.5 rounded transition-colors">
+                                  Abrir no Drive
+                                </a>
+                              ) : <span className="text-xs text-[#94A3B8]">sem PDF</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -288,33 +330,47 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
         <ModalTipoRelatorio contratoId={contratoId} tipo={editando === 'novo' ? null : editando} ordem={tipos.length}
           onClose={() => setEditando(null)} onSaved={() => { setEditando(null); load() }} />
       )}
-      {enviando && (
-        <ModalEnviarRelatorios contratoId={contratoId} contratoNome={contratoNome} competencia={mesAberto}
-          relatorios={doMes.filter(r => selecionados.has(r.id))} nomeTipo={nomeTipo}
-          onClose={() => setEnviando(false)}
-          onSent={() => { setEnviando(false); setSelecionados(new Set()); setAviso({ tipo: 'ok', texto: 'Relatórios enviados ao cliente.' }); load() }} />
+      {enviandoTipo && (
+        <ModalEnviarRelatorios contratoId={contratoId} contratoNome={contratoNome} competencia={mesAberto} tipo={enviandoTipo}
+          relatorios={doMesPorTipo(enviandoTipo).filter(r => selecionados.has(r.id))}
+          onClose={() => setEnviandoTipo(null)}
+          onSent={ids => {
+            setEnviandoTipo(null)
+            setSelecionados(prev => new Set(Array.from(prev).filter(id => !ids.includes(id))))
+            setAviso({ tipo: 'ok', texto: 'Relatórios enviados ao cliente.' }); load()
+          }} />
       )}
     </div>
   )
 }
 
+function StatusRelatorio({ status }: { status?: string | null }) {
+  if (!status) return <span className="text-sm text-[#94A3B8]">—</span>
+  const s = status.toLowerCase()
+  const cor = s.includes('aprov') ? 'bg-emerald-50 text-emerald-700'
+    : s.includes('revis') ? 'bg-amber-50 text-amber-700'
+    : s.includes('preench') ? 'bg-[#F1F5F9] text-[#64748B]'
+    : 'bg-[#EEF2FF] text-[#4F7CFF]'
+  return <span className={`inline-block text-xs font-medium px-2 py-1 rounded ${cor}`}>{status}</span>
+}
+
 function CelulaStatus({ celula, passado }: { celula?: Celula; passado: boolean }) {
-  if (!celula) return <span className="block h-8 rounded-lg bg-[#F8FAFC]" />
+  if (!celula) return <span className="block h-10 rounded-lg bg-[#F8FAFC]" />
   const { relatorios, devido } = celula
   if (relatorios.length > 0) {
     const todosEnviados = relatorios.every(r => r.email_enviado_em)
     return (
-      <span className={`flex items-center justify-center gap-1 h-8 rounded-lg text-[11px] font-semibold ${todosEnviados ? 'bg-emerald-50 text-[#059669]' : 'bg-amber-50 text-[#D97706]'}`}
+      <span className={`flex items-center justify-center gap-1 h-10 rounded-lg text-sm font-semibold ${todosEnviados ? 'bg-emerald-50 text-[#059669]' : 'bg-amber-50 text-[#D97706]'}`}
         title={todosEnviados ? 'Enviado ao cliente' : 'Feito, falta enviar'}>
-        {todosEnviados ? <CheckCircle2 size={13} /> : <Mail size={13} />}
+        {todosEnviados ? <CheckCircle2 size={15} /> : <Mail size={15} />}
         {relatorios.length > 1 ? relatorios.length : ''}
       </span>
     )
   }
-  if (!devido) return <span className="flex items-center justify-center h-8 rounded-lg text-[11px] text-[#CBD5E1]" title="Não previsto neste mês">—</span>
+  if (!devido) return <span className="flex items-center justify-center h-10 rounded-lg text-sm text-[#CBD5E1]" title="Não previsto neste mês">—</span>
   return passado
-    ? <span className="flex items-center justify-center h-8 rounded-lg bg-red-50 text-[#DC2626]" title="Não feito"><AlertTriangle size={13} /></span>
-    : <span className="flex items-center justify-center h-8 rounded-lg bg-[#F1F5F9] text-[#94A3B8]" title="Aguardando"><Clock size={13} /></span>
+    ? <span className="flex items-center justify-center h-10 rounded-lg bg-red-50 text-[#DC2626]" title="Não feito"><AlertTriangle size={15} /></span>
+    : <span className="flex items-center justify-center h-10 rounded-lg bg-[#F1F5F9] text-[#94A3B8]" title="Aguardando"><Clock size={15} /></span>
 }
 
 // ── Cadastro / edição de um tipo de relatório ─────────
@@ -438,14 +494,14 @@ function ModalTipoRelatorio({ contratoId, tipo, ordem, onClose, onSaved }: {
 }
 
 // ── Envio ao cliente ──────────────────────────────────
-function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, relatorios, nomeTipo, onClose, onSent }: {
-  contratoId: string; contratoNome: string; competencia: string; relatorios: DiarioObraRelatorio[]
-  nomeTipo: (r: DiarioObraRelatorio) => string; onClose: () => void; onSent: () => void
+function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, tipo, relatorios, onClose, onSent }: {
+  contratoId: string; contratoNome: string; competencia: string; tipo: ContratoRelatorioTipo; relatorios: DiarioObraRelatorio[]
+  onClose: () => void; onSent: (ids: string[]) => void
 }) {
   const [temThread, setTemThread] = useState<boolean | null>(null)
   const [destinatarios, setDestinatarios] = useState('')
   const [cc, setCc] = useState('')
-  const [assunto, setAssunto] = useState(`Relatórios de manutenção — ${contratoNome}`)
+  const [assunto, setAssunto] = useState(`${tipo.nome} — ${contratoNome}`)
   const [mensagem, setMensagem] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [contatos, setContatos] = useState<{ nome: string; email: string; tipo: string | null }[]>([])
@@ -454,7 +510,7 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, relatori
 
   useEffect(() => {
     const sb = createClient()
-    sb.from('relatorio_email_threads').select('id, ultimo_destinatarios, ultimo_cc').eq('contrato_id', contratoId).eq('tipo', 'manutencao').maybeSingle()
+    sb.from('relatorio_email_threads').select('id, ultimo_destinatarios, ultimo_cc').eq('contrato_id', contratoId).eq('tipo', `rel:${tipo.id}`).maybeSingle()
       .then(({ data }) => {
         setTemThread(Boolean(data))
         if (data?.ultimo_destinatarios?.length) setDestinatarios(data.ultimo_destinatarios.join(', '))
@@ -464,13 +520,15 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, relatori
     sb.from('clientes').select('nome, email, tipo').not('email', 'is', null).order('nome').then(({ data }) => {
       setContatos((data ?? []).filter(c => c.email).map(c => ({ nome: c.nome as string, email: c.email as string, tipo: (c.tipo as string) ?? null })))
     })
-  }, [contratoId])
+  }, [contratoId, tipo.id])
 
   useEffect(() => {
-    const nomes = Array.from(new Set(relatorios.map(nomeTipo)))
-    const lista = nomes.map(n => `• ${n}`).join('\n')
-    setMensagem(`Bom dia,\n\nSeguem em anexo os relatórios de manutenção de ${nomeCompetencia(competencia, 'longo')}:\n\n${lista}\n\nQualquer dúvida, estamos à disposição.`)
-  }, [relatorios, competencia, nomeTipo])
+    const datas = [...relatorios].sort((a, b) => (a.data ?? '').localeCompare(b.data ?? '')).map(r => formatarData(r.data)).filter(Boolean)
+    const quando = relatorios.length === 1 ? `do dia ${datas[0]}` : `de ${nomeCompetencia(competencia, 'longo')} (${datas.join(', ')})`
+    setMensagem(relatorios.length === 1
+      ? `Bom dia,\n\nSegue em anexo o relatório ${tipo.nome} ${quando}.\n\nQualquer dúvida, estamos à disposição.`
+      : `Bom dia,\n\nSeguem em anexo os relatórios ${tipo.nome} ${quando}.\n\nQualquer dúvida, estamos à disposição.`)
+  }, [relatorios, competencia, tipo.nome])
 
   function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
     const valor = campo === 'destinatarios' ? destinatarios : cc
@@ -490,12 +548,12 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, relatori
     try {
       const res = await fetch('/api/manutencao/relatorios/enviar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contratoId, relatorioIds: relatorios.map(r => r.id), destinatarios: emails, cc: emailsCc, assunto: assunto.trim(), mensagem, assinaturaHtml }),
+        body: JSON.stringify({ contratoId, tipoId: tipo.id, relatorioIds: relatorios.map(r => r.id), destinatarios: emails, cc: emailsCc, assunto: assunto.trim(), mensagem, assinaturaHtml }),
       })
       const data = await res.json()
       if (!res.ok) { setErro(data.error ?? 'Falha ao enviar.'); return }
       if (data.avisos?.length) alert(data.avisos.join('\n'))
-      onSent()
+      onSent(relatorios.map(r => r.id))
     } catch {
       setErro('Sem conexão. Verifique a internet e tente de novo.')
     } finally {
@@ -510,7 +568,7 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, relatori
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-[#EEF2FF] rounded-lg flex items-center justify-center"><Mail size={15} className="text-[#4F7CFF]" /></div>
             <div>
-              <h2 className="font-syne font-semibold text-[#0F172A]">Enviar relatórios ao cliente</h2>
+              <h2 className="font-syne font-semibold text-[#0F172A]">Enviar {tipo.nome}</h2>
               <p className="text-xs text-[#94A3B8]">{relatorios.length} PDF{relatorios.length > 1 ? 's' : ''} em anexo</p>
             </div>
           </div>
@@ -549,7 +607,7 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, relatori
           </div>
           {temThread !== null && (
             <p className="text-xs text-[#94A3B8]">
-              {temThread ? 'Vai responder ao último envio deste contrato, na mesma conversa.' : 'Primeiro envio deste contrato — os próximos vão responder este.'}
+              {temThread ? `Vai responder ao último envio de ${tipo.nome}, na mesma conversa.` : `Primeiro envio de ${tipo.nome} — os próximos vão responder este.`}
             </p>
           )}
           {erro && <p className="text-sm text-red-600">{erro}</p>}
