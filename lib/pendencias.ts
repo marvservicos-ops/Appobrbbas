@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { devidoNoMes } from '@/lib/manutencaoRelatorios'
 
 // Cruza os dados do sistema e lista o que ficou sem lançar ou sem conferir.
 // Usado pelo painel de Pendências do Dashboard e pelo e-mail diário
@@ -61,7 +62,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     sb.from('obras').select('id, titulo, status, previsao_termino, diario_obra_id').eq('status', 'Em Andamento'),
     sb.from('funcionarios').select('id').eq('ativo', true),
     sb.from('funcionario_alocacoes').select('funcionario_id, data').gte('data', diasAlocacao[0]).lte('data', hoje),
-    sb.from('contratos_manutencao').select('id, numero_contrato, empresa:empresas(razao_social, apelido)').eq('ativo', true),
+    sb.from('contratos_manutencao').select('id, numero_contrato, data_inicio, empresa:empresas(razao_social, apelido)').eq('ativo', true),
   ])
 
   const obraIds = (obras ?? []).map(o => o.id)
@@ -75,7 +76,7 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     { data: materiais },
     { data: etapas },
     { data: nfsManut },
-    { data: equips },
+    { data: tiposRel },
   ] = await Promise.all([
     obraIds.length ? sb.from('diario_obra_relatorios').select('*').in('obra_id', obraIds) : vazio,
     sb.from('obra_medicoes').select('id, obra_id, nome, data_prevista, obras:obra_id(titulo)').eq('status', 'planejada').lt('data_prevista', hoje),
@@ -83,13 +84,17 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     obraIds.length ? sb.from('obra_materiais').select('id, obra_id, status, oc_id, data_prevista_chegada').in('obra_id', obraIds) : vazio,
     obraIds.length ? sb.from('cronograma_etapas').select('id, obra_id, status, progresso, data_fim').in('obra_id', obraIds).lt('data_fim', hoje) : vazio,
     contratoIds.length ? sb.from('manutencao_nfs').select('contrato_id, status').eq('competencia', competenciaAnterior).in('contrato_id', contratoIds) : vazio,
-    contratoIds.length ? sb.from('equipamentos').select('id, contrato_id').eq('ativo', true).in('contrato_id', contratoIds) : vazio,
+    // Sem a migração manutencao_relatorios.sql a tabela não existe: o erro é ignorado e não há pendência de relatório
+    contratoIds.length ? sb.from('contrato_relatorio_tipos').select('id, contrato_id, nome, diario_obra_id, periodicidade, mes_inicio').eq('ativo', true).in('contrato_id', contratoIds) : vazio,
   ])
 
-  const equipIds = (equips ?? []).map((e: any) => e.id)
-  const { data: historico } = equipIds.length
-    ? await sb.from('manutencao_historico').select('equipamento_id').eq('competencia', competenciaAnterior).eq('preventiva_feita', true).in('equipamento_id', equipIds)
+  // Relatórios de manutenção importados do Diário de Obra (a partir do mês anterior)
+  const projetosManut = Array.from(new Set((tiposRel ?? []).map((t: any) => t.diario_obra_id as string)))
+  const { data: relManut } = projetosManut.length
+    ? await sb.from('diario_obra_relatorios').select('id, diario_obra_id_externo, data, drive_file_id, email_enviado_em')
+        .in('diario_obra_id_externo', projetosManut).gte('data', `${competenciaAnterior}-01`)
     : { data: [] as any[] }
+  const nomeContrato = (c: any) => c.empresa?.apelido || c.empresa?.razao_social || c.numero_contrato || 'Contrato'
 
   const lista: Pendencia[] = []
   const tituloObra = new Map((obras ?? []).map(o => [o.id, o.titulo as string]))
@@ -176,24 +181,37 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
     })
   }
 
-  // Manutenções: NF e preventivas do mês anterior (a partir do dia 5)
+  // Manutenções: contrato sem relatório vinculado ao Diário de Obra
+  const contratosComTipo = new Set((tiposRel ?? []).map((t: any) => t.contrato_id))
+  const semRelatorio = tiposRel ? (contratos ?? []).filter(c => !contratosComTipo.has(c.id)) : []
+  if (semRelatorio.length > 0) {
+    lista.push({
+      id: 'manut-sem-relatorio', chave: semRelatorio.map(c => c.id).sort().join(','), grupo: 'lancar', gravidade: 'media', icone: 'manutencao',
+      titulo: `${plural(semRelatorio.length, 'contrato de manutenção', 'contratos de manutenção')} sem relatórios do Diário de Obra`,
+      detalhe: semRelatorio.map(nomeContrato).join(' · '),
+      href: semRelatorio.length === 1 ? `/manutencoes/${semRelatorio[0].id}?tab=relatorios` : '/manutencoes',
+    })
+  }
+
+  // Manutenções: NF e relatórios do mês anterior (a partir do dia 5)
   if (agora.getDate() >= 5) {
     const nfOk = new Set((nfsManut ?? []).filter((n: any) => n.status === 'emitida').map((n: any) => n.contrato_id))
-    const prevFeitas = new Set((historico ?? []).map((h: any) => h.equipamento_id))
     for (const c of contratos ?? []) {
-      const nome = (c as any).empresa?.apelido || (c as any).empresa?.razao_social || c.numero_contrato || 'Contrato'
+      const nome = nomeContrato(c)
       if (!nfOk.has(c.id)) lista.push({
         id: `nf-man-${c.id}`, chave: competenciaAnterior, grupo: 'lancar', gravidade: 'alta', icone: 'manutencao',
         titulo: `NF de ${nomeMesAnterior} não emitida — ${nome}`,
         href: `/manutencoes/${c.id}`,
       })
-      const equipsContrato = (equips ?? []).filter((e: any) => e.contrato_id === c.id)
-      const faltando = equipsContrato.filter((e: any) => !prevFeitas.has(e.id)).length
-      if (faltando > 0) lista.push({
-        id: `prev-${c.id}`, chave: `${competenciaAnterior}:${faltando}`, grupo: 'lancar', gravidade: 'media', icone: 'manutencao',
-        titulo: `Preventivas de ${nomeMesAnterior} não marcadas — ${nome}`,
-        detalhe: `${faltando} de ${plural(equipsContrato.length, 'equipamento', 'equipamentos')}`,
-        href: `/manutencoes/${c.id}`,
+      const naoFeitos = (tiposRel ?? []).filter((t: any) =>
+        t.contrato_id === c.id
+        && devidoNoMes(t, competenciaAnterior, (c as any).data_inicio)
+        && !(relManut ?? []).some((r: any) => r.diario_obra_id_externo === t.diario_obra_id && (r.data ?? '').startsWith(competenciaAnterior)))
+      if (naoFeitos.length > 0) lista.push({
+        id: `rel-man-${c.id}`, chave: `${competenciaAnterior}:${naoFeitos.map((t: any) => t.id).sort().join(',')}`, grupo: 'lancar', gravidade: 'alta', icone: 'manutencao',
+        titulo: `${plural(naoFeitos.length, 'relatório', 'relatórios')} de ${nomeMesAnterior} não feito${naoFeitos.length > 1 ? 's' : ''} — ${nome}`,
+        detalhe: `${naoFeitos.map((t: any) => t.nome).join(' · ')}. Se já foi feito no Diário de Obra, sincronize na aba Relatórios.`,
+        href: `/manutencoes/${c.id}?tab=relatorios`,
       })
     }
   }
@@ -215,6 +233,17 @@ export async function calcularPendencias(sb: SupabaseClient, agora: Date): Promi
       titulo: `${plural(lst.length, 'RDO não enviado', 'RDOs não enviados')} por e-mail — ${tituloObra.get(obraId)}`,
       detalhe: lst.map(r => `#${r.numero ?? '?'}`).join(', '),
       href: `/obras/${obraId}?aba=relatorios`,
+    })
+  }
+
+  // Relatórios de manutenção importados e ainda não enviados ao cliente
+  for (const c of contratos ?? []) {
+    const projetos = new Set((tiposRel ?? []).filter((t: any) => t.contrato_id === c.id).map((t: any) => t.diario_obra_id))
+    const pendentes = (relManut ?? []).filter((r: any) => projetos.has(r.diario_obra_id_externo) && r.drive_file_id && !r.email_enviado_em)
+    if (pendentes.length > 0) lista.push({
+      id: `rel-man-email-${c.id}`, chave: pendentes.map((r: any) => r.id).sort().join(','), grupo: 'conferir', gravidade: 'media', icone: 'email',
+      titulo: `${plural(pendentes.length, 'relatório de manutenção não enviado', 'relatórios de manutenção não enviados')} — ${nomeContrato(c)}`,
+      href: `/manutencoes/${c.id}?tab=relatorios`,
     })
   }
 

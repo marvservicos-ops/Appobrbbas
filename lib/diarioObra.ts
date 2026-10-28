@@ -334,6 +334,19 @@ export async function sincronizarRdosDaObra(obraId: string, orcamento = 30): Pro
   return sincronizarObraExterna(obra.diario_obra_id, nome, obraId, orcamento)
 }
 
+// ── Projetos do Diário de Obra (para escolher o vínculo nas telas) ────
+export async function listarProjetosDiario(): Promise<{ id: string; nome: string }[]> {
+  const obras = await listarObrasExternas()
+  return obras.map(o => ({ id: o._id, nome: o.nome })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+}
+
+// ── Sincronização de um projeto sem obra no marv-gestão (relatórios de
+// contrato de manutenção: cada tipo de relatório é um projeto no Diário) ──
+export async function sincronizarProjetoDiario(diarioObraId: string, orcamento = 15): Promise<ResultadoSincronizacao> {
+  const nome = await nomeObraNoDiario(diarioObraId, diarioObraId)
+  return sincronizarObraExterna(diarioObraId, nome, null, orcamento)
+}
+
 // ── Backup completo: TODAS as obras do Diário de Obra, vinculadas ou não ──
 // limite: teto de RDOs baixados/enviados nesta chamada (mantém cada chamada
 // curta o bastante pra não estourar o tempo do servidor). completo=false

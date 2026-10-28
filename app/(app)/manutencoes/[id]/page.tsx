@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin, Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle, Undo2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin, Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle, Undo2, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ContratoManutencao, ManutencaoAditivo, ManutencaoNF, ManutencaoFuncionario, Equipamento, ManutencaoEstoqueProduto, ManutencaoEstoqueRegistro, EstoqueProduto } from '@/lib/types'
 import Link from 'next/link'
@@ -12,9 +12,10 @@ import { parseNumeroBR, arred, formatarQtd } from '@/lib/numero'
 import { hojeLocal, formatarData } from '@/lib/datas'
 import { ajustarSaldo } from '@/lib/estoque/saldo'
 import ModalContrato from '../ModalContrato'
+import AbaRelatorios from './AbaRelatorios'
 
-type Tab = 'financeiro' | 'equipe' | 'equipamentos' | 'estoque'
-const TABS: Tab[] = ['financeiro', 'equipe', 'equipamentos', 'estoque']
+type Tab = 'relatorios' | 'financeiro' | 'equipe' | 'equipamentos' | 'estoque'
+const TABS: Tab[] = ['relatorios', 'financeiro', 'equipe', 'equipamentos', 'estoque']
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function fmtDate(d?: string | null) { return formatarData(d) || '—' }
@@ -1210,7 +1211,7 @@ export default function ManutencaoDetalhe() {
   const [contrato, setContrato] = useState<ContratoManutencao | null>(null)
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab') as Tab | null
-  const tab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : 'financeiro'
+  const tab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : 'relatorios'
   // A aba fica na URL para que voltar de um equipamento (ou do navegador) caia na mesma aba
   function setTab(t: Tab) { router.replace(`/manutencoes/${id}?tab=${t}`, { scroll: false }) }
   const [loading, setLoading] = useState(true)
@@ -1237,6 +1238,7 @@ export default function ManutencaoDetalhe() {
   if (!contrato) return <div className="p-8 text-center text-[#94A3B8]">Contrato não encontrado.</div>
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: 'relatorios', label: 'Relatórios', icon: <FileText size={15} /> },
     { key: 'financeiro', label: 'Financeiro', icon: <DollarSign size={15} /> },
     { key: 'equipe', label: 'Equipe', icon: <Users size={15} /> },
     { key: 'equipamentos', label: 'Equipamentos', icon: <Wrench size={15} /> },
@@ -1299,6 +1301,10 @@ export default function ManutencaoDetalhe() {
 
       {/* Content */}
       <main className="flex-1 p-4 md:p-6 max-w-5xl mx-auto w-full">
+        {tab === 'relatorios' && (
+          <AbaRelatorios contratoId={id} dataInicio={contrato.data_inicio}
+            contratoNome={(contrato.empresa as any)?.apelido ?? (contrato.empresa as any)?.razao_social ?? 'Contrato'} />
+        )}
         {tab === 'financeiro' && <AbaFinanceiro contratoId={id} valorMensal={contrato.valor_mensal} />}
         {tab === 'equipe' && <AbaEquipe contratoId={id} />}
         {tab === 'equipamentos' && <AbaEquipamentos contratoId={id} />}

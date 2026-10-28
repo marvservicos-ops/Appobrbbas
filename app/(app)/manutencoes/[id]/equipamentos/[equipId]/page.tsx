@@ -1,24 +1,17 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ArrowLeft, Upload, CheckCircle2, XCircle, Plus, Trash2, Wrench, AlertTriangle, Pencil, X, Check, QrCode, FileText, ChevronLeft, ChevronRight, Star } from 'lucide-react'
+import { ArrowLeft, Upload, Plus, Trash2, Wrench, Pencil, X, Check, QrCode, FileText, ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
-import { Equipamento, ManutencaoHistorico } from '@/lib/types'
+import { Equipamento } from '@/lib/types'
 import { mensagemErro } from '@/lib/erros'
-import { parseNumeroBR } from '@/lib/numero'
 import { urlPublica, qrImagemUrl } from '@/app/pub/qr'
 
-function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
-function competenciaLabel(c: string) {
-  const [ano, mes] = c.split('-')
-  const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-  return `${meses[parseInt(mes) - 1]} / ${ano}`
-}
 
 function QrModal({ equipId }: { equipId: string }) {
   const [open, setOpen] = useState(false)
@@ -426,30 +419,15 @@ export default function EquipamentoPage() {
   const { id: contratoId, equipId } = useParams<{ id: string; equipId: string }>()
   const router = useRouter()
   const [equip, setEquip] = useState<Equipamento | null>(null)
-  const [historico, setHistorico] = useState<ManutencaoHistorico[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadingManual, setUploadingManual] = useState(false)
   const [erroManual, setErroManual] = useState('')
 
-  const [showForm, setShowForm] = useState(false)
-  const [fComp, setFComp] = useState('')
-  const [fPrev, setFPrev] = useState(false)
-  const [fCorr, setFCorr] = useState(false)
-  const [fCorrDesc, setFCorrDesc] = useState('')
-  const [fCorrCusto, setFCorrCusto] = useState('')
-  const [salvando, setSalvando] = useState(false)
-  const [editandoHistId, setEditandoHistId] = useState<string | null>(null)
-  const [erroForm, setErroForm] = useState('')
-  const formRef = useRef<HTMLDivElement>(null)
 
   async function load() {
     const sb = createClient()
-    const [{ data: e }, { data: h }] = await Promise.all([
-      sb.from('equipamentos').select('*').eq('id', equipId).single(),
-      sb.from('manutencao_historico').select('*').eq('equipamento_id', equipId).order('competencia', { ascending: false }),
-    ])
+    const { data: e } = await sb.from('equipamentos').select('*').eq('id', equipId).single()
     setEquip(e as Equipamento)
-    setHistorico((h ?? []) as ManutencaoHistorico[])
     setLoading(false)
   }
 
@@ -472,84 +450,6 @@ export default function EquipamentoPage() {
     } finally {
       setUploadingManual(false)
     }
-  }
-
-  function limparForm() {
-    setFComp(''); setFPrev(false); setFCorr(false); setFCorrDesc(''); setFCorrCusto('')
-    setEditandoHistId(null); setErroForm('')
-  }
-
-  function abrirNovoRegistro() {
-    if (showForm && !editandoHistId) { setShowForm(false); return }
-    limparForm()
-    setShowForm(true)
-  }
-
-  function abrirEdicao(h: ManutencaoHistorico) {
-    setEditandoHistId(h.id)
-    setFComp(h.competencia)
-    setFPrev(h.preventiva_feita)
-    setFCorr(h.corretiva)
-    setFCorrDesc(h.corretiva_descricao ?? '')
-    setFCorrCusto(h.corretiva_custo != null ? String(h.corretiva_custo).replace('.', ',') : '')
-    setErroForm('')
-    setShowForm(true)
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0)
-  }
-
-  async function salvarManutencao() {
-    if (!fComp) { setErroForm('Informe a competência (mês).'); return }
-    const custo = fCorr && fCorrCusto.trim() ? parseNumeroBR(fCorrCusto) : null
-    if (custo != null && Number.isNaN(custo)) { setErroForm('Custo adicional inválido.'); return }
-
-    // Só um registro por equipamento e mês (unique no banco): se já existe, abre o
-    // existente em edição já com o que foi marcado agora somado a ele.
-    const existente = historico.find(h => h.competencia === fComp && h.id !== editandoHistId)
-    if (existente) {
-      if (editandoHistId) { setErroForm(`Já existe outro registro em ${competenciaLabel(fComp)}. Escolha outro mês ou edite aquele registro.`); return }
-      if (!confirm(`Já existe um registro em ${competenciaLabel(fComp)}. Abrir esse registro para editar, juntando o que você marcou agora?`)) return
-      const descricoes = [existente.corretiva_descricao, fCorr ? fCorrDesc.trim() : ''].filter(Boolean)
-      const somaCusto = (existente.corretiva_custo ?? 0) + (custo ?? 0)
-      setEditandoHistId(existente.id)
-      setFPrev(existente.preventiva_feita || fPrev)
-      setFCorr(existente.corretiva || fCorr)
-      setFCorrDesc(descricoes.join('\n'))
-      setFCorrCusto(somaCusto ? String(somaCusto).replace('.', ',') : '')
-      setErroForm('Registro existente aberto para edição. Confira e clique em Salvar.')
-      return
-    }
-
-    setSalvando(true)
-    setErroForm('')
-    const payload = {
-      competencia: fComp,
-      preventiva_feita: fPrev,
-      corretiva: fCorr,
-      corretiva_descricao: fCorr && fCorrDesc.trim() ? fCorrDesc.trim() : null,
-      corretiva_custo: custo,
-    }
-    const sb = createClient()
-    const { error } = editandoHistId
-      ? await sb.from('manutencao_historico').update(payload).eq('id', editandoHistId)
-      : await sb.from('manutencao_historico').insert({ equipamento_id: equipId, ...payload })
-    setSalvando(false)
-    if (error) {
-      setErroForm(error.code === '23505'
-        ? `Já existe um registro em ${competenciaLabel(fComp)}. Atualize a página e edite o registro existente.`
-        : mensagemErro(error, 'Erro ao salvar registro'))
-      return
-    }
-    limparForm()
-    setShowForm(false)
-    load()
-  }
-
-  async function excluirManutencao(h: ManutencaoHistorico) {
-    if (!confirm(`Excluir o registro de manutenção de ${competenciaLabel(h.competencia)}?`)) return
-    const { error } = await createClient().from('manutencao_historico').delete().eq('id', h.id)
-    if (error) { alert(mensagemErro(error, 'Erro ao excluir registro')); return }
-    if (editandoHistId === h.id) { limparForm(); setShowForm(false) }
-    load()
   }
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="w-6 h-6 border-2 border-[#4F7CFF] border-t-transparent rounded-full animate-spin" /></div>
@@ -610,96 +510,6 @@ export default function EquipamentoPage() {
           <DadosTecnicos equipId={equipId} />
         </div>
 
-        {/* Histórico */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-syne font-semibold text-[#0F172A]">Histórico de Manutenções</h3>
-            <button onClick={abrirNovoRegistro} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-xs font-semibold rounded-lg transition-colors">
-              <Plus size={13} /> Registrar
-            </button>
-          </div>
-
-          {showForm && (
-            <div ref={formRef} className="bg-[#F8FAFC] rounded-xl p-4 mb-4 space-y-3">
-              {editandoHistId && <p className="text-xs font-semibold text-[#4F7CFF]">Editando registro</p>}
-              <div>
-                <label className="text-xs font-medium text-[#64748B] block mb-1">Competência (mês) *</label>
-                <input type="month" className="field text-sm w-48" value={fComp} onChange={e => setFComp(e.target.value)} />
-              </div>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={fPrev} onChange={e => setFPrev(e.target.checked)} className="w-4 h-4 accent-[#4F7CFF]" />
-                  <span className="text-sm font-medium text-[#0F172A]">Preventiva realizada</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={fCorr} onChange={e => setFCorr(e.target.checked)} className="w-4 h-4 accent-[#EF4444]" />
-                  <span className="text-sm font-medium text-[#0F172A]">Houve corretiva</span>
-                </label>
-              </div>
-              {fCorr && (
-                <div className="space-y-3 pl-4 border-l-2 border-[#FCA5A5]">
-                  <div>
-                    <label className="text-xs font-medium text-[#64748B] block mb-1">Descrição da corretiva</label>
-                    <textarea rows={2} className="field text-sm resize-none" placeholder="O que foi feito..." value={fCorrDesc} onChange={e => setFCorrDesc(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-[#64748B] block mb-1">Custo adicional (R$)</label>
-                    <input type="text" inputMode="decimal" className="field text-sm w-48" placeholder="0,00" value={fCorrCusto} onChange={e => setFCorrCusto(e.target.value)} />
-                  </div>
-                </div>
-              )}
-              {erroForm && <p className="text-xs text-red-500">{erroForm}</p>}
-              <div className="flex justify-end gap-2">
-                <button onClick={() => { limparForm(); setShowForm(false) }} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-white rounded-lg">Cancelar</button>
-                <button onClick={salvarManutencao} disabled={salvando}
-                  className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">
-                  {salvando ? 'Salvando...' : 'Salvar'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {historico.length === 0 ? (
-            <p className="text-sm text-[#94A3B8] text-center py-8">Nenhuma manutenção registrada</p>
-          ) : (
-            <div className="space-y-3">
-              {historico.map(h => (
-                <div key={h.id} className="flex items-start gap-3 p-3 border border-[#E2E8F0] rounded-xl">
-                  <div className="flex flex-col gap-1 items-center pt-0.5 shrink-0">
-                    {h.preventiva_feita ? <CheckCircle2 size={16} className="text-[#10B981]" /> : <XCircle size={16} className="text-[#94A3B8]" />}
-                    {h.corretiva && <AlertTriangle size={16} className="text-[#EF4444]" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-[#0F172A]">{competenciaLabel(h.competencia)}</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${h.preventiva_feita ? 'bg-[#D1FAE5] text-[#059669]' : 'bg-[#F1F5F9] text-[#94A3B8]'}`}>
-                        Preventiva {h.preventiva_feita ? 'feita' : 'não feita'}
-                      </span>
-                      {h.corretiva && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#FEE2E2] text-[#DC2626]">
-                          Corretiva {h.corretiva_custo ? `• ${fmt(h.corretiva_custo)}` : ''}
-                        </span>
-                      )}
-                    </div>
-                    {h.corretiva && h.corretiva_descricao && (
-                      <p className="text-xs text-[#64748B] mt-1">{h.corretiva_descricao}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => abrirEdicao(h)} aria-label={`Editar registro de ${competenciaLabel(h.competencia)}`} title="Editar registro"
-                      className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                      <Pencil size={13} />
-                    </button>
-                    <button onClick={() => excluirManutencao(h)} aria-label={`Excluir registro de ${competenciaLabel(h.competencia)}`} title="Excluir registro"
-                      className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </main>
     </div>
   )
