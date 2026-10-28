@@ -5,6 +5,13 @@ import Link from 'next/link'
 import { AlertTriangle, ArrowLeft, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, ClipboardList, Copy, FileText, KeyRound, Loader2, Pencil, Plus, ReceiptText, Save, ShoppingCart, Trash2, Upload, X, PackageCheck, Receipt } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Obra, ObraMedicao, ObraOC, TipoOC, Empresa } from '@/lib/types'
+import { hojeLocal } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import { totaisReceitaObra, valorFaturadoMedicao } from '@/lib/financeiroObra'
+
+// Campo limpo vai como null (undefined some do JSON do update e o valor antigo volta no F5)
+type MudancaMedicao = { [K in keyof ObraMedicao]?: ObraMedicao[K] | null }
+const aplicar = (m: ObraMedicao, c: MudancaMedicao) => ({ ...m, ...c } as ObraMedicao)
 
 type EtapaDraft = { nome: string; percentual: number; data_prevista: string }
 
@@ -15,7 +22,8 @@ interface ObraAditivo {
 
 interface NotaMaterial {
   id: string; obra_id: string; valor: number; data_emissao: string; descricao?: string | null
-  numero_nf?: string | null; material_id?: string | null; created_at: string
+  numero_nf?: string | null; material_id?: string | null; medicao_id?: string | null
+  itens_ids?: string[] | null; created_at: string
 }
 
 interface OcInterna {
@@ -57,7 +65,7 @@ const STATUS = {
 // ─── Modal editar medição (nome / percentual / previsão) ──────────────────────
 function ModalEditarMedicao({ medicao, valorBase, onClose, onSaved }: {
   medicao: ObraMedicao; valorBase: number; onClose: () => void
-  onSaved: (c: Partial<ObraMedicao>) => void
+  onSaved: (c: MudancaMedicao) => void
 }) {
   const [nome, setNome] = useState(medicao.nome)
   const [percentual, setPercentual] = useState(String(medicao.percentual))
@@ -69,15 +77,15 @@ function ModalEditarMedicao({ medicao, valorBase, onClose, onSaved }: {
 
   async function handleSave() {
     setSaving(true)
-    const changes: Partial<ObraMedicao> = {
+    const changes: MudancaMedicao = {
       nome: nome.trim(),
       percentual: pctNum,
-      data_prevista: dataPrevista || undefined,
+      data_prevista: dataPrevista || null,
       ...(medicao.status === 'planejada' ? { valor_previsto: valorPrevisto } : {}),
     }
     const { error } = await createClient().from('obra_medicoes').update(changes).eq('id', medicao.id)
     setSaving(false)
-    if (error) { alert(error.message); return }
+    if (error) { alert(mensagemErro(error, 'Não foi possível salvar a etapa')); return }
     onSaved(changes); onClose()
   }
 
@@ -96,7 +104,7 @@ function ModalEditarMedicao({ medicao, valorBase, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Percentual (%)</label>
-              <input type="number" step="0.001" min="0" max="100" className="field" value={percentual} onChange={e => setPercentual(e.target.value)} />
+              <input type="number" inputMode="decimal" step="0.001" min="0" max="100" className="field" value={percentual} onChange={e => setPercentual(e.target.value)} />
               {medicao.status === 'planejada' && percentual && <p className="text-xs text-[#64748B] mt-1">= {moeda(valorPrevisto)}</p>}
             </div>
             <div>
@@ -108,7 +116,7 @@ function ModalEditarMedicao({ medicao, valorBase, onClose, onSaved }: {
         <div className="flex justify-end gap-3 px-5 pb-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
           <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {saving ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
       </div>
@@ -155,7 +163,7 @@ function ModalNovaMedicao({ obraId, valorBase, aditivoId, aditivoNome, aditivoVa
     }
     const { error } = await supabase.from('obra_medicoes').insert(payload)
     setSaving(false)
-    if (error) { alert(error.message); return }
+    if (error) { alert(mensagemErro(error, 'Não foi possível criar a medição')); return }
     onSaved(); onClose()
   }
 
@@ -178,7 +186,7 @@ function ModalNovaMedicao({ obraId, valorBase, aditivoId, aditivoNome, aditivoVa
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Percentual (%)</label>
-              <input type="number" step="0.001" min="0" max="100" className="field" placeholder="0" value={percentual} onChange={e => setPercentual(e.target.value)} />
+              <input type="number" inputMode="decimal" step="0.001" min="0" max="100" className="field" placeholder="0" value={percentual} onChange={e => setPercentual(e.target.value)} />
               {percentual && <p className="text-xs text-[#64748B] mt-1">= {moeda(valorPrevisto)}</p>}
             </div>
             <div>
@@ -190,7 +198,7 @@ function ModalNovaMedicao({ obraId, valorBase, aditivoId, aditivoNome, aditivoVa
         <div className="flex justify-end gap-3 px-5 pb-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
           <button onClick={handleSave} disabled={saving || !nome.trim() || !percentual} className="btn-primary text-sm disabled:opacity-50">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Adicionar
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} {saving ? 'Salvando…' : 'Adicionar'}
           </button>
         </div>
       </div>
@@ -217,7 +225,7 @@ function ModalAditivo({ obraId, aditivo, onClose, onSaved }: {
       ? await createClient().from('obra_aditivos').update(payload).eq('id', aditivo!.id)
       : await createClient().from('obra_aditivos').insert(payload)
     setSaving(false)
-    if (error) { alert(error.message); return }
+    if (error) { alert(mensagemErro(error, 'Não foi possível salvar o aditivo')); return }
     onSaved(); onClose()
   }
 
@@ -236,7 +244,7 @@ function ModalAditivo({ obraId, aditivo, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor (R$) *</label>
-              <input type="number" step="0.01" min="0" className="field" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
+              <input type="number" inputMode="decimal" step="0.01" min="0" className="field" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Data</label>
@@ -251,7 +259,7 @@ function ModalAditivo({ obraId, aditivo, onClose, onSaved }: {
         <div className="flex justify-end gap-3 px-5 pb-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
           <button onClick={handleSave} disabled={saving || !descricao.trim() || !valor} className="btn-primary text-sm disabled:opacity-50">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {saving ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
       </div>
@@ -284,7 +292,7 @@ function ModalOC({ obraId, oc, onClose, onSaved }: {
       ? await createClient().from('obra_ocs').update(payload).eq('id', oc!.id)
       : await createClient().from('obra_ocs').insert(payload)
     setSaving(false)
-    if (error) { alert(error.message); return }
+    if (error) { alert(mensagemErro(error, 'Não foi possível salvar a OC')); return }
     onSaved(); onClose()
   }
 
@@ -309,7 +317,7 @@ function ModalOC({ obraId, oc, onClose, onSaved }: {
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor total (R$) *</label>
-              <input type="number" step="0.01" min="0" className="field" placeholder="0,00" value={valorTotal} onChange={e => setValorTotal(e.target.value)} />
+              <input type="number" inputMode="decimal" step="0.01" min="0" className="field" placeholder="0,00" value={valorTotal} onChange={e => setValorTotal(e.target.value)} />
             </div>
           </div>
           <div>
@@ -320,7 +328,7 @@ function ModalOC({ obraId, oc, onClose, onSaved }: {
         <div className="flex justify-end gap-3 px-5 pb-5">
           <button onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
           <button onClick={handleSave} disabled={saving || !numeroOc.trim() || !valorTotal} className="btn-primary text-sm disabled:opacity-50">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {saving ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
       </div>
@@ -347,8 +355,19 @@ function ModalAcessoCliente({ obraId, obraTitulo, emailDestino, onClose }: {
     : tokenExistente ? `${window.location.origin}/portal/${tokenExistente}` : ''
 
   useEffect(() => {
-    createClient().from('obra_acessos_cliente').select('token').eq('obra_id', obraId).eq('ativo', true).maybeSingle()
-      .then(({ data }) => { setTokenExistente(data?.token ?? null); setCarregando(false) })
+    // Leitura pela API (a tabela é só do service role). 403 = sem permissão financeira → trata como sem acesso.
+    let ativo = true
+    fetch('/api/portal/gerar-acesso?obraId=' + encodeURIComponent(obraId))
+      .then(async res => {
+        if (res.status === 403) return { token: null }
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || 'Não foi possível consultar o acesso do cliente.')
+        return data as { token?: string | null }
+      })
+      .then(data => { if (ativo) setTokenExistente(data.token ?? null) })
+      .catch(e => { if (ativo) setErro(mensagemErro(e as Error, 'Não foi possível consultar o acesso do cliente')) })
+      .finally(() => { if (ativo) setCarregando(false) })
+    return () => { ativo = false }
   }, [obraId])
 
   async function gerar() {
@@ -491,7 +510,7 @@ function CampoLocal({ label, valor, tipo = 'text', onCommit, ...rest }: {
 function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, onExcluir, onAtualizar, onAnexarNF, onAbrirNF, onRemoverNF, onEmitirNF }: {
   m: ObraMedicao; isAditivo: boolean; aditivoNome?: string; ocNome?: string; uploading: string | null
   onEditar: () => void; onExcluir: () => void
-  onAtualizar: (changes: Partial<ObraMedicao>) => void
+  onAtualizar: (changes: MudancaMedicao) => void
   onAnexarNF: (file: File) => void; onAbrirNF: () => void; onRemoverNF: () => void
   onEmitirNF: () => void
 }) {
@@ -503,8 +522,9 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
 
   return (
     <article className={`card ${borderColor}`}>
-      <button type="button" onClick={() => setAberto(a => !a)} className={`w-full flex items-start justify-between gap-3 text-left ${aberto ? 'mb-4' : ''}`}>
-        <div className="min-w-0">
+      {/* Ações como botões irmãos (não dentro do botão de abrir/fechar) */}
+      <div className={`flex items-start justify-between gap-3 ${aberto ? 'mb-4' : ''}`}>
+        <button type="button" onClick={() => setAberto(a => !a)} aria-expanded={aberto} className="min-w-0 flex-1 text-left">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs font-bold ${isAditivo ? 'text-amber-600' : 'text-[#4F7CFF]'}`}>ETAPA {m.ordem}</span>
             <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
@@ -513,14 +533,14 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
           </div>
           <h3 className="font-syne font-semibold text-[#0F172A] mt-1">{m.nome}</h3>
           <p className="text-sm text-[#64748B] mt-0.5">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · previsão {dataBR(m.data_prevista)}</p>
-        </div>
+        </button>
         <div className="flex items-center gap-1 shrink-0">
-          <span onClick={e => { e.stopPropagation(); onEmitirNF() }} title="Emitir Nota Fiscal" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-emerald-600 cursor-pointer"><ClipboardList size={14} /></span>
-          <span onClick={e => { e.stopPropagation(); onEditar() }} className={`w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] cursor-pointer ${isAditivo ? 'text-amber-500' : 'text-[#4F7CFF]'}`}><Pencil size={14} /></span>
-          <span onClick={e => { e.stopPropagation(); onExcluir() }} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 cursor-pointer"><Trash2 size={14} /></span>
-          <span className="w-9 h-9 flex items-center justify-center rounded-lg text-[#94A3B8]">{aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
+          <button type="button" onClick={onEmitirNF} title="Emitir Nota Fiscal" aria-label="Emitir Nota Fiscal" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-emerald-600"><ClipboardList size={14} /></button>
+          <button type="button" onClick={onEditar} title="Editar etapa" aria-label="Editar etapa" className={`w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] ${isAditivo ? 'text-amber-500' : 'text-[#4F7CFF]'}`}><Pencil size={14} /></button>
+          <button type="button" onClick={onExcluir} title="Excluir etapa" aria-label="Excluir etapa" className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+          <button type="button" onClick={() => setAberto(a => !a)} title={aberto ? 'Recolher' : 'Expandir'} aria-label={aberto ? 'Recolher' : 'Expandir'} aria-expanded={aberto} className="w-9 h-9 flex items-center justify-center rounded-lg text-[#94A3B8] hover:bg-[#F1F5F9]">{aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
         </div>
-      </button>
+      </div>
       {aberto && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <label className="text-xs text-[#64748B]">Situação
@@ -529,22 +549,22 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
           </select>
         </label>
         <label className="text-xs text-[#64748B]">Data de emissão
-          <input type="date" className="field mt-1" value={m.data_emissao ?? ''} onChange={e => onAtualizar({ data_emissao: e.target.value || undefined })} />
+          <input type="date" className="field mt-1" value={m.data_emissao ?? ''} onChange={e => onAtualizar({ data_emissao: e.target.value || null })} />
         </label>
         <label className="text-xs text-[#64748B]">Vencimento
-          <input type="date" className="field mt-1" value={m.data_vencimento ?? ''} onChange={e => onAtualizar({ data_vencimento: e.target.value || undefined })} />
+          <input type="date" className="field mt-1" value={m.data_vencimento ?? ''} onChange={e => onAtualizar({ data_vencimento: e.target.value || null })} />
         </label>
         <label className="text-xs text-[#64748B]">Data do pagamento
-          <input type="date" className="field mt-1" value={m.data_pagamento ?? ''} onChange={e => onAtualizar({ data_pagamento: e.target.value || undefined })} />
+          <input type="date" className="field mt-1" value={m.data_pagamento ?? ''} onChange={e => onAtualizar({ data_pagamento: e.target.value || null })} />
         </label>
         <CampoLocal label="Valor faturado" tipo="number" valor={m.valor_faturado != null ? String(m.valor_faturado) : ''}
-          step="0.01"
-          onCommit={v => onAtualizar({ valor_faturado: v === '' ? undefined : Number(v) })} />
+          step="0.01" inputMode="decimal"
+          onCommit={v => onAtualizar({ valor_faturado: v === '' ? null : Number(v) })} />
         <CampoLocal label="Valor recebido" tipo="number" valor={m.valor_recebido != null ? String(m.valor_recebido) : ''}
-          step="0.01"
-          onCommit={v => onAtualizar({ valor_recebido: v === '' ? undefined : Number(v) })} />
+          step="0.01" inputMode="decimal"
+          onCommit={v => onAtualizar({ valor_recebido: v === '' ? null : Number(v) })} />
         <CampoLocal label="Número da NF" valor={m.numero_nf ?? ''}
-          onCommit={v => onAtualizar({ numero_nf: v || undefined })} />
+          onCommit={v => onAtualizar({ numero_nf: v.trim() || null })} />
         <div className="min-w-0 text-xs text-[#64748B]">
           Nota fiscal
           <div className="mt-1 flex min-w-0 gap-2">
@@ -555,8 +575,8 @@ function CardMedicao({ m, isAditivo, aditivoNome, ocNome, uploading, onEditar, o
             </label>
             {m.nf_path && (
               <>
-                <button onClick={onAbrirNF} className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]"><FileText size={16} /></button>
-                <button disabled={uploading === m.id} onClick={onRemoverNF} className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-50"><Trash2 size={16} /></button>
+                <button onClick={onAbrirNF} aria-label="Abrir nota fiscal" title="Abrir nota fiscal" className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF] hover:bg-[#DBEAFE]"><FileText size={16} /></button>
+                <button disabled={uploading === m.id} onClick={onRemoverNF} aria-label="Remover anexo da NF" title="Remover anexo da NF" className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-50"><Trash2 size={16} /></button>
               </>
             )}
           </div>
@@ -602,10 +622,11 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   const [tomador, setTomador] = useState<Empresa | null>(null)
   const [prestador, setPrestador] = useState<{ razao_social: string; cnpj: string; endereco: string; telefone: string } | null>(null)
   const [emitindoNF, setEmitindoNF] = useState<ObraMedicao | null>(null)
+  const [erroCarregar, setErroCarregar] = useState('')
 
   async function load() {
     const supabase = createClient()
-    const [{ data: obraData }, { data: medicaoData }, { data: financeiro }, { data: aditivoData }, { data: ocData }, { data: matData }, { data: notasData }] = await Promise.all([
+    const [{ data: obraData, error: erroObra }, { data: medicaoData }, { data: financeiro }, { data: aditivoData }, { data: ocData }, { data: matData }, { data: notasData }] = await Promise.all([
       supabase.from('obras').select('*, tomador:tomador_empresa_id(*)').eq('id', obraId).single(),
       supabase.from('obra_medicoes').select('*').eq('obra_id', obraId).order('ordem'),
       supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
@@ -614,6 +635,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
       supabase.from('obra_materiais').select('valor_venda_total').eq('obra_id', obraId).eq('tipo_compra', 'interna'),
       supabase.from('obra_notas_material').select('*').eq('obra_id', obraId).order('data_emissao', { ascending: false }),
     ])
+    if (erroObra && erroObra.code !== 'PGRST116') setErroCarregar(mensagemErro(erroObra, 'Não foi possível carregar a obra'))
+    else setErroCarregar('')
     setObra(obraData as Obra)
     if ((obraData as any)?.tomador) setTomador((obraData as any).tomador as Empresa)
     setMedicoes((medicaoData ?? []) as ObraMedicao[])
@@ -635,8 +658,10 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   }
   useEffect(() => { load() }, [obraId])
 
-  const totalAditivos = aditivos.reduce((s, a) => s + Number(a.valor), 0)
-  const valorTotal = valorContrato + totalAditivos
+  // Contrato = OCs + contrato legado + aditivos; faturado/recebido pela regra única (lib/financeiroObra)
+  const totais = totaisReceitaObra({ ocs, valorContratoLegado: valorContrato, aditivos, medicoes })
+  const totalAditivos = totais.totalAditivos
+  const valorTotal = totais.contrato
 
   const totalPercentual = drafts.reduce((s, x) => s + Number(x.percentual || 0), 0)
 
@@ -644,12 +669,10 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     const ativas = medicoes.filter(x => x.status !== 'cancelada')
     // Medições BASE (sem aditivo nem OC) — são as únicas que devem somar 100%
     const ativasBase = ativas.filter(x => !x.aditivo_id && !x.oc_id)
-    const faturado = ativas.reduce((s, x) => s + Number(x.valor_faturado || 0), 0)
-    const recebido = ativas.reduce((s, x) => s + Number(x.valor_recebido || 0), 0)
     const percentualFaturado = ativas.filter(x => x.status === 'faturada' || x.status === 'recebida').reduce((s, x) => s + Number(x.percentual), 0)
     const somaPercentuais = ativasBase.reduce((s, x) => s + Number(x.percentual), 0)
-    return { faturado, recebido, saldo: Math.max(0, valorTotal - faturado), percentualFaturado, somaPercentuais }
-  }, [medicoes, valorTotal])
+    return { faturado: totais.faturado, recebido: totais.recebido, saldo: totais.saldoAFaturar, percentualFaturado, somaPercentuais }
+  }, [medicoes, totais.faturado, totais.recebido, totais.saldoAFaturar])
 
   // % não fecha em 100?
   const percentualDesequilibrado = medicoes.length > 0 && Math.abs(resumo.somaPercentuais - 100) > 0.01
@@ -662,11 +685,11 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
     setSaving(true); setError('')
     const supabase = createClient()
     const { error: contractError } = await supabase.from('obra_financeiro').upsert({ obra_id: obraId, valor_contrato: novoValor, updated_at: new Date().toISOString() })
-    if (contractError) { setError(contractError.message); setSaving(false); return }
+    if (contractError) { setError(mensagemErro(contractError, 'Não foi possível salvar o contrato')); setSaving(false); return }
     // Só recalcula medições BASE (sem aditivo_id nem oc_id) — aditivos e OCs têm seu próprio valor
     const medicoesBase = medicoes.filter(m => !m.aditivo_id && !m.oc_id)
     if (medicoesBase.length > 0) {
-      await Promise.all(medicoesBase.map(m => {
+      const resultados = await Promise.all(medicoesBase.map(m => {
         if (m.status === 'planejada') {
           return supabase.from('obra_medicoes').update({ valor_previsto: novoValor * Number(m.percentual) / 100 }).eq('id', m.id)
         } else {
@@ -674,6 +697,8 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
           return supabase.from('obra_medicoes').update({ percentual: novoValor > 0 ? valorRef / novoValor * 100 : Number(m.percentual) }).eq('id', m.id)
         }
       }))
+      const falha = resultados.find(x => x.error)?.error
+      if (falha) setError(mensagemErro(falha, 'Contrato salvo, mas algumas etapas não foram recalculadas'))
     }
     setValorContrato(novoValor); await load(); setSaving(false)
   }
@@ -691,28 +716,68 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
       valor_previsto: valorContrato * x.percentual / 100, data_prevista: x.data_prevista || null, created_by: user?.id,
     }))
     const { error: insertError } = await supabase.from('obra_medicoes').insert(payload)
-    if (insertError) setError(insertError.message); else await load()
+    if (insertError) setError(mensagemErro(insertError, 'Não foi possível salvar o plano')); else await load()
     setSaving(false)
   }
 
-  async function atualizar(m: ObraMedicao, changes: Partial<ObraMedicao>) {
+  async function atualizar(m: ObraMedicao, changes: MudancaMedicao): Promise<boolean> {
     const { error: updateError } = await createClient().from('obra_medicoes').update(changes).eq('id', m.id)
-    if (updateError) { alert(updateError.message); return }
-    setMedicoes(list => list.map(x => x.id === m.id ? { ...x, ...changes } : x))
+    if (updateError) { alert(mensagemErro(updateError, 'Não foi possível salvar a etapa')); return false }
+    setMedicoes(list => list.map(x => x.id === m.id ? aplicar(x, changes) : x))
+    return true
+  }
+
+  // NF de material e a medição faturada criada junto andam juntas: apagar uma apaga a outra.
+  // Notas antigas sem medicao_id: acha a medição de material com mesmo valor e data.
+  function medicaoDaNota(n: NotaMaterial): ObraMedicao | undefined {
+    if (n.medicao_id) return medicoes.find(m => m.id === n.medicao_id)
+    const candidatas = medicoes.filter(m => m.observacoes === 'medicao_material'
+      && Math.abs(Number(m.valor_faturado || m.valor_previsto) - Number(n.valor)) < 0.005
+      && (m.data_emissao ?? '') === (n.data_emissao ?? ''))
+    return candidatas.length === 1 ? candidatas[0] : undefined
+  }
+  function notasDaMedicao(m: ObraMedicao): NotaMaterial[] {
+    if (m.observacoes !== 'medicao_material') return []
+    return notasMaterial.filter(n => medicaoDaNota(n)?.id === m.id)
+  }
+
+  async function removerNotaMaterial(n: NotaMaterial) {
+    const med = medicaoDaNota(n)
+    const msg = med
+      ? `Remover esta NF de material? A medição faturada "${med.nome}" (${moeda(Number(med.valor_faturado || med.valor_previsto))}) também será excluída.`
+      : 'Remover esta NF de material?'
+    if (!confirm(msg)) return
+    const supabase = createClient()
+    const { error: errNota } = await supabase.from('obra_notas_material').delete().eq('id', n.id)
+    if (errNota) { alert(mensagemErro(errNota, 'Não foi possível remover a NF')); return }
+    if (med) {
+      if (med.nf_path) await supabase.storage.from('notas-fiscais-emitidas').remove([med.nf_path])
+      const { error: errMed } = await supabase.from('obra_medicoes').delete().eq('id', med.id)
+      if (errMed) alert(mensagemErro(errMed, 'NF removida, mas a medição faturada não foi excluída — exclua a etapa manualmente'))
+    }
+    load()
   }
 
   async function excluir(m: ObraMedicao) {
-    if (!confirm(`Excluir a etapa "${m.nome}"?`)) return
+    const notas = notasDaMedicao(m)
+    const aviso = notas.length > 0 ? ' O registro da NF de material ligado a ela também será removido (os itens voltam a ficar pendentes).' : ''
+    if (!confirm(`Excluir a etapa "${m.nome}"?${aviso}`)) return
     const supabase = createClient()
-    if (m.nf_path) await supabase.storage.from('notas-fiscais-emitidas').remove([m.nf_path])
+    if (notas.length > 0) {
+      const { error: errNotas } = await supabase.from('obra_notas_material').delete().in('id', notas.map(n => n.id))
+      if (errNotas) { alert(mensagemErro(errNotas, 'Não foi possível remover a NF de material')); return }
+    }
     const { error: deleteError } = await supabase.from('obra_medicoes').delete().eq('id', m.id)
-    if (deleteError) alert(deleteError.message); else setMedicoes(list => list.filter(x => x.id !== m.id))
+    if (deleteError) { alert(mensagemErro(deleteError, 'Não foi possível excluir a etapa')); if (notas.length > 0) load(); return }
+    if (m.nf_path) await supabase.storage.from('notas-fiscais-emitidas').remove([m.nf_path])
+    setMedicoes(list => list.filter(x => x.id !== m.id))
+    if (notas.length > 0) setNotasMaterial(list => list.filter(n => !notas.some(x => x.id === n.id)))
   }
 
   async function excluirAditivo(a: ObraAditivo) {
     if (!confirm(`Excluir o aditivo "${a.descricao}"? As medições vinculadas também serão excluídas.`)) return
     const { error } = await createClient().from('obra_aditivos').delete().eq('id', a.id)
-    if (error) { alert(error.message); return }
+    if (error) { alert(mensagemErro(error, 'Não foi possível excluir o aditivo')); return }
     setAditivos(list => list.filter(x => x.id !== a.id))
     setMedicoes(list => list.filter(x => x.aditivo_id !== a.id))
   }
@@ -720,39 +785,55 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
   async function excluirOC(oc: ObraOC) {
     if (!confirm(`Excluir a OC "${oc.numero_oc}"? As medições vinculadas também serão excluídas.`)) return
     const { error } = await createClient().from('obra_ocs').delete().eq('id', oc.id)
-    if (error) { alert(error.message); return }
+    if (error) { alert(mensagemErro(error, 'Não foi possível excluir a OC')); return }
     setOcs(list => list.filter(x => x.id !== oc.id))
     setMedicoes(list => list.filter(x => x.oc_id !== oc.id))
   }
 
   async function anexarNF(m: ObraMedicao, file: File) {
     setUploading(m.id)
-    const supabase = createClient()
-    const path = `${obraId}/${m.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-    if (m.nf_path) await supabase.storage.from('notas-fiscais-emitidas').remove([m.nf_path])
-    const { error } = await supabase.storage.from('notas-fiscais-emitidas').upload(path, file)
-    if (error) alert(error.message); else await atualizar(m, { nf_path: path, nf_nome: file.name })
-    setUploading(null)
+    try {
+      const supabase = createClient()
+      const path = `${obraId}/${m.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      const { error } = await supabase.storage.from('notas-fiscais-emitidas').upload(path, file)
+      if (error) { alert(mensagemErro(error, 'Não foi possível enviar a NF')); return }
+      const ok = await atualizar(m, { nf_path: path, nf_nome: file.name })
+      // Só apaga o anexo antigo depois que o novo ficou gravado
+      if (ok && m.nf_path) await supabase.storage.from('notas-fiscais-emitidas').remove([m.nf_path])
+      if (!ok) await supabase.storage.from('notas-fiscais-emitidas').remove([path])
+    } finally {
+      setUploading(null)
+    }
   }
 
   async function abrirNF(m: ObraMedicao) {
     if (!m.nf_path) return
     const { data, error } = await createClient().storage.from('notas-fiscais-emitidas').createSignedUrl(m.nf_path, 60)
-    if (error) alert(error.message); else window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    if (error) alert(mensagemErro(error, 'Não foi possível abrir a NF')); else window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
   async function removerNF(m: ObraMedicao) {
     if (!m.nf_path || !confirm('Remover o anexo?')) return
     setUploading(m.id)
-    const supabase = createClient()
-    await supabase.storage.from('notas-fiscais-emitidas').remove([m.nf_path])
-    await supabase.from('obra_medicoes').update({ nf_path: null, nf_nome: null }).eq('id', m.id)
-    setMedicoes(list => list.map(x => x.id === m.id ? { ...x, nf_path: undefined, nf_nome: undefined } : x))
-    setUploading(null)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from('obra_medicoes').update({ nf_path: null, nf_nome: null }).eq('id', m.id)
+      if (error) { alert(mensagemErro(error, 'Não foi possível remover o anexo')); return }
+      const { error: errStorage } = await supabase.storage.from('notas-fiscais-emitidas').remove([m.nf_path])
+      if (errStorage) console.error('remover arquivo da NF:', errStorage)
+      setMedicoes(list => list.map(x => x.id === m.id ? { ...x, nf_path: undefined, nf_nome: undefined } : x))
+    } finally {
+      setUploading(null)
+    }
   }
 
   if (loading) return <div className="h-64 flex items-center justify-center"><Loader2 className="animate-spin text-[#4F7CFF]" /></div>
-  if (!obra) return <div className="p-6">Obra não encontrada.</div>
+  if (!obra) return (
+    <div className="p-6 text-center">
+      <p className="text-sm text-[#374151] mb-3">{erroCarregar || 'Obra não encontrada.'}</p>
+      {erroCarregar && <button onClick={() => { setLoading(true); load() }} className="btn-primary text-sm mx-auto">Tentar de novo</button>}
+    </div>
+  )
 
   const cards = [
     { label: 'Contrato', value: valorTotal, icon: CircleDollarSign, tone: 'bg-slate-100 text-slate-700' },
@@ -811,7 +892,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
           <div className="space-y-3">
             {ocs.map(oc => {
               const medicoesDaOC = medicoesPorOC(oc.id)
-              const faturadoOC = medicoesDaOC.filter(m => m.status !== 'cancelada').reduce((s, m) => s + Number(m.valor_faturado || 0), 0)
+              const faturadoOC = medicoesDaOC.reduce((s, m) => s + valorFaturadoMedicao(m), 0)
               const saldoOC = Math.max(0, Number(oc.valor_total) - faturadoOC)
               const temMaterial = medicoesDaOC.some(m => m.observacoes === 'medicao_material')
               const temServico = medicoesDaOC.some(m => m.observacoes !== 'medicao_material')
@@ -836,9 +917,9 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                       </div>
                       {oc.observacoes && <p className="text-xs text-[#64748B] mt-1">{oc.observacoes}</p>}
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditandoOC(oc); setShowModalOC(true) }} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#DBEAFE] text-[#4F7CFF]"><Pencil size={13} /></button>
-                      <button onClick={() => excluirOC(oc)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={13} /></button>
+                    <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button onClick={() => { setEditandoOC(oc); setShowModalOC(true) }} aria-label={`Editar OC ${oc.numero_oc}`} title="Editar OC" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#DBEAFE] text-[#4F7CFF]"><Pencil size={14} /></button>
+                      <button onClick={() => excluirOC(oc)} aria-label={`Excluir OC ${oc.numero_oc}`} title="Excluir OC" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={14} /></button>
                     </div>
                   </div>
 
@@ -890,7 +971,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <label className="text-sm font-medium text-[#374151] flex-1">
             Valor base do contrato
-            <input type="number" min="0" step="0.01" className="field mt-1.5" placeholder="0,00" value={contratoInput} onChange={e => setContratoInput(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" step="0.01" className="field mt-1.5" placeholder="0,00" value={contratoInput} onChange={e => setContratoInput(e.target.value)} />
           </label>
           <button onClick={salvarContrato} disabled={saving} className="btn-primary sm:w-auto">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Salvar valor
@@ -935,9 +1016,9 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                         {a.observacoes && <span className="text-xs text-[#64748B]">{a.observacoes}</span>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditandoAditivo(a); setShowModalAditivo(true) }} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-amber-100 text-amber-600"><Pencil size={13} /></button>
-                      <button onClick={() => excluirAditivo(a)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={13} /></button>
+                    <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button onClick={() => { setEditandoAditivo(a); setShowModalAditivo(true) }} aria-label={`Editar aditivo ${a.descricao}`} title="Editar aditivo" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-amber-100 text-amber-600"><Pencil size={14} /></button>
+                      <button onClick={() => excluirAditivo(a)} aria-label={`Excluir aditivo ${a.descricao}`} title="Excluir aditivo" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 size={14} /></button>
                     </div>
                   </div>
 
@@ -950,7 +1031,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                             <p className="text-sm font-medium text-[#0F172A]">{m.nome}</p>
                             <p className="text-xs text-[#64748B]">{pct(Number(m.percentual))} · {moeda(Number(m.valor_previsto))} · <span className={`font-semibold ${STATUS[m.status].cls.split(' ')[1]}`}>{STATUS[m.status].label}</span></p>
                           </div>
-                          <button onClick={() => setEditandoMedicao(m)} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-amber-500"><Pencil size={12} /></button>
+                          <button onClick={() => setEditandoMedicao(m)} aria-label={`Editar medição ${m.nome}`} title="Editar medição" className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-amber-500"><Pencil size={13} /></button>
                         </div>
                       ))}
                     </div>
@@ -1021,12 +1102,9 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-emerald-700">{moeda(n.valor)}</span>
-                      <button onClick={async () => {
-                        if (!confirm('Remover esta NF?')) return
-                        await createClient().from('obra_notas_material').delete().eq('id', n.id)
-                        load()
-                      }} className="p-1 rounded hover:bg-red-50 text-[#CBD5E1] hover:text-red-500">
-                        <X size={13} />
+                      <button onClick={() => removerNotaMaterial(n)} aria-label="Remover NF de material" title="Remover NF de material"
+                        className="p-2 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500">
+                        <X size={14} />
                       </button>
                     </div>
                   </div>
@@ -1150,7 +1228,7 @@ export default function ObraPagamentos({ obraId }: { obraId: string }) {
             ? (ocs.find(o => o.id === editandoMedicao.oc_id)?.valor_total ?? 0)
             : valorContrato}
           onClose={() => setEditandoMedicao(null)}
-          onSaved={changes => { setMedicoes(list => list.map(x => x.id === editandoMedicao.id ? { ...x, ...changes } : x)); setEditandoMedicao(null) }}
+          onSaved={changes => { setMedicoes(list => list.map(x => x.id === editandoMedicao.id ? aplicar(x, changes) : x)); setEditandoMedicao(null) }}
         />
       )}
       {showNovaMedicao && (
@@ -1469,25 +1547,37 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
   const [loadingOcs, setLoadingOcs] = useState(true)
   // Set de IDs de itens selecionados
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
-  const [dataEmissao, setDataEmissao] = useState(new Date().toISOString().slice(0, 10))
+  const [dataEmissao, setDataEmissao] = useState(hojeLocal())
+  // Itens que já entraram em alguma NF de material — não podem ser faturados de novo
+  const [jaFaturados, setJaFaturados] = useState<Set<string>>(new Set())
   const [numeroNf, setNumeroNf] = useState('')
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState('')
 
   useEffect(() => {
-    createClient()
-      .from('obra_materiais')
-      .select('id, descricao, numero_oc, oc_id, fornecedor, comprador, data_compra, valor_total, valor_venda_total, custos_extras, observacoes, nota_fiscal_url, status')
-      .eq('obra_id', obraId)
-      .eq('tipo_compra', 'interna')
-      .order('created_at')
-      .then(({ data }) => {
-        setGrupos(buildGrupos((data ?? []) as OcInterna[]))
-        setLoadingOcs(false)
-      })
+    const sb = createClient()
+    Promise.all([
+      sb.from('obra_materiais')
+        .select('id, descricao, numero_oc, oc_id, fornecedor, comprador, data_compra, valor_total, valor_venda_total, custos_extras, observacoes, nota_fiscal_url, status')
+        .eq('obra_id', obraId)
+        .eq('tipo_compra', 'interna')
+        .order('created_at'),
+      sb.from('obra_notas_material').select('itens_ids, material_id').eq('obra_id', obraId),
+    ]).then(([{ data, error }, { data: notas, error: errNotas }]) => {
+      if (error || errNotas) setErro(mensagemErro(error ?? errNotas, 'Não foi possível carregar os materiais'))
+      setGrupos(buildGrupos((data ?? []) as OcInterna[]))
+      const ids = new Set<string>()
+      for (const n of (notas ?? []) as { itens_ids?: string[] | null; material_id?: string | null }[]) {
+        for (const id of n.itens_ids ?? []) ids.add(id)
+        if (n.material_id) ids.add(n.material_id)
+      }
+      setJaFaturados(ids)
+      setLoadingOcs(false)
+    })
   }, [obraId])
 
   function toggleItem(id: string) {
+    if (jaFaturados.has(id)) return
     setSelecionados(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
@@ -1496,7 +1586,8 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
   }
 
   function toggleGrupo(g: GrupoOc) {
-    const todosIds = g.itens.map(i => i.id)
+    const todosIds = g.itens.map(i => i.id).filter(id => !jaFaturados.has(id))
+    if (todosIds.length === 0) return
     const todosSelecionados = todosIds.every(id => selecionados.has(id))
     setSelecionados(prev => {
       const next = new Set(prev)
@@ -1564,10 +1655,10 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
       observacoes: 'medicao_material',
       oc_id: ocId,
     }).select('id').single()
-    if (errMedicao) { setErro(errMedicao.message); setSaving(false); return }
+    if (errMedicao) { setErro(mensagemErro(errMedicao, 'Não foi possível criar a medição')); setSaving(false); return }
 
     // Registra na tabela de controle com referência aos itens selecionados
-    await sb.from('obra_notas_material').insert({
+    const { error: errNota } = await sb.from('obra_notas_material').insert({
       obra_id: obraId,
       valor,
       data_emissao: dataEmissao,
@@ -1578,6 +1669,13 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
       medicao_id: medicaoData?.id ?? null,
       oc_id: ocId,
     })
+    if (errNota) {
+      // Sem o registro da NF, a medição faturada ficaria solta (e os itens poderiam ser faturados de novo)
+      await sb.from('obra_medicoes').delete().eq('id', medicaoData.id)
+      setErro(mensagemErro(errNota, 'Não foi possível registrar a NF de material'))
+      setSaving(false)
+      return
+    }
 
     setSaving(false)
     onSaved()
@@ -1602,13 +1700,13 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
           ) : grupos.length === 0 ? (
             <p className="text-xs text-[#94A3B8] py-6 text-center">Nenhum material de compra interna cadastrado</p>
           ) : grupos.map(g => {
-            const todosIds = g.itens.map(i => i.id)
-            const todosSel = todosIds.every(id => selecionados.has(id))
+            const todosIds = g.itens.map(i => i.id).filter(id => !jaFaturados.has(id))
+            const todosSel = todosIds.length > 0 && todosIds.every(id => selecionados.has(id))
             const alguemSel = todosIds.some(id => selecionados.has(id))
             return (
               <div key={g.key} className={`border rounded-xl overflow-hidden transition-all ${alguemSel ? 'border-[#3B82F6]' : 'border-[#E2E8F0]'}`}>
                 {/* Cabeçalho do orçamento — clica pra selecionar tudo */}
-                <button onClick={() => toggleGrupo(g)}
+                <button onClick={() => toggleGrupo(g)} disabled={todosIds.length === 0}
                   className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors ${todosSel ? 'bg-blue-50' : 'bg-[#F8FAFC] hover:bg-[#F1F5F9]'}`}>
                   <div className="flex items-center gap-3 min-w-0">
                     <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${todosSel ? 'bg-[#3B82F6] border-[#3B82F6]' : alguemSel ? 'bg-blue-100 border-[#3B82F6]' : 'border-[#CBD5E1]'}`}>
@@ -1631,12 +1729,13 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
                 {/* Itens do orçamento */}
                 <div className="divide-y divide-[#F1F5F9]">
                   {g.itens.map(item => (
-                    <button key={item.id} onClick={() => toggleItem(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${selecionados.has(item.id) ? 'bg-blue-50/60' : 'hover:bg-[#F8FAFC]'}`}>
+                    <button key={item.id} onClick={() => toggleItem(item.id)} disabled={jaFaturados.has(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${selecionados.has(item.id) ? 'bg-blue-50/60' : 'hover:bg-[#F8FAFC]'}`}>
                       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${selecionados.has(item.id) ? 'bg-[#3B82F6] border-[#3B82F6]' : 'border-[#CBD5E1]'}`}>
                         {selecionados.has(item.id) && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3L2.8 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </div>
                       <p className="text-xs text-[#374151] flex-1 min-w-0 truncate">{item.descricao}</p>
+                      {jaFaturados.has(item.id) && <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">Já faturado</span>}
                       <span className="text-xs font-medium text-[#374151] shrink-0">{moeda(item.valor_venda_total ?? 0)}</span>
                     </button>
                   ))}
@@ -1674,7 +1773,7 @@ function ModalNotaMaterial({ obraId, totalOcMateriais, valorContrato, proximaOrd
             <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
             <button onClick={save} disabled={saving || valorSelecionado <= 0 || ocsSelecionadas.length > 1} className="btn-primary flex-1 disabled:opacity-50">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Registrar {valorSelecionado > 0 && moeda(valorSelecionado)}
+              {saving ? 'Salvando…' : <>Registrar {valorSelecionado > 0 && moeda(valorSelecionado)}</>}
             </button>
           </div>
         </div>

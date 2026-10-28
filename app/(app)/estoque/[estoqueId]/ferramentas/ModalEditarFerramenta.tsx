@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
+import { mensagemErro } from '@/lib/erros'
+import { parseNumeroBR } from '@/lib/numero'
 import { Ferramenta } from '@/lib/types'
 
 export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = false, onClose, onSaved }: {
@@ -21,7 +23,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
   const [marca, setMarca] = useState(ferramenta.marca ?? '')
   const [modelo, setModelo] = useState(ferramenta.modelo ?? '')
   const [numeroSerie, setNumeroSerie] = useState(ferramenta.numero_serie ?? '')
-  const [valorAquisicao, setValorAquisicao] = useState(ferramenta.valor_aquisicao ? String(ferramenta.valor_aquisicao) : '')
+  const [valorAquisicao, setValorAquisicao] = useState(ferramenta.valor_aquisicao != null ? String(ferramenta.valor_aquisicao).replace('.', ',') : '')
   const [dataAquisicao, setDataAquisicao] = useState(ferramenta.data_aquisicao ?? '')
   const [observacoes, setObservacoes] = useState(ferramenta.observacoes ?? '')
   const [fotoUrl, setFotoUrl] = useState(ferramenta.foto_url ?? '')
@@ -33,6 +35,12 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
   const [uploadingManual, setUploadingManual] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // Mala com itens dentro: desmarcar "É uma mala" exige soltar os itens (viram avulsos)
+  const [qtdFilhos, setQtdFilhos] = useState(0)
+  const [qtdMateriais, setQtdMateriais] = useState(0)
+  const [soltarFilhos, setSoltarFilhos] = useState(false)
+  // Emprestada: não pode mudar de mala nem virar mala até ser devolvida
+  const travaPertencimento = ferramenta.status === 'emprestada'
 
   useEffect(() => {
     async function carregarMalas() {
@@ -41,33 +49,69 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
         .eq('estoque_id', ferramenta.estoque_id).eq('eh_mala', true).neq('id', ferramenta.id).order('nome')
       setMalas(data ?? [])
     }
+    async function contarConteudo() {
+      const supabase = createClient()
+      const [{ count: filhos }, { count: materiais }] = await Promise.all([
+        supabase.from('ferramentas').select('id', { count: 'exact', head: true }).eq('mala_id', ferramenta.id),
+        supabase.from('mala_estoque_produtos').select('id', { count: 'exact', head: true }).eq('mala_id', ferramenta.id),
+      ])
+      setQtdFilhos(filhos ?? 0)
+      setQtdMateriais(materiais ?? 0)
+    }
     carregarMalas()
-  }, [ferramenta.estoque_id, ferramenta.id])
+    if (ferramenta.eh_mala) contarConteudo()
+  }, [ferramenta.estoque_id, ferramenta.id, ferramenta.eh_mala])
+
+  function alternarEhMala(marcar: boolean) {
+    if (!marcar && ferramenta.eh_mala) {
+      if (qtdMateriais > 0) {
+        setError(`Esta mala tem ${qtdMateriais} ${qtdMateriais === 1 ? 'material de uso cadastrado' : 'materiais de uso cadastrados'}. Remova-os da mala antes de desmarcar.`)
+        return
+      }
+      if (qtdFilhos > 0) {
+        if (!confirm(`Esta mala tem ${qtdFilhos} ${qtdFilhos === 1 ? 'item' : 'itens'} dentro. Ao salvar, ${qtdFilhos === 1 ? 'ele vira ferramenta avulsa' : 'eles viram ferramentas avulsas'}. Continuar?`)) return
+        setSoltarFilhos(true)
+      }
+    }
+    if (marcar) setSoltarFilhos(false)
+    setError('')
+    setEhMala(marcar)
+    if (marcar) setMalaId('')
+  }
+
+  // Envia para o storage e devolve a URL pública; em caso de erro mostra a mensagem e devolve null
+  async function enviarArquivo(file: File, prefixo = ''): Promise<string | null> {
+    const supabase = createClient()
+    const path = `ferramentas/${ferramenta.estoque_id}/${prefixo}${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
+    if (err) { setError(mensagemErro(err, 'Erro ao enviar arquivo')); return null }
+    return supabase.storage.from('estoque').getPublicUrl(path).data.publicUrl
+  }
 
   async function uploadFoto(fileOriginal: File) {
     setUploadingFoto(true)
-    const file = await converterSeForHeic(fileOriginal)
-    const supabase = createClient()
-    const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
-    if (!err) {
-      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
-      setFotoUrl(data.publicUrl)
+    setError('')
+    try {
+      const url = await enviarArquivo(await converterSeForHeic(fileOriginal))
+      if (url) setFotoUrl(url)
+    } catch (e) {
+      setError(mensagemErro(e as Error, 'Erro ao enviar foto'))
+    } finally {
+      setUploadingFoto(false)
     }
-    setUploadingFoto(false)
   }
 
   async function uploadFoto2(fileOriginal: File) {
     setUploadingFoto2(true)
-    const file = await converterSeForHeic(fileOriginal)
-    const supabase = createClient()
-    const path = `ferramentas/${ferramenta.estoque_id}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
-    if (!err) {
-      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
-      setFotoUrl2(data.publicUrl)
+    setError('')
+    try {
+      const url = await enviarArquivo(await converterSeForHeic(fileOriginal))
+      if (url) setFotoUrl2(url)
+    } catch (e) {
+      setError(mensagemErro(e as Error, 'Erro ao enviar foto'))
+    } finally {
+      setUploadingFoto2(false)
     }
-    setUploadingFoto2(false)
   }
 
   async function uploadManual(file: File) {
@@ -75,26 +119,35 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
     if (erro) { setError(erro); return }
     setUploadingManual(true)
     setError('')
-    const supabase = createClient()
-    const path = `ferramentas/${ferramenta.estoque_id}/manual_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
-    if (!err) {
-      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
-      setManualUrl(data.publicUrl)
-      setManualNome(file.name)
-    } else {
-      setError(err.message)
+    try {
+      const url = await enviarArquivo(file, 'manual_')
+      if (url) {
+        setManualUrl(url)
+        setManualNome(file.name)
+      }
+    } catch (e) {
+      setError(mensagemErro(e as Error, 'Erro ao enviar manual'))
+    } finally {
+      setUploadingManual(false)
     }
-    setUploadingManual(false)
   }
+
+  const enviando = uploadingFoto || uploadingFoto2 || uploadingManual
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) return
     if (!codigoInterno.trim()) { setError('Informe o código interno/patrimônio.'); return }
+    if (enviando) { setError('Aguarde o envio dos arquivos terminar.'); return }
+    const valorNum = valorAquisicao.trim() ? parseNumeroBR(valorAquisicao) : null
+    if (valorNum != null && (Number.isNaN(valorNum) || valorNum < 0)) { setError('Valor de aquisição inválido.'); return }
     setLoading(true)
     setError('')
     const supabase = createClient()
+    if (!ehMala && ferramenta.eh_mala && soltarFilhos) {
+      const { error: errFilhos } = await supabase.from('ferramentas').update({ mala_id: null }).eq('mala_id', ferramenta.id)
+      if (errFilhos) { setError(mensagemErro(errFilhos, 'Erro ao soltar os itens da mala')); setLoading(false); return }
+    }
     const { error: err } = await supabase.from('ferramentas').update({
       nome: nome.trim(),
       codigo_interno: codigoInterno.trim(),
@@ -102,19 +155,18 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
       marca: marca.trim() || null,
       modelo: modelo.trim() || null,
       numero_serie: numeroSerie.trim() || null,
-      valor_aquisicao: valorAquisicao ? parseFloat(valorAquisicao) : null,
+      valor_aquisicao: valorNum,
       data_aquisicao: dataAquisicao || null,
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
       foto_url_2: fotoUrl2 || null,
       manual_url: manualUrl || null,
       manual_nome: manualNome || null,
-      eh_mala: ehMala,
-      mala_id: !ehMala && malaId ? malaId : null,
+      ...(travaPertencimento ? {} : { eh_mala: ehMala, mala_id: !ehMala && malaId ? malaId : null }),
       updated_at: new Date().toISOString(),
     }).eq('id', ferramenta.id)
     if (err) {
-      setError(err.code === '23505' ? 'Já existe uma ferramenta com esse código interno nesta categoria.' : err.message)
+      setError(err.code === '23505' ? 'Já existe uma ferramenta com esse código interno nesta categoria.' : mensagemErro(err, 'Erro ao salvar'))
       setLoading(false)
       return
     }
@@ -126,7 +178,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100dvh-env(safe-area-inset-top))] overflow-y-auto mt-auto sm:mt-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">{modoPatrimonio ? 'Editar Item de Patrimônio' : 'Editar Ferramenta'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
           <div>
@@ -160,7 +212,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor de aquisição (R$)</label>
-              <input type="number" step="0.01" min="0" className="field" placeholder="0,00" value={valorAquisicao} onChange={e => setValorAquisicao(e.target.value)} />
+              <input type="text" inputMode="decimal" className="field" placeholder="0,00" value={valorAquisicao} onChange={e => setValorAquisicao(e.target.value)} />
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Data de aquisição</label>
@@ -173,15 +225,22 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
           </div>
 
           {!modoPatrimonio && (
-            <label className="flex items-center gap-2 text-sm text-[#374151] cursor-pointer px-3 py-2.5 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-              <input type="checkbox" checked={ehMala} onChange={e => { setEhMala(e.target.checked); if (e.target.checked) setMalaId('') }} className="rounded" />
+            <label className={`flex items-center gap-2 text-sm text-[#374151] px-3 py-2.5 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0] ${travaPertencimento ? 'opacity-60' : 'cursor-pointer'}`}>
+              <input type="checkbox" checked={ehMala} disabled={travaPertencimento} onChange={e => alternarEhMala(e.target.checked)} className="rounded" />
               É uma mala de ferramentas (kit com responsável fixo)
+              {ferramenta.eh_mala && qtdFilhos > 0 && <span className="ml-auto text-xs text-[#94A3B8] whitespace-nowrap">{qtdFilhos} {qtdFilhos === 1 ? 'item' : 'itens'} dentro</span>}
             </label>
+          )}
+          {soltarFilhos && !ehMala && (
+            <p className="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">Ao salvar, os {qtdFilhos} itens desta mala viram ferramentas avulsas.</p>
+          )}
+          {travaPertencimento && !modoPatrimonio && (
+            <p className="text-xs text-[#64748B]">Ferramenta emprestada: registre a devolução antes de mudar mala ou pertencimento.</p>
           )}
           {!ehMala && !modoPatrimonio && malas.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Pertence a uma mala?</label>
-              <select className="field" value={malaId} onChange={e => setMalaId(e.target.value)}>
+              <select className="field" value={malaId} disabled={travaPertencimento} onChange={e => setMalaId(e.target.value)}>
                 <option value="">Nenhuma (ferramenta avulsa)</option>
                 {malas.map(m => <option key={m.id} value={m.id}>{m.nome}{m.codigo_interno ? ` (${m.codigo_interno})` : ''}</option>)}
               </select>
@@ -200,10 +259,10 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
                 {uploadingFoto ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {uploadingFoto ? 'Enviando...' : fotoUrl ? 'Trocar foto' : 'Adicionar foto'}
                 <input type="file" accept="image/*,.heic,.heif" className="hidden" disabled={uploadingFoto}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadFoto(f) }} />
               </label>
               {fotoUrl && (
-                <button type="button" onClick={() => setFotoUrl('')} className="text-[#94A3B8] hover:text-red-500 transition-colors">
+                <button type="button" onClick={() => setFotoUrl('')} aria-label="Remover foto" title="Remover foto" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
                   <X size={16} />
                 </button>
               )}
@@ -223,10 +282,10 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
                   {uploadingFoto2 ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploadingFoto2 ? 'Enviando...' : fotoUrl2 ? 'Trocar foto' : 'Adicionar foto'}
                   <input type="file" accept="image/*,.heic,.heif" className="hidden" disabled={uploadingFoto2}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto2(f) }} />
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadFoto2(f) }} />
                 </label>
                 {fotoUrl2 && (
-                  <button type="button" onClick={() => setFotoUrl2('')} className="text-[#94A3B8] hover:text-red-500 transition-colors">
+                  <button type="button" onClick={() => setFotoUrl2('')} aria-label="Remover foto 2" title="Remover foto 2" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
                     <X size={16} />
                   </button>
                 )}
@@ -246,10 +305,10 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
                 {uploadingManual ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {uploadingManual ? 'Enviando...' : manualUrl ? 'Trocar PDF' : 'Adicionar PDF'}
                 <input type="file" accept="application/pdf,.pdf" className="hidden" disabled={uploadingManual}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadManual(f) }} />
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadManual(f) }} />
               </label>
               {manualUrl && (
-                <button type="button" onClick={() => { setManualUrl(''); setManualNome('') }} className="text-[#94A3B8] hover:text-red-500 transition-colors">
+                <button type="button" onClick={() => { setManualUrl(''); setManualNome('') }} aria-label="Remover manual" title="Remover manual" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
                   <X size={16} />
                 </button>
               )}
@@ -258,7 +317,7 @@ export default function ModalEditarFerramenta({ ferramenta, modoPatrimonio = fal
           {error && <p className="text-sm text-red-500">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
-            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar'}</button>
+            <button type="submit" disabled={loading || enviando} className="btn-primary">{loading ? 'Salvando…' : enviando ? 'Enviando arquivo…' : 'Salvar'}</button>
           </div>
         </form>
       </div>

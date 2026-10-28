@@ -57,7 +57,7 @@ export default async function PortalPage({ params }: { params: { token: string }
   const service = createServiceClient()
   const [{ data: obra }, { data: ocs }, { data: medicoes }] = await Promise.all([
     service.from('obras').select('id, titulo, endereco').eq('id', obraId).single(),
-    service.from('obra_ocs').select('*').eq('obra_id', obraId).order('created_at'),
+    service.from('obra_ocs').select('id, obra_id, numero_oc, tipo, valor_total, status, created_at').eq('obra_id', obraId).order('created_at'),
     service.from('obra_medicoes').select('*').eq('obra_id', obraId).order('ordem'),
   ])
 
@@ -102,7 +102,7 @@ export default async function PortalPage({ params }: { params: { token: string }
                     </span>
                     <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>{oc.numero_oc}</p>
                   </div>
-                  {oc.observacoes && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748B' }}>{oc.observacoes}</p>}
+                  {/* oc.observacoes é anotação interna — não aparece para o cliente */}
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>Valor total da OC</p>

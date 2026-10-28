@@ -27,7 +27,7 @@ export default function EstoqueItensPage() {
     setLoading(true)
     const supabase = createClient()
     const [itensRes, catsRes] = await Promise.all([
-      supabase.from('estoque_itens').select('*, categoria:estoque_categorias(*)').order('nome'),
+      supabase.from('estoque_itens').select('*, categoria:estoque_categorias(*)').eq('ativo', true).order('nome'),
       supabase.from('estoque_categorias').select('*').order('nome'),
     ])
     if (itensRes.data) setItens(itensRes.data as EstoqueItem[])

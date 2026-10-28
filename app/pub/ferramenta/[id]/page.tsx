@@ -1,11 +1,13 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { FileText } from 'lucide-react'
 
+import { formatarData } from '@/lib/datas'
+
 function fmtDate(d?: string | null) {
-  return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
+  return formatarData(d) || '—'
 }
 
 function statusLabelMap(modoPatrimonio: boolean): Record<string, string> {
@@ -17,15 +19,22 @@ const STATUS_COLOR: Record<string, string> = {
   disponivel: '#059669', emprestada: '#D97706', em_manutencao: '#DC2626', baixada: '#64748B',
 }
 
+// Ficha aberta pelo QR, sem login. Lê no servidor com o service client (as tabelas
+// de ferramentas não têm mais leitura anon) e busca só o que aparece na tela —
+// nada de valor de aquisição, nº de série, observações internas ou custo de defeito.
 export default async function PubFerramentaPage({ params }: { params: { id: string } }) {
-  const sb = await createClient()
+  const sb = createServiceClient()
 
   const [{ data: ferramenta }, { data: itemAberto }, { data: defeitos }, { data: conteudoMala }, { data: dadosTecnicos }] = await Promise.all([
-    sb.from('ferramentas').select('*, estoque:estoques(icone), mala:mala_id(id, nome, codigo_interno, responsavel_atual:funcionarios(id, nome)), responsavel_atual:funcionarios(id, nome)').eq('id', params.id).single(),
-    sb.from('ferramenta_emprestimo_itens').select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))').eq('ferramenta_id', params.id).is('data_devolucao', null).maybeSingle(),
-    sb.from('ferramenta_defeitos').select('*').eq('ferramenta_id', params.id).order('data', { ascending: false }).limit(10),
+    sb.from('ferramentas')
+      .select('id, nome, codigo_interno, status, categoria, marca, modelo, foto_url, foto_url_2, manual_url, manual_nome, eh_mala, mala_id, estoque:estoques(icone), mala:mala_id(id, nome, codigo_interno, responsavel_atual:funcionarios(nome)), responsavel_atual:funcionarios(nome)')
+      .eq('id', params.id).single(),
+    sb.from('ferramenta_emprestimo_itens')
+      .select('id, emprestimo:ferramenta_emprestimos(data_emprestimo, funcionario:funcionarios(nome))')
+      .eq('ferramenta_id', params.id).is('data_devolucao', null).limit(1).maybeSingle(),
+    sb.from('ferramenta_defeitos').select('id, descricao, data, resolvido').eq('ferramenta_id', params.id).order('data', { ascending: false }).limit(10),
     sb.from('ferramentas').select('id, nome, codigo_interno, status').eq('mala_id', params.id).order('nome'),
-    sb.from('ferramenta_dados').select('*, campo:campos_tecnicos(*)').eq('ferramenta_id', params.id),
+    sb.from('ferramenta_dados').select('id, valor, campo:campos_tecnicos(nome, unidade)').eq('ferramenta_id', params.id),
   ])
 
   if (!ferramenta) notFound()
@@ -148,12 +157,6 @@ export default async function PubFerramentaPage({ params }: { params: { id: stri
               <div>
                 <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>Marca / Modelo</p>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{[f.marca, f.modelo].filter(Boolean).join(' · ')}</p>
-              </div>
-            )}
-            {f.numero_serie && (
-              <div>
-                <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>Nº de série</p>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{f.numero_serie}</p>
               </div>
             )}
           </div>

@@ -1,10 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2, Users, ShoppingCart, ArrowUpCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { Fragment, useEffect, useState } from 'react'
+import { AlertTriangle, Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2, Users, ShoppingCart, ArrowUpCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import ModalSobraMista from '@/components/ModalSobraMista'
 import ObraMateriaisAnalise from '@/components/ObraMateriaisAnalise'
+import { hojeLocal } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
+import { agruparMateriais, custoMateriaisObra, custoMaoDeObraObra, lerAdicionais, totaisReceitaObra, totalExtras, type AlocacaoCusto, type FuncionarioCusto } from '@/lib/financeiroObra'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const dataBR = (v?: string) => v ? new Date(v + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -24,6 +28,7 @@ interface RegistroEstoque {
   estoque_id: string
   obra_id?: string | null
   registro_origem_id?: string | null
+  observacoes?: string | null
   estoque_nome?: string
 }
 
@@ -40,6 +45,8 @@ interface MaterialObra {
   valor_venda_total?: number | null
   custos_extras?: { descricao: string; valor: number }[] | null
   nota_fiscal_url?: string | null
+  observacoes?: string | null
+  created_at?: string | null
   status: string
   numero_oc?: string | null
   oc_id?: string | null
@@ -68,7 +75,13 @@ interface EstoqueProduto {
   estoque_id: string
   quantidade_atual: number
   unidade: string
+  preco_unitario?: number | null
+  controla_saldo?: boolean
 }
+
+// Marca gravada nas observações da entrada de sobra, para saber quanto de
+// cada material da obra já voltou ao estoque
+const marcaSobra = (materialId: string) => `[material ${materialId}]`
 
 // ── componente principal ──────────────────────────────
 export default function ObraCentroCustos({ obraId }: { obraId: string }) {
@@ -79,6 +92,8 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   const [valorContrato, setValorContrato] = useState<number>(0)
   const [aliquotaSimples, setAliquotaSimples] = useState<number>(0)
   const [loading, setLoading] = useState(true)
+  const [erroCarregar, setErroCarregar] = useState('')
+  const [tentativa, setTentativa] = useState(0)
 
   const [devolvendoRegistro, setDevolvendoRegistro] = useState<RegistroEstoque | null>(null)
   const [enviandoEstoque, setEnviandoEstoque] = useState<MaterialObra | null>(null)
@@ -90,15 +105,27 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
   useEffect(() => {
     async function load() {
+      setLoading(true); setErroCarregar('')
       const supabase = createClient()
-      const [regRes, matRes, alocRes, finRes, tribRes, adicRes] = await Promise.all([
+      const [regRes, matRes, alocRes, finRes, tribRes, adicRes, ocRes, aditRes, medRes] = await Promise.all([
         supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false }),
         supabase.from('obra_materiais').select('*, oc:obra_ocs(numero_oc)').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
         supabase.from('funcionario_alocacoes').select('data, funcionario_id, percentual, noturno, tipo').eq('obra_id', obraId).in('tipo', ['obra', 'folga', 'escritorio']),
         supabase.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
         supabase.from('configuracoes_empresa').select('valor').eq('chave', 'aliquota_simples').maybeSingle(),
         supabase.from('configuracoes_empresa').select('chave, valor').like('chave', 'adicional_%'),
+        supabase.from('obra_ocs').select('valor_total').eq('obra_id', obraId),
+        supabase.from('obra_aditivos').select('valor').eq('obra_id', obraId),
+        supabase.from('obra_medicoes').select('status, valor_previsto, valor_faturado, valor_recebido').eq('obra_id', obraId),
       ])
+
+      // Falha de leitura não pode virar "R$ 0" silencioso
+      const erroLeitura = [regRes, matRes, alocRes, finRes, ocRes, aditRes, medRes].find(x => x.error)?.error
+      if (erroLeitura) {
+        setErroCarregar(mensagemErro(erroLeitura, 'Não foi possível carregar o centro de custos'))
+        setLoading(false)
+        return
+      }
 
       if (regRes.data) {
         const mapped = regRes.data.map((r: any) => ({ ...r, estoque_nome: r.estoque?.nome }))
@@ -109,60 +136,39 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
       if (alocRes.data && alocRes.data.length > 0) {
         const ids = Array.from(new Set(alocRes.data.map((r: any) => r.funcionario_id as string)))
-        const { data: funcs } = await supabase.from('funcionarios')
+        const { data: funcs, error: errFuncs } = await supabase.from('funcionarios')
           .select('id, nome, cargo, custo_diario, salario_bruto, horas_dia, dias_mes')
           .in('id', ids)
-        const funcMap = new Map((funcs ?? []).map((f: any) => [f.id, f]))
-        const adicMap = new Map((adicRes.data ?? []).map((c: any) => [c.chave, parseFloat(c.valor?.percentual ?? c.valor) || 0]))
-        const pctNoturno = (adicMap.get('adicional_noturno') ?? 0) / 100
-        const pctSabado = (adicMap.get('adicional_sabado') ?? 0) / 100
-        const pctDomingo = (adicMap.get('adicional_domingo_feriado') ?? 0) / 100
-
-        const map = new Map<string, AlocacaoFuncionario & { funcionario_id: string }>()
-        for (const r of alocRes.data as any[]) {
-          const f = funcMap.get(r.funcionario_id)
-          if (!f) continue
-          const custoDia: number = f.custo_diario ?? (f.salario_bruto && f.dias_mes ? f.salario_bruto / f.dias_mes : 0)
-          if (!map.has(r.funcionario_id)) {
-            map.set(r.funcionario_id, {
-              id: r.funcionario_id, funcionario_id: r.funcionario_id,
-              funcionario: { nome: f.nome, cargo: f.cargo },
-              dias_trabalhados: 0, custo_diario_epoca: custoDia, custo_total: 0,
-            })
-          }
-          const entry = map.get(r.funcionario_id)!
-          const pct = (r.percentual ?? 100) / 100
-          entry.dias_trabalhados += pct
-          if (r.tipo === 'folga' || r.tipo === 'escritorio') {
-            entry.custo_total += pct * custoDia
-            continue
-          }
-          const dow = new Date(r.data + 'T12:00:00').getDay()
-          entry.custo_total += pct * custoDia
-          if (r.noturno && pctNoturno > 0) entry.custo_total += pct * custoDia * pctNoturno
-          else if (!r.noturno && dow === 6 && pctSabado > 0) entry.custo_total += pct * custoDia * pctSabado
-          else if (!r.noturno && dow === 0 && pctDomingo > 0) entry.custo_total += pct * custoDia * pctDomingo
+        if (errFuncs) {
+          setErroCarregar(mensagemErro(errFuncs, 'Não foi possível carregar o custo da mão de obra'))
+          setLoading(false)
+          return
         }
-        setEquipe(Array.from(map.values()).sort((a, b) => (a.funcionario?.nome ?? '').localeCompare(b.funcionario?.nome ?? '')))
+        setEquipe(custoMaoDeObraObra(alocRes.data as AlocacaoCusto[], (funcs ?? []) as FuncionarioCusto[], lerAdicionais(adicRes.data)))
       } else {
         setEquipe([])
       }
 
-      if (finRes.data) setValorContrato(Number(finRes.data.valor_contrato) || 0)
+      // Contrato = OCs + contrato legado + aditivos (mesma regra das Medições)
+      setValorContrato(totaisReceitaObra({
+        ocs: ocRes.data, valorContratoLegado: finRes.data?.valor_contrato,
+        aditivos: aditRes.data, medicoes: medRes.data as any,
+      }).contrato)
       if (tribRes.data) setAliquotaSimples(Number((tribRes.data.valor as any)?.percentual) || 0)
       setLoading(false)
     }
     load()
-  }, [obraId])
+  }, [obraId, tentativa])
 
   async function recarregarRegistros() {
     const supabase = createClient()
-    const { data } = await supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false })
+    const { data, error } = await supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false })
     if (data) {
       const mapped = data.map((r: any) => ({ ...r, estoque_nome: r.estoque?.nome }))
       setSaidas(mapped.filter((r: RegistroEstoque) => r.tipo === 'saida'))
       setDevolucoes(mapped.filter((r: RegistroEstoque) => r.tipo === 'entrada'))
     }
+    if (error) alert(mensagemErro(error, 'Não foi possível atualizar a lista de saídas'))
   }
 
   // ── totais ────────────────────────────────────────
@@ -174,28 +180,23 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
     if (d.registro_origem_id) devolvidoMap.set(d.registro_origem_id, (devolvidoMap.get(d.registro_origem_id) ?? 0) + d.quantidade)
   }
 
-  // Agrupar materiais por orçamento
+  // Agrupar materiais por orçamento — mesma chave da lista de materiais da obra
+  // (url do arquivo, nº da NF + fornecedor, ou lote com 2+ itens). Frete/ICMS
+  // (custos_extras) ficam copiados em cada item e contam uma vez por grupo.
+  const porChave = agruparMateriais(materiais)
   const grupos = new Map<string, MaterialObra[]>()
   const avulsos: MaterialObra[] = []
-  for (const m of materiais) {
-    if (m.nota_fiscal_url) {
-      if (!grupos.has(m.nota_fiscal_url)) grupos.set(m.nota_fiscal_url, [])
-      grupos.get(m.nota_fiscal_url)!.push(m)
-    } else {
-      avulsos.push(m)
-    }
+  for (const [k, itens] of Array.from(porChave.entries())) {
+    if (!k.startsWith('lote|') || itens.length > 1) grupos.set(k, itens)
+    else avulsos.push(...itens)
   }
-
-  const custoMateriais = materiais.reduce((s, m) => {
-    const extras = (m.custos_extras ?? []).reduce((e, c) => e + c.valor, 0)
-    return s + (m.valor_total ?? 0) + (m.nota_fiscal_url ? 0 : extras) // extras só no primeiro item do grupo seria duplicado
-  }, 0)
-  // Calcular extras por grupo (1 vez por grupo)
-  const extrasGrupos = Array.from(grupos.values()).reduce((s, itens) => {
-    const extras = (itens[0].custos_extras ?? []).reduce((e, c) => e + c.valor, 0)
-    return s + extras
-  }, 0)
-  const custoMateriaisReal = materiais.reduce((s, m) => s + (m.valor_total ?? 0), 0) + extrasGrupos
+  const custoMateriaisReal = custoMateriaisObra(materiais)
+  // Quanto de cada material já voltou ao estoque como sobra
+  const enviadoMap = new Map<string, number>()
+  for (const d of devolucoes) {
+    const id = d.observacoes?.match(/\[material ([^\]]+)\]/)?.[1]
+    if (id) enviadoMap.set(id, (enviadoMap.get(id) ?? 0) + d.quantidade)
+  }
   const vendaMateriais = materiais.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
 
   const custoMaoDeObra = equipe.reduce((s, e) => s + (e.custo_total ?? 0), 0)
@@ -214,6 +215,23 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
     </div>
   )
 
+  if (erroCarregar) return (
+    <div className="p-4 md:p-6">
+      <div className="card text-center py-10">
+        <AlertTriangle size={22} className="mx-auto text-red-500 mb-2" />
+        <p className="text-sm text-[#374151] mb-4">{erroCarregar}</p>
+        <button onClick={() => setTentativa(t => t + 1)} className="btn-primary text-sm px-4 py-2 mx-auto">Tentar de novo</button>
+      </div>
+    </div>
+  )
+
+  const botaoEnviar = (m: MaterialObra, desktop = false) => (
+    <button onClick={() => setEnviandoEstoque(m)} aria-label={`Enviar sobra de ${m.descricao} ao estoque`} title="Enviar sobra ao estoque"
+      className={`${desktop ? 'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100 transition-opacity ' : ''}p-2 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600`}>
+      <ArrowUpCircle size={desktop ? 14 : 16} />
+    </button>
+  )
+
   return (
     <div className="p-4 md:p-6 space-y-6">
 
@@ -222,7 +240,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         <div className="card p-4 border-l-4 border-l-blue-500">
           <p className="text-xs text-[#64748B] font-medium mb-1">Contrato</p>
           <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(valorContrato)}</p>
-          {valorContrato === 0 && <p className="text-xs text-amber-500 mt-0.5">Defina em Medições</p>}
+          {valorContrato === 0 && <p className="text-xs text-amber-500 mt-0.5">Cadastre OCs em Medições</p>}
         </div>
         <div className="card p-4 border-l-4 border-l-amber-400">
           <p className="text-xs text-[#64748B] font-medium mb-1">Impostos (Simples)</p>
@@ -273,7 +291,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-sm font-bold text-red-600">{r.valor_total ? moeda(r.valor_total) : '—'}</span>
                     {(devolvidoMap.get(r.id) ?? 0) < r.quantidade && (
-                      <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução" className="p-1.5 rounded hover:bg-emerald-50 text-[#CBD5E1] hover:text-emerald-600"><Undo2 size={14} /></button>
+                      <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução" aria-label={`Registrar devolução de ${r.produto_nome}`} className="p-2 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"><Undo2 size={16} /></button>
                     )}
                   </div>
                 </div>
@@ -319,7 +337,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                       <Td>{dataBR(r.data)}</Td>
                       <td className="px-3 py-3">
                         {(devolvidoMap.get(r.id) ?? 0) < r.quantidade && (
-                          <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução" className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"><Undo2 size={13} /></button>
+                          <button onClick={() => setDevolvendoRegistro(r)} title="Registrar devolução" aria-label={`Registrar devolução de ${r.produto_nome}`} className="opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100 transition-opacity p-2 rounded hover:bg-emerald-50 text-[#94A3B8] hover:text-emerald-600"><Undo2 size={14} /></button>
                         )}
                       </td>
                     </tr>
@@ -375,8 +393,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
             <div className="sm:hidden divide-y divide-[#F1F5F9]">
               {Array.from(grupos.entries()).map(([url, itens]) => {
                 const extras = (itens[0].custos_extras ?? []) as { descricao: string; valor: number }[]
-                const totalExtras = extras.reduce((s, c) => s + c.valor, 0)
-                const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
+                const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras(extras)
                 const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
                 const orcNum = itens[0].oc?.numero_oc ?? itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 10)
                 return (
@@ -390,9 +407,12 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                           <p className="text-sm text-[#374151] truncate">{m.descricao}</p>
                           {m.quantidade != null && <p className="text-xs text-[#94A3B8]">{m.quantidade} {m.unidade ?? ''}{m.valor_unitario ? ` · ${moeda(m.valor_unitario)}/un` : ''}</p>}
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-semibold text-blue-700">{m.valor_total ? moeda(m.valor_total) : '—'}</p>
-                          {m.valor_venda_total && <p className="text-xs text-emerald-600">OC {moeda(m.valor_venda_total)}</p>}
+                        <div className="flex items-start gap-1 shrink-0">
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-blue-700">{m.valor_total ? moeda(m.valor_total) : '—'}</p>
+                            {m.valor_venda_total ? <p className="text-xs text-emerald-600">OC {moeda(m.valor_venda_total)}</p> : null}
+                          </div>
+                          {botaoEnviar(m)}
                         </div>
                       </div>
                     ))}
@@ -413,16 +433,27 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                 )
               })}
               {avulsos.map(m => (
-                <div key={m.id} className="px-4 py-3 flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-[#0F172A] truncate">{m.descricao}</p>
-                    {m.quantidade != null && <p className="text-xs text-[#94A3B8]">{m.quantidade} {m.unidade ?? ''}{m.valor_unitario ? ` · ${moeda(m.valor_unitario)}/un` : ''}</p>}
+                <Fragment key={m.id}>
+                  <div className="px-4 py-3 flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#0F172A] truncate">{m.descricao}</p>
+                      {m.quantidade != null && <p className="text-xs text-[#94A3B8]">{m.quantidade} {m.unidade ?? ''}{m.valor_unitario ? ` · ${moeda(m.valor_unitario)}/un` : ''}</p>}
+                    </div>
+                    <div className="flex items-start gap-1 shrink-0">
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-blue-700">{m.valor_total ? moeda(m.valor_total) : '—'}</p>
+                        {m.valor_venda_total ? <p className="text-xs text-emerald-600">OC {moeda(m.valor_venda_total)}</p> : null}
+                      </div>
+                      {botaoEnviar(m)}
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-blue-700">{m.valor_total ? moeda(m.valor_total) : '—'}</p>
-                    {m.valor_venda_total && <p className="text-xs text-emerald-600">OC {moeda(m.valor_venda_total)}</p>}
-                  </div>
-                </div>
+                  {(m.custos_extras ?? []).map((c, i) => (
+                    <div key={i} className="px-4 py-1.5 bg-[#FAFAFA] flex justify-between">
+                      <span className="text-xs italic text-[#94A3B8]">{c.descricao}</span>
+                      <span className="text-xs text-[#64748B]">{moeda(c.valor)}</span>
+                    </div>
+                  ))}
+                </Fragment>
               ))}
               <div className="px-4 py-3 bg-blue-50 flex justify-between text-sm font-bold border-t-2 border-blue-200">
                 <span className="text-[#374151]">Total materiais</span>
@@ -441,14 +472,13 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                 <tbody>
                   {Array.from(grupos.entries()).map(([url, itens]) => {
                     const extras = (itens[0].custos_extras ?? []) as { descricao: string; valor: number }[]
-                    const totalExtras = extras.reduce((s, c) => s + c.valor, 0)
-                    const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras
+                    const custoGrupo = itens.reduce((s, m) => s + (m.valor_total ?? 0), 0) + totalExtras(extras)
                     const vendaGrupo = itens.reduce((s, m) => s + (m.valor_venda_total ?? 0), 0)
                     const mg = vendaGrupo - custoGrupo
                     const orcNum = itens[0].oc?.numero_oc ?? itens[0].numero_oc ?? itens[0].nota_fiscal_url?.split('/').pop()?.substring(0, 12)
                     return (
-                      <>
-                        <tr key={`grupo-${url}`} className="bg-[#F0F4FF] border-b border-[#E2E8F0]">
+                      <Fragment key={`grupo-${url}`}>
+                        <tr className="bg-[#F0F4FF] border-b border-[#E2E8F0]">
                           <td colSpan={7} className="px-4 py-2 text-xs font-semibold text-[#4F7CFF]">
                             Orçamento {orcNum ? `· ${orcNum}` : ''} · {itens[0].fornecedor ?? '—'} · {itens.length} iten{itens.length === 1 ? '' : 's'}
                           </td>
@@ -463,7 +493,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                               <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
                               <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
                               <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{m.valor_venda_total ? moeda(margem) : '—'}</td>
-                              <td className="px-3 py-2.5"><button onClick={() => setEnviandoEstoque(m)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600"><ArrowUpCircle size={13} /></button></td>
+                              <td className="px-3 py-2.5">{botaoEnviar(m, true)}</td>
                             </tr>
                           )
                         })}
@@ -481,21 +511,29 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
                           <td className={`px-4 py-2 text-xs font-bold ${mg >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{moeda(mg)}</td>
                           <td />
                         </tr>
-                      </>
+                      </Fragment>
                     )
                   })}
                   {avulsos.map(m => {
                     const margem = (m.valor_venda_total ?? 0) - (m.valor_total ?? 0)
                     return (
-                      <tr key={m.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
+                      <Fragment key={m.id}>
+                      <tr className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group">
                         <Td bold>{m.descricao}</Td>
                         <Td>{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</Td>
                         <Td>{m.valor_unitario ? moeda(m.valor_unitario) : '—'}</Td>
                         <Td>{m.valor_total ? moeda(m.valor_total) : '—'}</Td>
                         <td className="px-4 py-2.5 text-sm font-medium text-emerald-700">{m.valor_venda_total ? moeda(m.valor_venda_total) : '—'}</td>
                         <td className={`px-4 py-2.5 text-xs font-semibold ${margem >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{m.valor_venda_total ? moeda(margem) : '—'}</td>
-                        <td className="px-3 py-2.5"><button onClick={() => setEnviandoEstoque(m)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-50 text-[#94A3B8] hover:text-blue-600"><ArrowUpCircle size={13} /></button></td>
+                        <td className="px-3 py-2.5">{botaoEnviar(m, true)}</td>
                       </tr>
+                      {(m.custos_extras ?? []).map((c, i) => (
+                        <tr key={`extra-${m.id}-${i}`} className="border-b border-[#F1F5F9] bg-[#FAFAFA]">
+                          <td className="px-4 py-1.5 pl-8 text-xs italic text-[#94A3B8]">{c.descricao}</td>
+                          <td colSpan={2} /><td className="px-4 py-1.5 text-xs text-[#64748B]">{moeda(c.valor)}</td><td colSpan={3} />
+                        </tr>
+                      ))}
+                      </Fragment>
                     )
                   })}
                 </tbody>
@@ -588,7 +626,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
             <span className="text-sm font-bold text-[#0F172A]">{moeda(valorContrato)}</span>
           </div>
           <div className="flex justify-between items-center px-4 py-2.5 border-b border-[#F1F5F9] bg-[#F8FAFC]">
-            <span className="text-xs text-[#64748B] pl-3">Contrato + Aditivos</span>
+            <span className="text-xs text-[#64748B] pl-3">OCs + contrato + aditivos</span>
             <span className="text-xs text-[#64748B]">{moeda(valorContrato)}</span>
           </div>
 
@@ -653,7 +691,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
         {valorContrato === 0 && (
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Defina o valor do contrato na aba <strong>Medições</strong> para calcular o resultado.
+            Cadastre as OCs (ou o valor do contrato) na aba <strong>Medições</strong> para calcular o resultado.
           </p>
         )}
         {aliquotaSimples === 0 && valorContrato > 0 && (
@@ -684,8 +722,10 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
       {enviandoEstoque && (
         <ModalEnviarEstoque
           material={enviandoEstoque}
+          obraId={obraId}
+          jaEnviado={enviadoMap.get(enviandoEstoque.id) ?? 0}
           onClose={() => setEnviandoEstoque(null)}
-          onSaved={() => setEnviandoEstoque(null)}
+          onSaved={() => { setEnviandoEstoque(null); recarregarRegistros() }}
         />
       )}
     </div>
@@ -747,10 +787,18 @@ function ModalDevolucao({ registro, jaDevolvido, onClose, onSaved }: {
     e.preventDefault()
     if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade.'); return }
     if (qtdNum > restante) { setError(`Máximo: ${restante} ${registro.unidade ?? ''} (ainda não devolvido)`); return }
-    setSaving(true)
+    setSaving(true); setError('')
     const supabase = createClient()
 
-    await supabase.from('estoque_registros').insert({
+    // Lê o produto antes, para o custo médio (CMP)
+    let prod: { quantidade_atual: number; preco_unitario: number | null; controla_saldo?: boolean } | null = null
+    if (registro.produto_id) {
+      const { data, error: errProd } = await supabase.from('estoque_produtos').select('quantidade_atual, preco_unitario, controla_saldo').eq('id', registro.produto_id).maybeSingle()
+      if (errProd) { setError(mensagemErro(errProd, 'Não foi possível ler o produto')); setSaving(false); return }
+      prod = data
+    }
+
+    const { data: reg, error: errReg } = await supabase.from('estoque_registros').insert({
       estoque_id: registro.estoque_id,
       produto_id: registro.produto_id ?? null,
       produto_nome: registro.produto_nome,
@@ -758,22 +806,30 @@ function ModalDevolucao({ registro, jaDevolvido, onClose, onSaved }: {
       quantidade: qtdNum,
       unidade: registro.unidade ?? 'un',
       responsavel: responsavel.trim(),
-      data: new Date().toISOString().split('T')[0],
+      data: hojeLocal(),
       obra_id: registro.obra_id ?? null,
       preco_unitario_custo: precoAtual || null,
       valor_total: valorCredito || null,
       registro_origem_id: registro.id,
       observacoes: `Devolução de saída de ${dataBR(registro.data)}`,
-    })
+    }).select('id').single()
+    // Registro não gravou: não mexe no saldo
+    if (errReg) { setError(mensagemErro(errReg, 'Não foi possível registrar a devolução')); setSaving(false); return }
 
-    if (registro.produto_id) {
-      const { data: prod } = await supabase.from('estoque_produtos').select('quantidade_atual, preco_unitario, controla_saldo').eq('id', registro.produto_id).single()
-      if (prod) {
-        const novaQtd = prod.quantidade_atual + qtdNum
-        const novoCMP = prod.controla_saldo !== false && prod.quantidade_atual > 0 && precoAtual > 0
-          ? (prod.quantidade_atual * (prod.preco_unitario || 0) + qtdNum * precoAtual) / novaQtd
-          : prod.preco_unitario
-        await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd, preco_unitario: novoCMP }).eq('id', registro.produto_id)
+    if (registro.produto_id && prod) {
+      const { saldo, error: errSaldo } = await ajustarSaldo(supabase, registro.produto_id, qtdNum, { pisoZero: !controlaSaldo(prod) })
+      if (errSaldo) {
+        // Desfaz o registro para não ficar devolução sem saldo
+        await supabase.from('estoque_registros').delete().eq('id', reg.id)
+        setError(mensagemErro(errSaldo, 'Não foi possível atualizar o saldo do estoque'))
+        setSaving(false)
+        return
+      }
+      const antes = (saldo ?? 0) - qtdNum
+      if (controlaSaldo(prod) && antes > 0 && precoAtual > 0 && saldo) {
+        const novoCMP = (antes * (prod.preco_unitario || 0) + qtdNum * precoAtual) / saldo
+        const { error: errCmp } = await supabase.from('estoque_produtos').update({ preco_unitario: novoCMP }).eq('id', registro.produto_id)
+        if (errCmp) alert(mensagemErro(errCmp, 'Devolução registrada, mas o custo médio do produto não foi atualizado'))
       }
     }
     setSaving(false)
@@ -788,7 +844,7 @@ function ModalDevolucao({ registro, jaDevolvido, onClose, onSaved }: {
             <h3 className="font-syne font-semibold text-[#0F172A]">Registrar Devolução</h3>
             <p className="text-xs text-[#94A3B8] mt-0.5">{registro.produto_nome}</p>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSave} className="p-5 space-y-4">
           <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800">
@@ -798,7 +854,7 @@ function ModalDevolucao({ registro, jaDevolvido, onClose, onSaved }: {
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade a devolver *</label>
-            <input type="number" step="any" min="0" max={restante} className="field" autoFocus
+            <input type="number" inputMode="decimal" step="any" min="0" max={restante} className="field" autoFocus
               value={qtd} onChange={e => setQtd(e.target.value)} />
             {qtdNum > 0 && precoAtual > 0 && <p className="text-xs text-emerald-600 mt-1">Crédito à obra: {moeda(valorCredito)}</p>}
           </div>
@@ -821,8 +877,8 @@ function ModalDevolucao({ registro, jaDevolvido, onClose, onSaved }: {
 }
 
 // ── Modal Enviar ao Estoque (sobra de material da obra) ─
-function ModalEnviarEstoque({ material, onClose, onSaved }: {
-  material: MaterialObra; onClose: () => void; onSaved: () => void
+function ModalEnviarEstoque({ material, obraId, jaEnviado, onClose, onSaved }: {
+  material: MaterialObra; obraId: string; jaEnviado: number; onClose: () => void; onSaved: () => void
 }) {
   const [estoques, setEstoques] = useState<Estoque[]>([])
   const [produtos, setProdutos] = useState<EstoqueProduto[]>([])
@@ -832,52 +888,95 @@ function ModalEnviarEstoque({ material, onClose, onSaved }: {
   const [quantidade, setQuantidade] = useState('')
   const [responsavel, setResponsavel] = useState('')
   const [saving, setSaving] = useState(false)
+  const [erro, setErro] = useState('')
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('estoques').select('*').order('nome').then(({ data }) => { if (data) setEstoques((data as (Estoque & { ativo?: boolean })[]).filter(e => e.ativo !== false)) })
+    supabase.from('estoques').select('*').order('nome').then(({ data, error }) => {
+      if (error) setErro(mensagemErro(error, 'Não foi possível carregar os estoques'))
+      if (data) setEstoques((data as (Estoque & { ativo?: boolean })[]).filter(e => e.ativo !== false))
+    })
   }, [])
 
   useEffect(() => {
     if (!estoqueId) { setProdutos([]); return }
-    createClient().from('estoque_produtos').select('id, nome, estoque_id, quantidade_atual, unidade').eq('estoque_id', estoqueId).eq('ativo', true).order('nome')
-      .then(({ data }) => { if (data) setProdutos(data as EstoqueProduto[]) })
+    createClient().from('estoque_produtos').select('id, nome, estoque_id, quantidade_atual, unidade, preco_unitario, controla_saldo').eq('estoque_id', estoqueId).eq('ativo', true).order('nome')
+      .then(({ data, error }) => {
+        if (error) setErro(mensagemErro(error, 'Não foi possível carregar os produtos'))
+        if (data) setProdutos(data as EstoqueProduto[])
+      })
   }, [estoqueId])
 
   const qtdNum = parseFloat(quantidade) || 0
   const custoUnit = material.valor_unitario ?? 0
+  // Não deixa enviar mais do que foi comprado (menos o que já voltou)
+  const maximo = material.quantidade != null ? Math.max(0, Number(material.quantidade) - jaEnviado) : null
+  const acimaDoMaximo = maximo != null && qtdNum > maximo + 1e-9
 
   async function salvar() {
     if (!estoqueId || !qtdNum || !responsavel.trim()) return
-    setSaving(true)
+    if (acimaDoMaximo) { setErro(`Máximo: ${maximo} ${material.unidade ?? ''}${jaEnviado > 0 ? ' (descontado o que já foi enviado)' : ''}.`); return }
+    if (!produtoId && !nomeProduto.trim()) { setErro('Informe o nome do produto.'); return }
+    setSaving(true); setErro('')
     const supabase = createClient()
 
-    const prodSelecionado = produtoId ? produtos.find(p => p.id === produtoId) : null
+    let prodSelecionado = produtoId ? produtos.find(p => p.id === produtoId) ?? null : null
+    let prodId = produtoId
+    let produtoCriado = false
 
-    await supabase.from('estoque_registros').insert({
+    // "Criar novo produto com este nome": cria de fato no estoque escolhido
+    if (!prodId) {
+      const { data: novo, error: errNovo } = await supabase.from('estoque_produtos').insert({
+        estoque_id: estoqueId, nome: nomeProduto.trim(), unidade: material.unidade ?? 'un',
+        quantidade_atual: 0, quantidade_minima: 0, preco_unitario: custoUnit || null,
+      }).select('id, nome, estoque_id, quantidade_atual, unidade, preco_unitario, controla_saldo').single()
+      if (errNovo || !novo) { setErro(mensagemErro(errNovo, 'Não foi possível criar o produto')); setSaving(false); return }
+      prodSelecionado = novo as EstoqueProduto
+      prodId = novo.id
+      produtoCriado = true
+    }
+
+    const { data: reg, error: errReg } = await supabase.from('estoque_registros').insert({
       estoque_id: estoqueId,
-      produto_id: produtoId || null,
+      produto_id: prodId,
       produto_nome: prodSelecionado?.nome ?? nomeProduto.trim(),
       tipo: 'entrada',
       quantidade: qtdNum,
       unidade: material.unidade ?? 'un',
       responsavel: responsavel.trim(),
-      data: new Date().toISOString().split('T')[0],
+      data: hojeLocal(),
+      obra_id: obraId,
       preco_unitario_custo: custoUnit || null,
       valor_total: custoUnit ? qtdNum * custoUnit : null,
-      observacoes: `Sobra de material — obra`,
-    })
+      observacoes: `Sobra de material da obra ${marcaSobra(material.id)}`,
+    }).select('id').single()
+    if (errReg) {
+      if (produtoCriado) await supabase.from('estoque_produtos').delete().eq('id', prodId)
+      setErro(mensagemErro(errReg, 'Não foi possível registrar a entrada'))
+      setSaving(false)
+      return
+    }
 
-    if (produtoId && prodSelecionado) {
-      const novaQtd = prodSelecionado.quantidade_atual + qtdNum
-      const cmpAtual = 0
-      const novoCMP = custoUnit > 0
-        ? (prodSelecionado.quantidade_atual * cmpAtual + qtdNum * custoUnit) / novaQtd
-        : undefined
-      await supabase.from('estoque_produtos').update({
-        quantidade_atual: novaQtd,
-        ...(novoCMP !== undefined ? { preco_unitario: novoCMP } : {}),
-      }).eq('id', produtoId)
+    const { saldo, error: errSaldo } = await ajustarSaldo(supabase, prodId, qtdNum, { pisoZero: !controlaSaldo(prodSelecionado) })
+    if (errSaldo) {
+      await supabase.from('estoque_registros').delete().eq('id', reg.id)
+      if (produtoCriado) await supabase.from('estoque_produtos').delete().eq('id', prodId)
+      setErro(mensagemErro(errSaldo, 'Não foi possível atualizar o saldo do estoque'))
+      setSaving(false)
+      return
+    }
+
+    // Custo médio ponderado com o preço real do produto (antes ficava 0 e derrubava o CMP)
+    if (!produtoCriado && prodSelecionado && custoUnit > 0) {
+      const precoAtual = Number(prodSelecionado.preco_unitario || 0)
+      const antes = (saldo ?? 0) - qtdNum
+      let novoCMP: number | null = null
+      if (!precoAtual) novoCMP = custoUnit
+      else if (controlaSaldo(prodSelecionado) && antes > 0 && saldo) novoCMP = (antes * precoAtual + qtdNum * custoUnit) / saldo
+      if (novoCMP != null) {
+        const { error: errCmp } = await supabase.from('estoque_produtos').update({ preco_unitario: novoCMP }).eq('id', prodId)
+        if (errCmp) alert(mensagemErro(errCmp, 'Sobra enviada, mas o custo médio do produto não foi atualizado'))
+      }
     }
 
     setSaving(false)
@@ -892,7 +991,7 @@ function ModalEnviarEstoque({ material, onClose, onSaved }: {
             <h3 className="font-syne font-semibold text-[#0F172A]">Enviar Sobra ao Estoque</h3>
             <p className="text-xs text-[#94A3B8] mt-0.5">{material.descricao}</p>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-5 space-y-4">
           <div>
@@ -920,8 +1019,10 @@ function ModalEnviarEstoque({ material, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade *</label>
-              <input type="number" min="0.01" step="0.01" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)}
-                placeholder={`máx. ${material.quantidade ?? '?'} ${material.unidade ?? ''}`} />
+              <input type="number" inputMode="decimal" min="0.01" step="0.01" max={maximo ?? undefined} className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)}
+                placeholder={maximo != null ? `máx. ${maximo} ${material.unidade ?? ''}` : ''} />
+              {jaEnviado > 0 && <p className="text-xs text-[#94A3B8] mt-1">Já enviado: {jaEnviado} {material.unidade ?? ''}</p>}
+              {acimaDoMaximo && <p className="text-xs text-red-500 mt-1">Acima do disponível ({maximo} {material.unidade ?? ''})</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável *</label>
@@ -933,9 +1034,10 @@ function ModalEnviarEstoque({ material, onClose, onSaved }: {
               Entrará no estoque com custo unitário de {moeda(custoUnit)} → total {moeda(qtdNum * custoUnit)}
             </p>
           )}
+          {erro && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{erro}</p>}
           <div className="flex justify-end gap-3">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
-            <button onClick={salvar} disabled={saving || !estoqueId || !qtdNum || !responsavel.trim()}
+            <button onClick={salvar} disabled={saving || !estoqueId || !qtdNum || !responsavel.trim() || acimaDoMaximo}
               className="btn-primary text-sm flex items-center gap-2">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpCircle size={14} />}
               {saving ? 'Enviando...' : 'Enviar ao Estoque'}

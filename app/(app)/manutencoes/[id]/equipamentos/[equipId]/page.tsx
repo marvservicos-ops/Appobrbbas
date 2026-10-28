@@ -9,9 +9,11 @@ import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Equipamento, ManutencaoHistorico } from '@/lib/types'
+import { mensagemErro } from '@/lib/erros'
+import { parseNumeroBR } from '@/lib/numero'
+import { urlPublica, qrImagemUrl } from '@/app/pub/qr'
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
-function fmtDate(d?: string | null) { return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—' }
 function competenciaLabel(c: string) {
   const [ano, mes] = c.split('-')
   const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -20,10 +22,11 @@ function competenciaLabel(c: string) {
 
 function QrModal({ equipId }: { equipId: string }) {
   const [open, setOpen] = useState(false)
+  // Mesma origem da etiqueta impressa (/pub/etiqueta): NEXT_PUBLIC_SITE_URL, senão a origem atual
   const url = typeof window !== 'undefined'
-    ? `${window.location.origin}/pub/equipamento/${equipId}`
+    ? urlPublica(`/pub/equipamento/${equipId}`, window.location.origin)
     : ''
-  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(url)}`
+  const qrSrc = qrImagemUrl(url, 220, 10)
 
   return (
     <>
@@ -68,6 +71,7 @@ function DadosTecnicos({ equipId }: { equipId: string }) {
   const [novoCampo, setNovoCampo] = useState('')
   const [editando, setEditando] = useState<Record<string, string>>({})
   const [salvando, setSalvando] = useState<string | null>(null)
+  const [erro, setErro] = useState('')
 
   async function load() {
     const sb = createClient()
@@ -84,38 +88,47 @@ function DadosTecnicos({ equipId }: { equipId: string }) {
   const dadosCampoIds = new Set(dados.map(d => d.campo_id))
   const disponiveis = todos.filter(c => !dadosCampoIds.has(c.id))
 
-  async function adicionarCampo(campo: Campo) {
-    const { data } = await createClient().from('equipamento_dados').insert({
+  async function adicionarCampo(campo: Campo): Promise<boolean> {
+    setErro('')
+    const { data, error } = await createClient().from('equipamento_dados').insert({
       equipamento_id: equipId, campo_id: campo.id, valor: '',
     }).select('*, campo:campos_tecnicos(*)').single()
+    if (error) { setErro(mensagemErro(error, 'Erro ao adicionar campo')); return false }
     if (data) setDados(prev => [...prev, data as Dado])
     setShowPicker(false)
+    return true
   }
 
   async function criarEAdicionar() {
     if (!novoCampo.trim()) return
+    setErro('')
     const sb = createClient()
-    const { data: campo } = await sb.from('campos_tecnicos').insert({
+    const { data: campo, error } = await sb.from('campos_tecnicos').insert({
       nome: novoCampo.trim(), ordem: todos.length,
     }).select().single()
-    if (!campo) return
+    if (error || !campo) { setErro(mensagemErro(error, 'Erro ao criar campo')); return }
     setTodos(prev => [...prev, campo as Campo])
-    await adicionarCampo(campo as Campo)
-    setNovoCampo('')
+    if (await adicionarCampo(campo as Campo)) setNovoCampo('')
   }
 
   async function salvarValor(dado: Dado) {
     const valor = editando[dado.id] ?? dado.valor
     setSalvando(dado.id)
-    await createClient().from('equipamento_dados').update({ valor }).eq('id', dado.id)
+    setErro('')
+    const { error } = await createClient().from('equipamento_dados').update({ valor }).eq('id', dado.id)
+    setSalvando(null)
+    // Se falhou, mantém o campo em edição com o valor digitado
+    if (error) { setErro(mensagemErro(error, 'Erro ao salvar valor')); return }
     setDados(prev => prev.map(d => d.id === dado.id ? { ...d, valor } : d))
     setEditando(prev => { const n = { ...prev }; delete n[dado.id]; return n })
-    setSalvando(null)
   }
 
-  async function removerDado(dadoId: string) {
-    await createClient().from('equipamento_dados').delete().eq('id', dadoId)
-    setDados(prev => prev.filter(d => d.id !== dadoId))
+  async function removerDado(dado: Dado) {
+    if (!confirm(`Remover o campo "${dado.campo?.nome ?? ''}"${dado.valor ? ` (valor: ${dado.valor})` : ''} deste equipamento?`)) return
+    setErro('')
+    const { error } = await createClient().from('equipamento_dados').delete().eq('id', dado.id)
+    if (error) { setErro(mensagemErro(error, 'Erro ao remover campo')); return }
+    setDados(prev => prev.filter(d => d.id !== dado.id))
   }
 
   return (
@@ -159,6 +172,8 @@ function DadosTecnicos({ equipId }: { equipId: string }) {
         </div>
       )}
 
+      {erro && <p className="text-xs text-red-500 mb-3">{erro}</p>}
+
       {dados.length === 0 && !showPicker ? (
         <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum dado técnico adicionado ainda</p>
       ) : (
@@ -170,7 +185,7 @@ function DadosTecnicos({ equipId }: { equipId: string }) {
               <div key={d.id} className="flex items-center gap-3 group">
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-[#94A3B8] mb-0.5">
-                    {d.campo.nome}{d.campo.unidade ? ` (${d.campo.unidade})` : ''}
+                    {d.campo?.nome}{d.campo?.unidade ? ` (${d.campo.unidade})` : ''}
                   </p>
                   {isEditing ? (
                     <input
@@ -188,23 +203,27 @@ function DadosTecnicos({ equipId }: { equipId: string }) {
                   {isEditing ? (
                     <>
                       <button onClick={() => salvarValor(d)} disabled={salvando === d.id}
-                        className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#D1FAE5] text-[#059669]">
-                        <Check size={13} />
+                        aria-label="Salvar valor" title="Salvar valor"
+                        className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#D1FAE5] text-[#059669] disabled:opacity-50">
+                        <Check size={14} />
                       </button>
                       <button onClick={() => setEditando(prev => { const n = { ...prev }; delete n[d.id]; return n })}
-                        className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#F1F5F9] text-[#94A3B8]">
-                        <X size={13} />
+                        aria-label="Cancelar edição" title="Cancelar edição"
+                        className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] text-[#94A3B8]">
+                        <X size={14} />
                       </button>
                     </>
                   ) : (
                     <>
                       <button onClick={() => setEditando(prev => ({ ...prev, [d.id]: d.valor }))}
-                        className="w-7 h-7 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-all">
-                        <Pencil size={12} />
+                        aria-label={`Editar ${d.campo?.nome ?? 'valor'}`} title="Editar valor"
+                        className="w-9 h-9 flex items-center justify-center rounded-lg opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-all">
+                        <Pencil size={13} />
                       </button>
-                      <button onClick={() => removerDado(d.id)}
-                        className="w-7 h-7 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-[#94A3B8] hover:text-red-400 transition-all">
-                        <Trash2 size={12} />
+                      <button onClick={() => removerDado(d)}
+                        aria-label={`Remover ${d.campo?.nome ?? 'campo'}`} title="Remover campo"
+                        className="w-9 h-9 flex items-center justify-center rounded-lg opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 hover:bg-red-50 text-[#94A3B8] hover:text-red-400 transition-all">
+                        <Trash2 size={13} />
                       </button>
                     </>
                   )}
@@ -254,7 +273,8 @@ function FotosEquipamento({ equipId, nome, fotoCapa }: { equipId: string; nome: 
 
   // A primeira foto da galeria é a capa (equipamentos.foto_url), usada na ficha pública
   async function sincronizarCapa(lista: Foto[]) {
-    await createClient().from('equipamentos').update({ foto_url: lista[0]?.url ?? null }).eq('id', equipId)
+    const { error } = await createClient().from('equipamentos').update({ foto_url: lista[0]?.url ?? null }).eq('id', equipId)
+    if (error) setErro(mensagemErro(error, 'Erro ao atualizar a capa da ficha pública'))
   }
 
   async function enviar(files: FileList) {
@@ -268,24 +288,33 @@ function FotosEquipamento({ equipId, nome, fotoCapa }: { equipId: string; nome: 
       const ext = file.name.split('.').pop()
       const path = `equipamentos/${equipId}/${Date.now()}_${i}.${ext}`
       const { error: errUp } = await sb.storage.from('marv-manutencao').upload(path, file)
-      if (errUp) { setErro(errUp.message); continue }
+      if (errUp) { setErro(mensagemErro(errUp, 'Erro ao enviar foto')); continue }
       const { data: pub } = sb.storage.from('marv-manutencao').getPublicUrl(path)
       const { data, error } = await sb.from('equipamento_fotos')
         .insert({ equipamento_id: equipId, url: pub.publicUrl, path, ordem: ordem++ }).select().single()
-      if (error) { setErro(error.message); continue }
+      if (error) {
+        setErro(mensagemErro(error, 'Erro ao salvar foto'))
+        await sb.storage.from('marv-manutencao').remove([path])
+        continue
+      }
       novas.push(data as Foto)
     }
-    const lista = [...fotos, ...novas]
-    setFotos(lista)
-    if (novas.length) setSel(fotos.length)
-    await sincronizarCapa(lista)
-    setUploading('')
+    try {
+      if (!novas.length) return
+      const lista = [...fotos, ...novas]
+      setFotos(lista)
+      setSel(fotos.length)
+      await sincronizarCapa(lista)
+    } finally {
+      setUploading('')
+    }
   }
 
   async function excluir(foto: Foto) {
     if (!confirm('Excluir esta foto?')) return
     const sb = createClient()
-    await sb.from('equipamento_fotos').delete().eq('id', foto.id)
+    const { error } = await sb.from('equipamento_fotos').delete().eq('id', foto.id)
+    if (error) { setErro(mensagemErro(error, 'Erro ao excluir foto')); return }
     if (foto.path) await sb.storage.from('marv-manutencao').remove([foto.path])
     const lista = fotos.filter(f => f.id !== foto.id)
     setFotos(lista)
@@ -296,10 +325,12 @@ function FotosEquipamento({ equipId, nome, fotoCapa }: { equipId: string; nome: 
 
   async function definirCapa(foto: Foto) {
     const lista = [foto, ...fotos.filter(f => f.id !== foto.id)].map((f, i) => ({ ...f, ordem: i }))
+    const sb = createClient()
+    const res = await Promise.all(lista.map(f => sb.from('equipamento_fotos').update({ ordem: f.ordem }).eq('id', f.id)))
+    const falha = res.find(r => r.error)
+    if (falha) { setErro(mensagemErro(falha.error, 'Erro ao definir capa')); load(); return }
     setFotos(lista)
     setSel(0)
-    const sb = createClient()
-    await Promise.all(lista.map(f => sb.from('equipamento_fotos').update({ ordem: f.ordem }).eq('id', f.id)))
     await sincronizarCapa(lista)
   }
 
@@ -352,7 +383,7 @@ function FotosEquipamento({ equipId, nome, fotoCapa }: { equipId: string; nome: 
             <span className="text-sm">{lightbox + 1} / {fotos.length}</span>
             <div className="flex items-center gap-2">
               {!semTabela && lightbox > 0 && (
-                <button onClick={() => { definirCapa(fotos[lightbox]); setLightbox(0) }}
+                <button onClick={() => { definirCapa(fotos[lightbox]); setLightbox(null) }}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20">
                   <Star size={12} /> Definir como capa
                 </button>
@@ -363,7 +394,7 @@ function FotosEquipamento({ equipId, nome, fotoCapa }: { equipId: string; nome: 
                   <Trash2 size={12} /> Excluir
                 </button>
               )}
-              <button onClick={() => setLightbox(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10">
+              <button onClick={() => setLightbox(null)} aria-label="Fechar" title="Fechar" className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10">
                 <X size={18} />
               </button>
             </div>
@@ -374,10 +405,12 @@ function FotosEquipamento({ equipId, nome, fotoCapa }: { equipId: string; nome: 
           {fotos.length > 1 && (
             <>
               <button onClick={e => { e.stopPropagation(); setLightbox((lightbox - 1 + fotos.length) % fotos.length) }}
+                aria-label="Foto anterior" title="Foto anterior"
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white">
                 <ChevronLeft size={22} />
               </button>
               <button onClick={e => { e.stopPropagation(); setLightbox((lightbox + 1) % fotos.length) }}
+                aria-label="Próxima foto" title="Próxima foto"
                 className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white">
                 <ChevronRight size={22} />
               </button>
@@ -405,6 +438,9 @@ export default function EquipamentoPage() {
   const [fCorrDesc, setFCorrDesc] = useState('')
   const [fCorrCusto, setFCorrCusto] = useState('')
   const [salvando, setSalvando] = useState(false)
+  const [editandoHistId, setEditandoHistId] = useState<string | null>(null)
+  const [erroForm, setErroForm] = useState('')
+  const formRef = useRef<HTMLDivElement>(null)
 
   async function load() {
     const sb = createClient()
@@ -424,39 +460,95 @@ export default function EquipamentoPage() {
     if (erro) { setErroManual(erro); return }
     setUploadingManual(true)
     setErroManual('')
-    const path = `equipamentos/${equipId}_manual_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const sb = createClient()
-    const { error: err } = await sb.storage.from('marv-manutencao').upload(path, file, { upsert: true })
-    if (!err) {
+    try {
+      const path = `equipamentos/${equipId}_manual_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+      const sb = createClient()
+      const { error: err } = await sb.storage.from('marv-manutencao').upload(path, file, { upsert: true })
+      if (err) { setErroManual(mensagemErro(err, 'Erro ao enviar o manual')); return }
       const { data } = sb.storage.from('marv-manutencao').getPublicUrl(path)
-      await sb.from('equipamentos').update({ manual_url: data.publicUrl, manual_nome: file.name }).eq('id', equipId)
+      const { error } = await sb.from('equipamentos').update({ manual_url: data.publicUrl, manual_nome: file.name }).eq('id', equipId)
+      if (error) { setErroManual(mensagemErro(error, 'Erro ao salvar o manual')); return }
       load()
-    } else {
-      setErroManual(err.message)
+    } finally {
+      setUploadingManual(false)
     }
-    setUploadingManual(false)
+  }
+
+  function limparForm() {
+    setFComp(''); setFPrev(false); setFCorr(false); setFCorrDesc(''); setFCorrCusto('')
+    setEditandoHistId(null); setErroForm('')
+  }
+
+  function abrirNovoRegistro() {
+    if (showForm && !editandoHistId) { setShowForm(false); return }
+    limparForm()
+    setShowForm(true)
+  }
+
+  function abrirEdicao(h: ManutencaoHistorico) {
+    setEditandoHistId(h.id)
+    setFComp(h.competencia)
+    setFPrev(h.preventiva_feita)
+    setFCorr(h.corretiva)
+    setFCorrDesc(h.corretiva_descricao ?? '')
+    setFCorrCusto(h.corretiva_custo != null ? String(h.corretiva_custo).replace('.', ',') : '')
+    setErroForm('')
+    setShowForm(true)
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0)
   }
 
   async function salvarManutencao() {
-    if (!fComp) return
+    if (!fComp) { setErroForm('Informe a competência (mês).'); return }
+    const custo = fCorr && fCorrCusto.trim() ? parseNumeroBR(fCorrCusto) : null
+    if (custo != null && Number.isNaN(custo)) { setErroForm('Custo adicional inválido.'); return }
+
+    // Só um registro por equipamento e mês (unique no banco): se já existe, abre o
+    // existente em edição já com o que foi marcado agora somado a ele.
+    const existente = historico.find(h => h.competencia === fComp && h.id !== editandoHistId)
+    if (existente) {
+      if (editandoHistId) { setErroForm(`Já existe outro registro em ${competenciaLabel(fComp)}. Escolha outro mês ou edite aquele registro.`); return }
+      if (!confirm(`Já existe um registro em ${competenciaLabel(fComp)}. Abrir esse registro para editar, juntando o que você marcou agora?`)) return
+      const descricoes = [existente.corretiva_descricao, fCorr ? fCorrDesc.trim() : ''].filter(Boolean)
+      const somaCusto = (existente.corretiva_custo ?? 0) + (custo ?? 0)
+      setEditandoHistId(existente.id)
+      setFPrev(existente.preventiva_feita || fPrev)
+      setFCorr(existente.corretiva || fCorr)
+      setFCorrDesc(descricoes.join('\n'))
+      setFCorrCusto(somaCusto ? String(somaCusto).replace('.', ',') : '')
+      setErroForm('Registro existente aberto para edição. Confira e clique em Salvar.')
+      return
+    }
+
     setSalvando(true)
-    await createClient().from('manutencao_historico').insert({
-      equipamento_id: equipId,
+    setErroForm('')
+    const payload = {
       competencia: fComp,
       preventiva_feita: fPrev,
       corretiva: fCorr,
-      corretiva_descricao: fCorr && fCorrDesc ? fCorrDesc : null,
-      corretiva_custo: fCorr && fCorrCusto ? parseFloat(fCorrCusto) : null,
-    })
-    setFComp(''); setFPrev(false); setFCorr(false); setFCorrDesc(''); setFCorrCusto('')
-    setShowForm(false)
+      corretiva_descricao: fCorr && fCorrDesc.trim() ? fCorrDesc.trim() : null,
+      corretiva_custo: custo,
+    }
+    const sb = createClient()
+    const { error } = editandoHistId
+      ? await sb.from('manutencao_historico').update(payload).eq('id', editandoHistId)
+      : await sb.from('manutencao_historico').insert({ equipamento_id: equipId, ...payload })
     setSalvando(false)
+    if (error) {
+      setErroForm(error.code === '23505'
+        ? `Já existe um registro em ${competenciaLabel(fComp)}. Atualize a página e edite o registro existente.`
+        : mensagemErro(error, 'Erro ao salvar registro'))
+      return
+    }
+    limparForm()
+    setShowForm(false)
     load()
   }
 
-  async function excluirManutencao(hId: string) {
-    if (!confirm('Excluir registro?')) return
-    await createClient().from('manutencao_historico').delete().eq('id', hId)
+  async function excluirManutencao(h: ManutencaoHistorico) {
+    if (!confirm(`Excluir o registro de manutenção de ${competenciaLabel(h.competencia)}?`)) return
+    const { error } = await createClient().from('manutencao_historico').delete().eq('id', h.id)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir registro')); return }
+    if (editandoHistId === h.id) { limparForm(); setShowForm(false) }
     load()
   }
 
@@ -522,13 +614,14 @@ export default function EquipamentoPage() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-syne font-semibold text-[#0F172A]">Histórico de Manutenções</h3>
-            <button onClick={() => setShowForm(v => !v)} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-xs font-semibold rounded-lg transition-colors">
+            <button onClick={abrirNovoRegistro} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-xs font-semibold rounded-lg transition-colors">
               <Plus size={13} /> Registrar
             </button>
           </div>
 
           {showForm && (
-            <div className="bg-[#F8FAFC] rounded-xl p-4 mb-4 space-y-3">
+            <div ref={formRef} className="bg-[#F8FAFC] rounded-xl p-4 mb-4 space-y-3">
+              {editandoHistId && <p className="text-xs font-semibold text-[#4F7CFF]">Editando registro</p>}
               <div>
                 <label className="text-xs font-medium text-[#64748B] block mb-1">Competência (mês) *</label>
                 <input type="month" className="field text-sm w-48" value={fComp} onChange={e => setFComp(e.target.value)} />
@@ -551,13 +644,14 @@ export default function EquipamentoPage() {
                   </div>
                   <div>
                     <label className="text-xs font-medium text-[#64748B] block mb-1">Custo adicional (R$)</label>
-                    <input type="number" className="field text-sm w-48" placeholder="0,00" value={fCorrCusto} onChange={e => setFCorrCusto(e.target.value)} />
+                    <input type="text" inputMode="decimal" className="field text-sm w-48" placeholder="0,00" value={fCorrCusto} onChange={e => setFCorrCusto(e.target.value)} />
                   </div>
                 </div>
               )}
+              {erroForm && <p className="text-xs text-red-500">{erroForm}</p>}
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShowForm(false)} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-white rounded-lg">Cancelar</button>
-                <button onClick={salvarManutencao} disabled={salvando || !fComp}
+                <button onClick={() => { limparForm(); setShowForm(false) }} className="text-xs text-[#64748B] px-3 py-1.5 hover:bg-white rounded-lg">Cancelar</button>
+                <button onClick={salvarManutencao} disabled={salvando}
                   className="text-xs bg-[#4F7CFF] text-white px-3 py-1.5 rounded-lg hover:bg-[#3D68F0] disabled:opacity-50">
                   {salvando ? 'Salvando...' : 'Salvar'}
                 </button>
@@ -591,9 +685,16 @@ export default function EquipamentoPage() {
                       <p className="text-xs text-[#64748B] mt-1">{h.corretiva_descricao}</p>
                     )}
                   </div>
-                  <button onClick={() => excluirManutencao(h.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400 shrink-0">
-                    <Trash2 size={13} />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => abrirEdicao(h)} aria-label={`Editar registro de ${competenciaLabel(h.competencia)}`} title="Editar registro"
+                      className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                      <Pencil size={13} />
+                    </button>
+                    <button onClick={() => excluirManutencao(h)} aria-label={`Excluir registro de ${competenciaLabel(h.competencia)}`} title="Excluir registro"
+                      className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { PrintCarregando, PrintNaoEncontrado } from '../../Estados'
 import { Ferramenta } from '@/lib/types'
 
 export default function MalaPrintPage() {
@@ -19,35 +20,34 @@ export default function MalaPrintPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const [{ data: m }, { data: its }, { data: dadosEmpresa }] = await Promise.all([
-        supabase.from('ferramentas').select('*, responsavel_atual:funcionarios(id, nome, cargo, funcao, cpf)').eq('id', malaId).single(),
-        supabase.from('ferramentas').select('*').eq('mala_id', malaId).order('nome'),
-        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
-      ])
-      setMala(m as unknown as Ferramenta)
-      setItens((its ?? []) as unknown as Ferramenta[])
-      if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
-      setLoading(false)
+      try {
+        const supabase = createClient()
+        const [{ data: m }, { data: its }, { data: dadosEmpresa }] = await Promise.all([
+          supabase.from('ferramentas').select('*, responsavel_atual:funcionarios(id, nome, cargo, funcao, cpf)').eq('id', malaId).single(),
+          supabase.from('ferramentas').select('*').eq('mala_id', malaId).order('nome'),
+          supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
+        ])
+        setMala(m as unknown as Ferramenta)
+        setItens((its ?? []) as unknown as Ferramenta[])
+        if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
+      } catch (err) {
+        console.error('Erro ao carregar dados para impressão', err)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [malaId])
 
   useEffect(() => {
-    if (!loading && mala) setTimeout(() => window.print(), 600)
+    // Só imprime com todos os dados carregados (loading cai depois de todas as consultas)
+    if (loading || !(mala)) return
+    const t = setTimeout(() => window.print(), 600)
+    return () => clearTimeout(t)
   }, [loading, mala])
 
-  if (loading || !mala) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'white' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #4F7CFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <p style={{ color: '#64748B', fontSize: 13 }}>Preparando contrato...</p>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      </div>
-    )
-  }
+  if (loading) return <PrintCarregando texto="Preparando contrato..." />
+  if (!mala) return <PrintNaoEncontrado texto="Mala não encontrada." voltarHref="/estoque" voltarTexto="Voltar ao estoque" />
 
   const s: Record<string, React.CSSProperties> = {
     table: { borderCollapse: 'collapse', width: '100%', marginTop: 12 },

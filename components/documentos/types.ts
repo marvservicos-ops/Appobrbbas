@@ -68,7 +68,8 @@ export const RISCOS_ASSOCIADOS_COL2: string[] = [
   'Intoxicação por fumos',
   'Movimentação / armazenamento inadequado do cilindro',
   'Projeção de materiais / fagulhas',
-  'Projeção de materiais / fagulhas',
+  // Os modelos salvos guardam boolean[] por posição: não remova itens, só substitua no mesmo índice
+  'Incêndio por fagulhas / respingos de solda',
   'Quebra de equipamentos',
   'Vazamento de gás',
   'Intoxicação',
@@ -109,7 +110,7 @@ export const PRECAUCOES_COL1: string[] = [
 export const PRECAUCOES_COL2: string[] = [
   'Foi realizado isolamento e sinalização no perímetro do içamento da carga?',
   'O piso está adequado para patolagem do guindaste ou munck?',
-  'O piso está adequado para patolagem do guindaste ou munck?',
+  'As patolas estão totalmente estendidas e apoiadas sobre calços?',
   'Foi aplicado o check-list dos equipamento a ser utilizado no içamento?',
   'Foi instalado corda guia ou dispositivo para auxiliar na movimentação?',
   'Foi realizado o plano de rigging e ART para o içamento de carga acima de 5 Ton?',
@@ -125,7 +126,7 @@ export const PRECAUCOES_COL2: string[] = [
   'Inspecionar os equipamentos para realização da atividade no espaço confinado?',
   'Os equipamentos de resgate estão disponíveis em caso de emergência?',
   'Foi utilizada ventilação externa, assegurando a qualidade do ar respirável?',
-  'Foi utilizada ventilação externa, assegurando a qualidade do ar respirável?',
+  'A ventilação/exaustão mecânica foi testada antes da entrada?',
   'A iluminação está adequada?',
 ]
 

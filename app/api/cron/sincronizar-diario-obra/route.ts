@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sincronizarBackupCompleto } from '@/lib/diarioObra'
+import { cronAutorizado } from '@/lib/apiAuth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 export async function GET(req: NextRequest) {
-  if (process.env.CRON_SECRET) {
-    const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-    }
-  }
+  const negado = cronAutorizado(req, 'cron/sincronizar-diario-obra')
+  if (negado) return negado
 
   // Faz backup de TODAS as obras do Diário de Obra (vinculadas ou não a uma
   // obra do marv-gestão), inclusive as que forem criadas no futuro. Roda em

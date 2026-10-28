@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import { ArrowLeft, Plus, Upload, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, Building2, Hammer, Trash2, X, Loader2, ChevronDown, ChevronUp, Pencil, CheckSquare, Square, Camera, Search, AlertTriangle, ScanLine, Undo2, ClipboardList, Scale, BarChart3, ClipboardCheck } from 'lucide-react'
@@ -9,10 +9,15 @@ import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueProdutoCategoria, EstoqueRegistro } from '@/lib/types'
-import { controlaSaldo } from '@/lib/estoque/saldo'
+import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
+import { formatarData, hojeLocal } from '@/lib/datas'
+import { arred, numeroOuPadrao, parseNumeroBR } from '@/lib/numero'
+import { mensagemErro } from '@/lib/erros'
 import ModalSobraMista from '@/components/ModalSobraMista'
 import Link from 'next/link'
 import FerramentasPanel from './ferramentas/FerramentasPanel'
+import ModalEditarRegistro from './ModalEditarRegistro'
+import { acharCustoVinculado, geraCustoAdministrativo } from './registroVinculos'
 import { PhotoLightbox, usePhotoLightbox } from '@/components/PhotoLightbox'
 
 const ICONE_MAP: Record<string, React.ReactNode> = {
@@ -26,6 +31,8 @@ const ICONES_ATIVO = ['wrench', 'building2', 'hammer']
 const CORES = ['#4F7CFF', '#F59E0B', '#2DD4BF', '#8B5CF6', '#06B6D4', '#EF4444', '#10B981', '#F97316']
 
 type Tab = 'registros' | 'produtos' | 'configurar'
+
+const PAGINA_REGISTROS = 200
 
 function destinoLabel(reg: EstoqueRegistro): string {
   if (reg.tipo === 'entrada') return '—'
@@ -70,51 +77,165 @@ export default function EstoqueDetalhe() {
   const [filtroDataInicio, setFiltroDataInicio] = useState('')
   const [filtroDataFim, setFiltroDataFim] = useState('')
 
+  // Registros vêm do banco em páginas (o Supabase devolve no máx. 1000 linhas por consulta);
+  // filtros e ordenação vão na consulta para valerem sobre todos os registros, não só os carregados.
+  const [totalRegistros, setTotalRegistros] = useState(0)
+  const [carregandoMais, setCarregandoMais] = useState(false)
+  const [erroRegistros, setErroRegistros] = useState('')
+  const [editandoRegistro, setEditandoRegistro] = useState<EstoqueRegistro | null>(null)
+  const consultaRegistros = useRef(0)
+
   async function load() {
     const supabase = createClient()
-    const [{ data: est }, { data: cam }, { data: prod }, { data: regs }, { data: cats }] = await Promise.all([
+    const [{ data: est }, { data: cam }, { data: prod }, { data: cats }] = await Promise.all([
       supabase.from('estoques').select('*').eq('id', estoqueId).single(),
       supabase.from('estoque_campos').select('*').eq('estoque_id', estoqueId).order('ordem'),
       supabase.from('estoque_produtos').select('*').eq('estoque_id', estoqueId).eq('ativo', true).order('nome'),
-      supabase.from('estoque_registros')
-        .select('*, valores:estoque_registro_valores(*), obra:obras(titulo), funcionario:funcionarios(nome), manutencao:contratos_manutencao(numero_contrato, empresa:empresas(razao_social, apelido))')
-        .eq('estoque_id', estoqueId).order('data', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('estoque_produto_categorias').select('*').eq('estoque_id', estoqueId).order('ordem').order('nome'),
     ])
     setEstoque(est)
     setCampos(cam ?? [])
     setProdutos(prod ?? [])
-    setRegistros(regs ?? [])
     setCategorias(cats ?? [])
-    setSelecionados(new Set())
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [estoqueId])
-
-  async function excluirRegistro(id: string) {
-    if (!confirm('Excluir este registro?')) return
+  async function carregarRegistros(reset: boolean) {
     const supabase = createClient()
-    await supabase.from('estoque_registros').delete().eq('id', id)
-    setRegistros(r => r.filter(x => x.id !== id))
+    const de = reset ? 0 : registros.length
+    const asc = sortDir === 'asc'
+    let q = supabase.from('estoque_registros')
+      .select('*, valores:estoque_registro_valores(*), obra:obras(titulo), funcionario:funcionarios(nome), manutencao:contratos_manutencao(numero_contrato, empresa:empresas(razao_social, apelido))', { count: 'exact' })
+      .eq('estoque_id', estoqueId)
+    if (filtroTipo !== 'todos') q = q.eq('tipo', filtroTipo)
+    if (filtroDataInicio) q = q.gte('data', filtroDataInicio)
+    if (filtroDataFim) q = q.lte('data', filtroDataFim)
+    const n = ++consultaRegistros.current
+    if (!reset) setCarregandoMais(true)
+    const { data, count, error } = await q.order('data', { ascending: asc }).order('created_at', { ascending: asc }).range(de, de + PAGINA_REGISTROS - 1)
+    if (n !== consultaRegistros.current) return // filtro mudou enquanto carregava
+    setCarregandoMais(false)
+    if (error) { setErroRegistros(mensagemErro(error, 'Erro ao carregar os registros')); return }
+    setErroRegistros('')
+    setRegistros(prev => reset ? (data ?? []) : [...prev, ...(data ?? [])])
+    setTotalRegistros(count ?? 0)
+    if (reset) setSelecionados(new Set())
+  }
+
+  function recarregar() { load(); carregarRegistros(true) }
+
+  useEffect(() => { load() }, [estoqueId])
+  useEffect(() => { carregarRegistros(true) }, [estoqueId, filtroTipo, filtroDataInicio, filtroDataFim, sortDir])
+
+  // Exclui registros devolvendo o saldo e apagando o que foi lançado junto
+  // (devoluções da saída, entrada no estoque da manutenção, custo administrativo).
+  async function excluirRegistros(alvo: EstoqueRegistro[]): Promise<boolean> {
+    if (!estoque || alvo.length === 0) return false
+    const supabase = createClient()
+    const ids = alvo.map(r => r.id)
+
+    // Devoluções ligadas às saídas (podem não estar entre os registros carregados)
+    const { data: devs, error: errDev } = await supabase.from('estoque_registros')
+      .select('id, estoque_id, produto_id, produto_nome, tipo, quantidade, unidade, data, responsavel, destino_tipo, valor_total, registro_origem_id, created_at')
+      .in('registro_origem_id', ids)
+    if (errDev) { alert(mensagemErro(errDev, 'Erro ao preparar a exclusão')); return false }
+    const extras = ((devs ?? []) as EstoqueRegistro[]).filter(d => !ids.includes(d.id))
+    const todos = [...alvo, ...extras]
+    const todosIds = todos.map(r => r.id)
+
+    const { data: manutRegs, error: errMan } = await supabase.from('manutencao_estoque_registros')
+      .select('id, contrato_id, produto_id, quantidade').in('origem_estoque_registro_id', todosIds)
+    if (errMan) { alert(mensagemErro(errMan, 'Erro ao preparar a exclusão')); return false }
+
+    const custos: string[] = []
+    const custosNaoAchados: string[] = []
+    for (const r of todos.filter(r => geraCustoAdministrativo(r, estoque))) {
+      const { id } = await acharCustoVinculado(supabase, r)
+      if (id) custos.push(id)
+      else custosNaoAchados.push(`${r.produto_nome} (${formatarData(r.data)})`)
+    }
+
+    // Saldo a devolver por produto: saída excluída volta (+), entrada excluída sai (−).
+    // Saída de produto sem controle de saldo não mexe no saldo (ela não baixou um valor conhecido).
+    const prodPorId = new Map(produtos.map(p => [p.id, p]))
+    const deltas = new Map<string, { nome: string; unidade: string; delta: number }>()
+    const semControle = new Set<string>()
+    for (const r of todos) {
+      if (!r.produto_id) continue
+      const p = prodPorId.get(r.produto_id)
+      if (r.tipo === 'saida' && p && !controlaSaldo(p)) { semControle.add(r.produto_nome); continue }
+      const atual = deltas.get(r.produto_id) ?? { nome: p?.nome ?? r.produto_nome, unidade: p?.unidade ?? r.unidade ?? '', delta: 0 }
+      atual.delta = arred(atual.delta + (r.tipo === 'saida' ? r.quantidade : -r.quantidade))
+      deltas.set(r.produto_id, atual)
+    }
+
+    const msg: string[] = [alvo.length === 1
+      ? `Excluir o registro de ${alvo[0].tipo === 'saida' ? 'saída' : 'entrada'} "${alvo[0].produto_nome}" (${alvo[0].quantidade} ${alvo[0].unidade ?? ''}) de ${formatarData(alvo[0].data)}?`
+      : `Excluir ${alvo.length} registros selecionados?`]
+    const comDelta = Array.from(deltas.values()).filter(d => d.delta !== 0)
+    if (comDelta.length > 0) {
+      msg.push('\nO saldo será corrigido:')
+      comDelta.slice(0, 6).forEach(d => msg.push(`• ${d.nome}: ${d.delta > 0 ? '+' : ''}${d.delta} ${d.unidade}`))
+      if (comDelta.length > 6) msg.push(`• e mais ${comDelta.length - 6} produto(s)`)
+    }
+    if (semControle.size > 0) msg.push(`\nSem controle de saldo (o saldo não muda): ${Array.from(semControle).join(', ')}.`)
+    if (extras.length > 0) msg.push(`\nTambém será(ão) excluída(s) ${extras.length} devolução(ões) ligada(s) a esta(s) saída(s).`)
+    if ((manutRegs ?? []).length > 0) msg.push('\nA entrada no estoque do contrato de manutenção também será desfeita.')
+    if (custos.length > 0) msg.push(`\nO custo administrativo gerado por esta saída também será excluído (${custos.length}).`)
+    if (custosNaoAchados.length > 0) msg.push(`\nAtenção: não foi possível identificar com segurança o custo administrativo de ${custosNaoAchados.join(', ')}. Confira e exclua manualmente em Administrativo.`)
+    if (todos.some(r => r.tipo === 'entrada' && r.produto_id)) msg.push('\nO custo médio (CMP) do produto não é recalculado.')
+    if (!confirm(msg.join('\n'))) return false
+
+    const { error } = await supabase.from('estoque_registros').delete().in('id', todosIds)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir')); return false }
+
+    const falhas: string[] = []
+    for (const [pid, d] of Array.from(deltas.entries())) {
+      if (d.delta === 0) continue
+      const p = prodPorId.get(pid)
+      const { error: errSaldo } = await ajustarSaldo(supabase, pid, d.delta, { pisoZero: p ? !controlaSaldo(p) : false })
+      if (errSaldo) falhas.push(`saldo de ${d.nome} (${mensagemErro(errSaldo)})`)
+    }
+    for (const m of manutRegs ?? []) {
+      const { data: mp, error: errMp } = await supabase.from('manutencao_estoque_produtos')
+        .select('id').eq('contrato_id', m.contrato_id).eq('produto_id', m.produto_id).maybeSingle()
+      const errAj = errMp ?? (mp ? (await ajustarSaldo(supabase, mp.id, -Number(m.quantidade), { tabela: 'manutencao_estoque_produtos' })).error : null)
+      if (errAj) falhas.push(`saldo no contrato de manutenção (${mensagemErro(errAj)})`)
+    }
+    if ((manutRegs ?? []).length > 0) {
+      const { error: errDel } = await supabase.from('manutencao_estoque_registros').delete().in('id', (manutRegs ?? []).map(m => m.id))
+      if (errDel) falhas.push(`lançamento no estoque da manutenção (${mensagemErro(errDel)})`)
+    }
+    if (custos.length > 0) {
+      const { error: errCusto } = await supabase.from('custos_administrativos').delete().in('id', custos)
+      if (errCusto) falhas.push(`custo administrativo (${mensagemErro(errCusto)})`)
+    }
+    if (falhas.length > 0) alert(`Registro excluído, mas não foi possível corrigir:\n• ${falhas.join('\n• ')}\n\nConfira e ajuste manualmente.`)
+
+    setRegistros(r => r.filter(x => !todosIds.includes(x.id)))
+    setTotalRegistros(t => Math.max(0, t - todosIds.length))
+    setSelecionados(s => { const next = new Set(s); todosIds.forEach(id => next.delete(id)); return next })
+    load() // saldos atualizados
+    return true
+  }
+
+  async function excluirRegistro(reg: EstoqueRegistro) {
+    if (await excluirRegistros([reg])) setDetalheRegistro(null)
   }
 
   async function excluirSelecionados() {
     if (selecionados.size === 0) return
-    if (!confirm(`Excluir ${selecionados.size} registro(s) selecionado(s)?`)) return
     setExcluindoLote(true)
-    const supabase = createClient()
-    await supabase.from('estoque_registros').delete().in('id', Array.from(selecionados))
-    setRegistros(r => r.filter(x => !selecionados.has(x.id)))
-    setSelecionados(new Set())
+    await excluirRegistros(registros.filter(r => selecionados.has(r.id)))
     setExcluindoLote(false)
   }
 
-  async function excluirProduto(id: string) {
-    if (!confirm('Desativar este produto?')) return
+  async function excluirProduto(p: EstoqueProduto) {
+    if (!confirm(`Desativar o produto "${p.nome}"? Ele some da lista, mas os registros continuam.`)) return
     const supabase = createClient()
-    await supabase.from('estoque_produtos').update({ ativo: false }).eq('id', id)
-    setProdutos(p => p.filter(x => x.id !== id))
+    const { error } = await supabase.from('estoque_produtos').update({ ativo: false }).eq('id', p.id)
+    if (error) { alert(mensagemErro(error, 'Erro ao desativar o produto')); return }
+    setProdutos(prev => prev.filter(x => x.id !== p.id))
   }
 
   function toggleSelecionado(id: string) {
@@ -133,17 +254,8 @@ export default function EstoqueDetalhe() {
     }
   }
 
-  const registrosOrdenados = [...registros]
-    .filter(r => {
-      if (filtroTipo !== 'todos' && r.tipo !== filtroTipo) return false
-      if (filtroDataInicio && r.data < filtroDataInicio) return false
-      if (filtroDataFim && r.data > filtroDataFim) return false
-      return true
-    })
-    .sort((a, b) => {
-      const da = new Date(a.data).getTime(), db = new Date(b.data).getTime()
-      return sortDir === 'desc' ? db - da : da - db
-    })
+  // Já vêm filtrados e ordenados do banco (carregarRegistros)
+  const registrosOrdenados = registros
 
   const produtosFiltrados = produtos.filter(p => {
     if (filtroCategoria === '__sem__' ? p.categoria_id : filtroCategoria && p.categoria_id !== filtroCategoria) return false
@@ -160,7 +272,8 @@ export default function EstoqueDetalhe() {
 
   const todosSelec = registrosOrdenados.length > 0 && selecionados.size === registrosOrdenados.length
 
-  // Quanto já foi devolvido de cada saída (soma das entradas com registro_origem_id apontando pra ela)
+  // Quanto já foi devolvido de cada saída, entre os registros carregados (só para a lista;
+  // o modal de devolução consulta o banco)
   const devolvidoMap = new Map<string, number>()
   for (const r of registros) {
     if (r.registro_origem_id) {
@@ -204,7 +317,7 @@ export default function EstoqueDetalhe() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-syne font-bold text-xl text-[#0F172A]">{estoque.nome}</h1>
-              <button onClick={() => setShowEdit(true)} className="text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+              <button onClick={() => setShowEdit(true)} aria-label="Editar estoque" title="Editar estoque" className="p-2 -m-1 text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
                 <Pencil size={14} />
               </button>
             </div>
@@ -251,7 +364,7 @@ export default function EstoqueDetalhe() {
         {(['registros', 'produtos', 'configurar'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium rounded-lg capitalize transition-all ${tab === t ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#64748B] hover:text-[#374151]'}`}>
-            {t === 'registros' ? `Registros (${registros.length})` : t === 'produtos' ? `Produtos (${produtos.length})` : 'Configurar'}
+            {t === 'registros' ? `Registros (${totalRegistros})` : t === 'produtos' ? `Produtos (${produtos.length})` : 'Configurar'}
           </button>
         ))}
       </div>
@@ -291,11 +404,13 @@ export default function EstoqueDetalhe() {
                 {excluindoLote ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                 Excluir selecionados
               </button>
-              <button onClick={() => setSelecionados(new Set())} className="text-[#64748B] hover:text-[#374151]">
+              <button onClick={() => setSelecionados(new Set())} aria-label="Limpar seleção" title="Limpar seleção" className="p-2 text-[#64748B] hover:text-[#374151]">
                 <X size={16} />
               </button>
             </div>
           )}
+
+          {erroRegistros && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{erroRegistros}</p>}
 
           <div className="card p-0 overflow-hidden">
             {registros.length === 0 ? (
@@ -303,8 +418,12 @@ export default function EstoqueDetalhe() {
                 <div className="w-14 h-14 rounded-2xl bg-[#F1F5F9] flex items-center justify-center">
                   <Package size={24} className="text-[#94A3B8]" />
                 </div>
-                <p className="font-medium text-[#374151]">Nenhum registro ainda</p>
-                <p className="text-sm text-[#94A3B8]">Clique em &quot;Novo Registro&quot; para começar</p>
+                {filtroTipo !== 'todos' || filtroDataInicio || filtroDataFim ? (
+                  <p className="font-medium text-[#374151]">Nenhum registro neste filtro</p>
+                ) : (<>
+                  <p className="font-medium text-[#374151]">Nenhum registro ainda</p>
+                  <p className="text-sm text-[#94A3B8]">Clique em &quot;Novo Registro&quot; para começar</p>
+                </>)}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -348,7 +467,7 @@ export default function EstoqueDetalhe() {
                             </button>
                           </td>
                           <td className="px-4 py-3 text-sm text-[#374151] whitespace-nowrap">
-                            {new Date(reg.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                            {formatarData(reg.data)}
                           </td>
                           <td className="px-4 py-3">
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${reg.tipo === 'saida' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
@@ -365,7 +484,7 @@ export default function EstoqueDetalhe() {
                             {origem && (
                               <button onClick={e => { e.stopPropagation(); irParaOrigem(origem.id) }}
                                 className="block text-[10px] font-medium text-[#4F7CFF] hover:underline mt-0.5">
-                                ↪ devolução de {origem.responsavel} ({new Date(origem.data + 'T00:00:00').toLocaleDateString('pt-BR')})
+                                ↪ devolução de {origem.responsavel} ({formatarData(origem.data)})
                               </button>
                             )}
                           </td>
@@ -382,18 +501,22 @@ export default function EstoqueDetalhe() {
                               : <span className="text-xs text-[#94A3B8]">—</span>}
                           </td>
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
                               {reg.tipo === 'saida' && devolvido < reg.quantidade && (
                                 <button
                                   onClick={() => setDevolvendoRegistro(reg)}
-                                  title="Registrar devolução"
-                                  className="text-[#94A3B8] hover:text-amber-500"
+                                  title="Registrar devolução" aria-label="Registrar devolução"
+                                  className="p-2 text-[#94A3B8] hover:text-amber-500"
                                 >
                                   <Undo2 size={14} />
                                 </button>
                               )}
-                              <button onClick={() => excluirRegistro(reg.id)}
-                                className="text-[#94A3B8] hover:text-red-500">
+                              <button onClick={() => setEditandoRegistro(reg)} title="Editar registro" aria-label="Editar registro"
+                                className="p-2 text-[#94A3B8] hover:text-[#4F7CFF]">
+                                <Pencil size={14} />
+                              </button>
+                              <button onClick={() => excluirRegistro(reg)} title="Excluir registro" aria-label="Excluir registro"
+                                className="p-2 text-[#94A3B8] hover:text-red-500">
                                 <Trash2 size={14} />
                               </button>
                             </div>
@@ -406,6 +529,18 @@ export default function EstoqueDetalhe() {
               </div>
             )}
           </div>
+          {registros.length > 0 && (
+            <div className="flex flex-col items-center gap-1.5 py-1">
+              <p className="text-xs text-[#94A3B8]">Mostrando {registros.length} de {totalRegistros}</p>
+              {registros.length < totalRegistros && (
+                <button onClick={() => carregarRegistros(false)} disabled={carregandoMais}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#4F7CFF] border border-[#C7D2FE] rounded-lg hover:bg-[#EEF2FF] disabled:opacity-60">
+                  {carregandoMais && <Loader2 size={14} className="animate-spin" />}
+                  {carregandoMais ? 'Carregando…' : 'Carregar mais'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -548,11 +683,11 @@ export default function EstoqueDetalhe() {
                           {p.preco_unitario ? p.preco_unitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
                         </td>
                         <td className="px-3 py-3">
-                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => setEditandoProduto(p)} className="text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => setEditandoProduto(p)} title="Editar produto" aria-label="Editar produto" className="p-2 text-[#94A3B8] hover:text-[#4F7CFF]">
                               <Pencil size={14} />
                             </button>
-                            <button onClick={() => excluirProduto(p.id)} className="text-[#94A3B8] hover:text-red-500">
+                            <button onClick={() => excluirProduto(p)} title="Desativar produto" aria-label="Desativar produto" className="p-2 text-[#94A3B8] hover:text-red-500">
                               <Trash2 size={14} />
                             </button>
                           </div>
@@ -581,10 +716,9 @@ export default function EstoqueDetalhe() {
       {devolvendoRegistro && (
         <ModalDevolucao
           registro={devolvendoRegistro}
-          jaDevolvido={devolvidoMap.get(devolvendoRegistro.id) ?? 0}
           produtos={produtos}
           onClose={() => setDevolvendoRegistro(null)}
-          onSaved={() => { setDevolvendoRegistro(null); load() }}
+          onSaved={() => { setDevolvendoRegistro(null); recarregar() }}
         />
       )}
 
@@ -592,8 +726,24 @@ export default function EstoqueDetalhe() {
       {detalheRegistro && (
         <ModalDetalheRegistro
           registro={detalheRegistro}
+          campos={campos}
           estoqueIcone={estoque?.icone ?? ''}
+          podeDevolver={detalheRegistro.tipo === 'saida' && (devolvidoMap.get(detalheRegistro.id) ?? 0) < detalheRegistro.quantidade}
+          onDevolver={() => { setDevolvendoRegistro(detalheRegistro); setDetalheRegistro(null) }}
+          onEditar={() => { setEditandoRegistro(detalheRegistro); setDetalheRegistro(null) }}
+          onExcluir={() => excluirRegistro(detalheRegistro)}
           onClose={() => setDetalheRegistro(null)}
+        />
+      )}
+
+      {/* Modal editar registro */}
+      {editandoRegistro && estoque && (
+        <ModalEditarRegistro
+          registro={editandoRegistro}
+          estoque={estoque}
+          produtos={produtos}
+          onClose={() => setEditandoRegistro(null)}
+          onSaved={() => { setEditandoRegistro(null); recarregar() }}
         />
       )}
 
@@ -662,15 +812,19 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
 
   async function uploadFoto(fileOriginal: File) {
     setUploadingFoto(true)
-    const file = await converterSeForHeic(fileOriginal)
-    const supabase = createClient()
-    const path = `produtos/${produto.id}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
-    if (!error) {
+    try {
+      const file = await converterSeForHeic(fileOriginal)
+      const supabase = createClient()
+      const path = `produtos/${produto.id}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+      const { error } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
+      if (error) { alert(mensagemErro(error, 'Erro ao enviar a foto')); return }
       const { data } = supabase.storage.from('estoque').getPublicUrl(path)
       setFotoUrl(data.publicUrl)
+    } catch (err) {
+      alert(mensagemErro(err as Error, 'Erro ao enviar a foto'))
+    } finally {
+      setUploadingFoto(false)
     }
-    setUploadingFoto(false)
   }
 
   async function salvar(e: React.FormEvent) {
@@ -678,25 +832,28 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
     if (!nome.trim()) return
     setLoading(true)
     const supabase = createClient()
-    const novaQtd = parseFloat(qtdAtual) || 0
-    await supabase.from('estoque_produtos').update({
+    const novaQtd = numeroOuPadrao(qtdAtual, 0)
+    const qtdMudou = novaQtd !== produto.quantidade_atual
+    const { error } = await supabase.from('estoque_produtos').update({
       nome: nome.trim(),
       codigo: codigo.trim() || null,
       codigo_barras: codigoBarras.trim() || null,
       tamanho: tamanho.trim() || null,
       unidade: unidade.trim() || 'un',
-      quantidade_atual: novaQtd,
-      quantidade_minima: parseFloat(qtdMin) || 0,
-      preco_unitario: precoUnitario ? parseFloat(precoUnitario) : null,
+      // Só regrava o saldo se foi alterado aqui — senão sobrescreveria movimentações feitas enquanto o modal estava aberto
+      ...(qtdMudou ? { quantidade_atual: novaQtd } : {}),
+      quantidade_minima: numeroOuPadrao(qtdMin, 0),
+      preco_unitario: precoUnitario ? numeroOuPadrao(precoUnitario, 0) : null,
       foto_url: fotoUrl || null,
       categoria_id: categoriaId || null,
       controla_saldo: controla,
       sobra_mista: sobraMista,
     }).eq('id', produto.id)
+    if (error) { setLoading(false); alert(mensagemErro(error, 'Erro ao salvar o produto')); return }
 
     // Log de auditoria quando a quantidade muda manualmente
-    if (novaQtd !== produto.quantidade_atual || ligandoControle) {
-      await supabase.from('estoque_logs').insert({
+    if (qtdMudou || ligandoControle) {
+      const { error: errLog } = await supabase.from('estoque_logs').insert({
         produto_id: produto.id,
         estoque_id: produto.estoque_id,
         tipo: 'ajuste_manual',
@@ -704,6 +861,7 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
         quantidade_nova: novaQtd,
         motivo: motivoAjuste || (ligandoControle ? 'Inventário inicial' : 'Ajuste manual via edição de produto'),
       }).select()
+      if (errLog) alert(mensagemErro(errLog, 'Produto salvo, mas o histórico do ajuste não foi gravado'))
     }
 
     setLoading(false)
@@ -772,16 +930,16 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd Atual</label>
-              <input type="number" step="any" className="field" value={qtdAtual} onChange={e => setQtdAtual(e.target.value)} />
+              <input type="number" step="any" inputMode="decimal" className="field" value={qtdAtual} onChange={e => setQtdAtual(e.target.value)} />
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd Mínima</label>
-              <input type="number" step="any" className="field" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
+              <input type="number" step="any" inputMode="decimal" className="field" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">{sobraMista ? 'Preço por kg (R$)' : 'Preço Unitário (R$) — CMP'}</label>
-            <input type="number" step="0.0001" min="0" className="field" placeholder="0,00"
+            <input type="number" step="0.0001" min="0" inputMode="decimal" className="field" placeholder="0,00"
               value={precoUnitario} onChange={e => setPrecoUnitario(e.target.value)} />
             <p className="text-xs text-[#94A3B8] mt-1">
               {sobraMista
@@ -816,7 +974,7 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
               </label>
               {fotoUrl && (
-                <button type="button" onClick={() => setFotoUrl('')} className="text-[#94A3B8] hover:text-red-500 transition-colors">
+                <button type="button" onClick={() => setFotoUrl('')} aria-label="Remover foto" title="Remover foto" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
                   <X size={16} />
                 </button>
               )}
@@ -833,23 +991,34 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
 }
 
 // ── Modal devolução ───────────────────────────────────
-function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
-  registro: EstoqueRegistro; jaDevolvido: number; produtos: EstoqueProduto[]
+function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
+  registro: EstoqueRegistro; produtos: EstoqueProduto[]
   onClose: () => void; onSaved: () => void
 }) {
   const [qtd, setQtd] = useState('')
   const [responsavel, setResponsavel] = useState(registro.responsavel)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Quanto já voltou desta saída: consulta o banco (a lista pode não ter todos os registros carregados)
+  const [jaDevolvido, setJaDevolvido] = useState<number | null>(null)
+
+  useEffect(() => {
+    createClient().from('estoque_registros').select('quantidade').eq('registro_origem_id', registro.id)
+      .then(({ data, error }) => {
+        if (error) { setError(mensagemErro(error, 'Erro ao consultar devoluções anteriores')); return }
+        setJaDevolvido(arred((data ?? []).reduce((s, r) => s + Number(r.quantidade), 0)))
+      })
+  }, [registro.id])
 
   const produto = produtos.find(p => p.id === registro.produto_id)
-  const qtdNum = parseFloat(qtd) || 0
+  const qtdNum = numeroOuPadrao(qtd, 0)
   const precoAtual = produto?.preco_unitario || registro.preco_unitario_custo || 0
   const valorCredito = qtdNum * precoAtual
-  const restante = registro.quantidade - jaDevolvido
+  const restante = arred(registro.quantidade - (jaDevolvido ?? 0))
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
+    if (jaDevolvido === null) return
     if (!qtdNum || qtdNum <= 0) { setError('Informe a quantidade a devolver.'); return }
     if (qtdNum > restante) {
       setError(`Não pode devolver mais do que o saldo ainda não devolvido (${restante} ${registro.unidade ?? ''}).`)
@@ -868,29 +1037,34 @@ function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
       quantidade: qtdNum,
       unidade: registro.unidade ?? 'un',
       responsavel: responsavel.trim(),
-      data: new Date().toISOString().split('T')[0],
+      data: hojeLocal(),
       obra_id: registro.obra_id ?? null,
       preco_unitario_custo: precoAtual || null,
       valor_total: valorCredito || null,
       registro_origem_id: registro.id,
-      observacoes: `Devolução de saída de ${new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}`,
+      observacoes: `Devolução de saída de ${formatarData(registro.data)}`,
     })
 
-    if (regErr) { setError(regErr.message); setSaving(false); return }
+    if (regErr) { setError(mensagemErro(regErr, 'Erro ao registrar a devolução')); setSaving(false); return }
 
-    // Atualiza estoque e CMP do produto
+    // Atualiza estoque (soma no banco) e CMP do produto
     if (produto) {
-      const novaQtd = produto.quantidade_atual + qtdNum
-      const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
-      if (precoAtual > 0 && controlaSaldo(produto)) {
-        // Recalcula CMP incluindo o retorno
-        const cmpAtual = produto.preco_unitario || 0
-        const novoCMP = produto.quantidade_atual > 0
-          ? (produto.quantidade_atual * cmpAtual + qtdNum * precoAtual) / novaQtd
-          : precoAtual
-        prodUpdate.preco_unitario = novoCMP
+      const { saldo, error: errSaldo } = await ajustarSaldo(supabase, produto.id, qtdNum, { pisoZero: !controlaSaldo(produto) })
+      if (errSaldo) {
+        // A devolução já foi gravada: não deixa tentar de novo (duplicaria)
+        alert(mensagemErro(errSaldo, 'Devolução registrada, mas o saldo do produto não foi atualizado. Ajuste o saldo em Produtos'))
+        setSaving(false); onSaved(); return
       }
-      await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produto.id)
+      if (precoAtual > 0 && controlaSaldo(produto) && saldo !== null) {
+        // Recalcula CMP incluindo o retorno
+        const anterior = saldo - qtdNum
+        const cmpAtual = produto.preco_unitario || 0
+        const novoCMP = anterior > 0 && saldo > 0
+          ? (anterior * cmpAtual + qtdNum * precoAtual) / saldo
+          : precoAtual
+        const { error: errCmp } = await supabase.from('estoque_produtos').update({ preco_unitario: novoCMP }).eq('id', produto.id)
+        if (errCmp) alert(mensagemErro(errCmp, 'Devolução registrada, mas o custo médio não foi atualizado'))
+      }
     }
 
     setSaving(false)
@@ -910,8 +1084,9 @@ function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
         <form onSubmit={handleSave} className="p-5 space-y-4">
           {/* Info da saída original */}
           <div className="bg-[#FFF7ED] border border-orange-100 rounded-lg px-3 py-2.5 text-xs text-orange-800 space-y-1">
-            <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
-            {jaDevolvido > 0 && <p>Já devolvido: <strong>{jaDevolvido} {registro.unidade ?? ''}</strong> · saldo restante: <strong>{restante} {registro.unidade ?? ''}</strong></p>}
+            <p>Saída original: <strong>{registro.quantidade} {registro.unidade ?? ''}</strong> em {formatarData(registro.data)}</p>
+            {jaDevolvido === null && <p>Consultando devoluções anteriores…</p>}
+            {jaDevolvido !== null && jaDevolvido > 0 && <p>Já devolvido: <strong>{jaDevolvido} {registro.unidade ?? ''}</strong> · saldo restante: <strong>{restante} {registro.unidade ?? ''}</strong></p>}
             {precoAtual > 0 && <p>Preço atual do item (CMP): <strong>{precoAtual.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>}
           </div>
 
@@ -920,7 +1095,7 @@ function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
               Quantidade a devolver * <span className="text-[#94A3B8] font-normal">(máx. {restante} {registro.unidade ?? ''})</span>
             </label>
             <input
-              type="number" step="0.01" min="0.01" max={restante}
+              type="number" step="any" min="0" max={restante} inputMode="decimal"
               className="field" placeholder="0" autoFocus
               value={qtd} onChange={e => setQtd(e.target.value)}
             />
@@ -940,7 +1115,7 @@ function ModalDevolucao({ registro, jaDevolvido, produtos, onClose, onSaved }: {
 
           <div className="flex justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
-            <button type="submit" disabled={saving} className="btn-primary text-sm">
+            <button type="submit" disabled={saving || jaDevolvido === null} className="btn-primary text-sm">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
               {saving ? 'Registrando...' : 'Confirmar Devolução'}
             </button>
@@ -971,8 +1146,9 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
     e.preventDefault()
     setLoading(true)
     const supabase = createClient()
-    await supabase.from('estoques').update({ nome, descricao: descricao || null, cor, icone, ...(estoque.ativo !== undefined ? { ativo } : {}) }).eq('id', estoque.id)
+    const { error } = await supabase.from('estoques').update({ nome, descricao: descricao || null, cor, icone, ...(estoque.ativo !== undefined ? { ativo } : {}) }).eq('id', estoque.id)
     setLoading(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar o estoque')); return }
     onSaved()
   }
 
@@ -1051,24 +1227,26 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
     if (!nome.trim()) return
     setLoading(true)
     const supabase = createClient()
-    const qtd = parseFloat(qtdInicial) || 0
-    const { data: novo } = await supabase.from('estoque_produtos').insert({
+    const qtd = numeroOuPadrao(qtdInicial, 0)
+    const { data: novo, error } = await supabase.from('estoque_produtos').insert({
       estoque_id: estoqueId, nome: nome.trim(),
       codigo: codigo || null,
       codigo_barras: codigoBarras || null,
       tamanho: tamanho.trim() || null,
-      unidade, quantidade_minima: parseFloat(qtdMin) || 0,
+      unidade, quantidade_minima: numeroOuPadrao(qtdMin, 0),
       quantidade_atual: qtd,
-      preco_unitario: preco ? parseFloat(preco) : null,
+      preco_unitario: preco ? numeroOuPadrao(preco, 0) : null,
       categoria_id: categoriaId || null,
       controla_saldo: controla,
       sobra_mista: sobraMista,
     }).select('id').single()
+    if (error) { setLoading(false); alert(mensagemErro(error, 'Erro ao cadastrar o produto')); return }
     if (novo && qtd !== 0) {
-      await supabase.from('estoque_logs').insert({
+      const { error: errLog } = await supabase.from('estoque_logs').insert({
         produto_id: novo.id, estoque_id: estoqueId, tipo: 'ajuste_manual',
         quantidade_anterior: 0, quantidade_nova: qtd, motivo: 'Inventário inicial',
       })
+      if (errLog) alert(mensagemErro(errLog, 'Produto cadastrado, mas o histórico do inventário inicial não foi gravado'))
     }
     setNome(''); setCodigo(''); setCodigoBarras(''); setTamanho(''); setUnidade('un'); setQtdMin('0')
     setQtdInicial(''); setPreco(''); setSobraMista(false)
@@ -1103,7 +1281,7 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
         </div>
         <div className="w-24">
           <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd Mín.</label>
-          <input type="number" className="field text-sm" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
+          <input type="number" step="any" inputMode="decimal" className="field text-sm" value={qtdMin} onChange={e => setQtdMin(e.target.value)} />
         </div>
       </div>
       <div className="flex flex-wrap gap-3 items-end">
@@ -1118,12 +1296,12 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
         )}
         <div className="w-32">
           <label className="block text-xs font-medium text-[#64748B] mb-1">{sobraMista ? 'R$ por kg' : 'Preço unit. (R$)'}</label>
-          <input type="number" step="0.0001" min="0" className="field text-sm" value={preco} onChange={e => setPreco(e.target.value)} placeholder="0,00" />
+          <input type="number" step="0.0001" min="0" inputMode="decimal" className="field text-sm" value={preco} onChange={e => setPreco(e.target.value)} placeholder="0,00" />
         </div>
         {controla && (
           <div className="w-32">
             <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd contada</label>
-            <input type="number" step="any" className="field text-sm" value={qtdInicial} onChange={e => setQtdInicial(e.target.value)} placeholder="0" />
+            <input type="number" step="any" inputMode="decimal" className="field text-sm" value={qtdInicial} onChange={e => setQtdInicial(e.target.value)} placeholder="0" />
           </div>
         )}
       </div>
@@ -1141,8 +1319,8 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={salvar} disabled={loading} className="btn-primary text-sm py-2">{loading ? '...' : 'Salvar'}</button>
-          <button onClick={() => setShow(false)} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
+          <button onClick={salvar} disabled={loading} className="btn-primary text-sm py-2">{loading ? 'Salvando…' : 'Salvar'}</button>
+          <button onClick={() => setShow(false)} aria-label="Fechar" title="Fechar" className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
         </div>
       </div>
       {showScanner && (
@@ -1156,28 +1334,43 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
 }
 
 // ── Configurar campos customizados ────────────────────
+const TIPO_CAMPO_LABEL: Record<string, string> = { text: 'texto', number: 'número', date: 'data', unit: 'unidade de medida' }
+
 function ConfigurarCampos({ estoqueId, campos, onUpdated }: { estoqueId: string; campos: EstoqueCampo[]; onUpdated: () => void }) {
   const [showAdd, setShowAdd] = useState(false)
+  const [editando, setEditando] = useState<EstoqueCampo | null>(null)
   const [nome, setNome] = useState('')
   const [tipo, setTipo] = useState<'text' | 'number' | 'date' | 'unit'>('text')
   const [obrigatorio, setObrigatorio] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  async function addCampo() {
+  function abrirEdicao(c: EstoqueCampo) {
+    setEditando(c); setNome(c.nome); setTipo(c.tipo); setObrigatorio(c.obrigatorio); setShowAdd(true)
+  }
+  function fecharForm() {
+    setNome(''); setTipo('text'); setObrigatorio(false); setEditando(null); setShowAdd(false)
+  }
+
+  async function salvarCampo() {
     if (!nome.trim()) return
     setLoading(true)
     const supabase = createClient()
-    await supabase.from('estoque_campos').insert({
-      estoque_id: estoqueId, nome: nome.trim(), tipo, obrigatorio, ordem: campos.length,
-    })
-    setNome(''); setTipo('text'); setObrigatorio(false); setShowAdd(false); setLoading(false)
+    const { error } = editando
+      ? await supabase.from('estoque_campos').update({ nome: nome.trim(), tipo, obrigatorio }).eq('id', editando.id)
+      : await supabase.from('estoque_campos').insert({
+          estoque_id: estoqueId, nome: nome.trim(), tipo, obrigatorio, ordem: campos.length,
+        })
+    setLoading(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar o campo')); return }
+    fecharForm()
     onUpdated()
   }
 
-  async function excluirCampo(id: string) {
-    if (!confirm('Excluir este campo? Os dados já registrados serão perdidos.')) return
+  async function excluirCampo(c: EstoqueCampo) {
+    if (!confirm(`Excluir o campo "${c.nome}"? Os dados já registrados nele serão perdidos.`)) return
     const supabase = createClient()
-    await supabase.from('estoque_campos').delete().eq('id', id)
+    const { error } = await supabase.from('estoque_campos').delete().eq('id', c.id)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir o campo')); return }
     onUpdated()
   }
 
@@ -1192,16 +1385,22 @@ function ConfigurarCampos({ estoqueId, campos, onUpdated }: { estoqueId: string;
             <div key={c.id} className="flex items-center justify-between px-3 py-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
               <div>
                 <span className="text-sm font-medium text-[#374151]">{c.nome}</span>
-                <span className="ml-2 text-xs text-[#94A3B8]">{c.tipo}{c.obrigatorio ? ' · obrigatório' : ''}</span>
+                <span className="ml-2 text-xs text-[#94A3B8]">{TIPO_CAMPO_LABEL[c.tipo] ?? c.tipo}{c.obrigatorio ? ' · obrigatório' : ''}</span>
               </div>
-              <button onClick={() => excluirCampo(c.id)} className="text-[#94A3B8] hover:text-red-500 transition-colors">
-                <Trash2 size={14} />
-              </button>
+              <div className="flex items-center">
+                <button onClick={() => abrirEdicao(c)} aria-label={`Editar campo ${c.nome}`} title="Editar campo" className="p-2 text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+                  <Pencil size={14} />
+                </button>
+                <button onClick={() => excluirCampo(c)} aria-label={`Excluir campo ${c.nome}`} title="Excluir campo" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
         {showAdd ? (
           <div className="mt-4 pt-4 border-t border-[#E2E8F0] space-y-3">
+            {editando && <p className="text-xs font-semibold text-[#4F7CFF]">Editando campo &quot;{editando.nome}&quot;</p>}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-[#64748B] mb-1">Nome *</label>
@@ -1222,8 +1421,8 @@ function ConfigurarCampos({ estoqueId, campos, onUpdated }: { estoqueId: string;
               Campo obrigatório
             </label>
             <div className="flex gap-2">
-              <button onClick={addCampo} disabled={loading} className="btn-primary text-sm py-2">{loading ? '...' : 'Adicionar'}</button>
-              <button onClick={() => setShowAdd(false)} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
+              <button onClick={salvarCampo} disabled={loading} className="btn-primary text-sm py-2">{loading ? 'Salvando…' : editando ? 'Salvar' : 'Adicionar'}</button>
+              <button onClick={fecharForm} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
             </div>
           </div>
         ) : (
@@ -1237,15 +1436,17 @@ function ConfigurarCampos({ estoqueId, campos, onUpdated }: { estoqueId: string;
 }
 
 // ── Modal detalhe do registro ──────────────────────────
-function ModalDetalheRegistro({ registro, estoqueIcone, onClose }: {
-  registro: EstoqueRegistro; estoqueIcone: string; onClose: () => void
+function ModalDetalheRegistro({ registro, campos, estoqueIcone, podeDevolver, onDevolver, onEditar, onExcluir, onClose }: {
+  registro: EstoqueRegistro; campos: EstoqueCampo[]; estoqueIcone: string
+  podeDevolver: boolean; onDevolver: () => void; onEditar: () => void; onExcluir: () => void; onClose: () => void
 }) {
+  const campoPorId = new Map(campos.map(c => [c.id, c.nome]))
   const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
   const podeImprimir = (estoqueIcone === 'shield' || estoqueIcone === 'shirt') && registro.tipo === 'saida'
   const linkImprimir = registro.lote_id ? `/print/epi-lote/${registro.lote_id}` : `/print/epi/${registro.id}`
 
   const linhas: { label: string; valor: React.ReactNode }[] = [
-    { label: 'Data', valor: new Date(registro.data + 'T00:00:00').toLocaleDateString('pt-BR') },
+    { label: 'Data', valor: formatarData(registro.data) },
     { label: 'Tipo', valor: registro.tipo === 'saida' ? 'Saída' : 'Entrada' },
     { label: 'Produto', valor: registro.produto_nome },
     { label: 'Quantidade', valor: `${registro.quantidade} ${registro.unidade ?? ''}` },
@@ -1274,7 +1475,7 @@ function ModalDetalheRegistro({ registro, estoqueIcone, onClose }: {
             <div className="pt-2 border-t border-[#F1F5F9] space-y-2">
               {registro.valores.map(v => (
                 <div key={v.id} className="flex items-start justify-between gap-4 text-sm">
-                  <span className="text-[#64748B] shrink-0">Campo</span>
+                  <span className="text-[#64748B] shrink-0">{campoPorId.get(v.campo_id) ?? 'Campo'}</span>
                   <span className="text-[#0F172A] font-medium text-right">{v.valor}</span>
                 </div>
               ))}
@@ -1287,7 +1488,21 @@ function ModalDetalheRegistro({ registro, estoqueIcone, onClose }: {
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-[#F1F5F9]">
+        <div className="flex flex-wrap justify-end gap-2 px-5 py-4 border-t border-[#F1F5F9]">
+          <button onClick={onExcluir}
+            className="mr-auto flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+            <Trash2 size={14} /> Excluir
+          </button>
+          {podeDevolver && (
+            <button onClick={onDevolver}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors">
+              <Undo2 size={14} /> Devolver
+            </button>
+          )}
+          <button onClick={onEditar}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[#4F7CFF] border border-[#C7D2FE] rounded-lg hover:bg-[#EEF2FF] transition-colors">
+            <Pencil size={14} /> Editar
+          </button>
           {podeImprimir && (
             <a href={linkImprimir} target="_blank" rel="noreferrer"
               className="px-4 py-2 text-sm font-medium text-[#4F7CFF] border border-[#4F7CFF] rounded-lg hover:bg-[#EEF2FF] transition-colors">
@@ -1345,22 +1560,32 @@ function ModalInventario({ produtos, categorias, onClose, onSaved }: {
   const lista = produtos.filter(p => !p.sobra_mista)
     .filter(p => !categoriaId || p.categoria_id === categoriaId)
     .filter(p => !busca.trim() || p.nome.toLowerCase().includes(busca.toLowerCase()))
-  const preenchidos = produtos.filter(p => (contagem[p.id] ?? '').trim() !== '' && !isNaN(parseFloat(contagem[p.id])))
+  const preenchidos = produtos.filter(p => (contagem[p.id] ?? '').trim() !== '' && !isNaN(parseNumeroBR(contagem[p.id])))
 
   async function salvar() {
     if (preenchidos.length === 0) return
     setSaving(true)
     const supabase = createClient()
+    const falhas: string[] = []
     for (const p of preenchidos) {
-      const nova = parseFloat(contagem[p.id])
-      await supabase.from('estoque_produtos').update({ quantidade_atual: nova, controla_saldo: true }).eq('id', p.id)
-      await supabase.from('estoque_logs').insert({
+      // Inventário é contagem absoluta: grava o valor contado
+      const nova = parseNumeroBR(contagem[p.id])
+      const { error } = await supabase.from('estoque_produtos').update({ quantidade_atual: nova, controla_saldo: true }).eq('id', p.id)
+      if (error) { falhas.push(`${p.nome}: ${mensagemErro(error)}`); continue }
+      const { error: errLog } = await supabase.from('estoque_logs').insert({
         produto_id: p.id, estoque_id: p.estoque_id, tipo: 'ajuste_manual',
         quantidade_anterior: p.quantidade_atual, quantidade_nova: nova,
         motivo: controlaSaldo(p) ? (motivo.trim() || 'Inventário') : 'Inventário inicial',
       })
+      if (errLog) console.error('Inventário: histórico não gravado', p.nome, errLog)
+      // Já gravado: sai da contagem para um novo "Salvar" não repetir
+      setContagem(c => { const n = { ...c }; delete n[p.id]; return n })
     }
     setSaving(false)
+    if (falhas.length > 0) {
+      alert(`${preenchidos.length - falhas.length} item(ns) salvo(s). Não foi possível salvar:\n• ${falhas.join('\n• ')}\n\nOs itens que falharam continuam preenchidos para tentar de novo.`)
+      return
+    }
     onSaved()
   }
 
@@ -1395,7 +1620,7 @@ function ModalInventario({ produtos, categorias, onClose, onSaved }: {
             <tbody>
               {lista.map(p => {
                 const val = contagem[p.id] ?? ''
-                const dif = val.trim() !== '' ? parseFloat(val) - p.quantidade_atual : 0
+                const dif = val.trim() !== '' ? arred(parseNumeroBR(val) - p.quantidade_atual) : 0
                 return (
                   <tr key={p.id} className="border-b border-[#F1F5F9]">
                     <td className="px-4 py-2 text-sm text-[#0F172A]">
@@ -1404,7 +1629,7 @@ function ModalInventario({ produtos, categorias, onClose, onSaved }: {
                     </td>
                     <td className="px-4 py-2 text-sm text-[#64748B]">{p.quantidade_atual} {p.unidade}</td>
                     <td className="px-4 py-2">
-                      <input type="number" step="any" className="field text-sm py-1.5" value={val}
+                      <input type="text" inputMode="decimal" className="field text-sm py-1.5" value={val}
                         onChange={e => setContagem(c => ({ ...c, [p.id]: e.target.value }))} />
                       {val.trim() !== '' && dif !== 0 && controlaSaldo(p) && (
                         <p className={`text-[10px] mt-0.5 ${dif < 0 ? 'text-red-500' : 'text-emerald-600'}`}>{dif > 0 ? '+' : ''}{dif} {p.unidade}</p>
@@ -1425,7 +1650,7 @@ function ModalInventario({ produtos, categorias, onClose, onSaved }: {
             <button onClick={onClose} className="px-4 py-2 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg">Cancelar</button>
             <button onClick={salvar} disabled={saving || preenchidos.length === 0} className="btn-primary text-sm flex items-center gap-2">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
-              Salvar {preenchidos.length > 0 ? `${preenchidos.length} item(ns)` : ''}
+              {saving ? 'Salvando…' : `Salvar ${preenchidos.length > 0 ? `${preenchidos.length} item(ns)` : ''}`}
             </button>
           </div>
         </div>
@@ -1445,18 +1670,18 @@ function ConfigurarCategorias({ estoqueId, categorias, onUpdated }: { estoqueId:
     if (!nome.trim()) return
     setSaving(true)
     const supabase = createClient()
-    if (editando) {
-      await supabase.from('estoque_produto_categorias').update({ nome: nome.trim(), cor }).eq('id', editando.id)
-    } else {
-      await supabase.from('estoque_produto_categorias').insert({ estoque_id: estoqueId, nome: nome.trim(), cor, ordem: categorias.length + 1 })
-    }
+    const { error } = editando
+      ? await supabase.from('estoque_produto_categorias').update({ nome: nome.trim(), cor }).eq('id', editando.id)
+      : await supabase.from('estoque_produto_categorias').insert({ estoque_id: estoqueId, nome: nome.trim(), cor, ordem: categorias.length + 1 })
+    if (error) { setSaving(false); alert(mensagemErro(error, 'Erro ao salvar a categoria')); return }
     setNome(''); setCor(CORES[0]); setEditando(null); setSaving(false)
     onUpdated()
   }
 
   async function excluir(c: EstoqueProdutoCategoria) {
     if (!confirm(`Excluir a categoria "${c.nome}"? Os produtos dela ficam sem categoria.`)) return
-    await createClient().from('estoque_produto_categorias').delete().eq('id', c.id)
+    const { error } = await createClient().from('estoque_produto_categorias').delete().eq('id', c.id)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir a categoria')); return }
     onUpdated()
   }
 
@@ -1473,8 +1698,8 @@ function ConfigurarCategorias({ estoqueId, categorias, onUpdated }: { estoqueId:
               <span className="text-sm font-medium text-[#374151]">{c.nome}</span>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => { setEditando(c); setNome(c.nome); setCor(c.cor) }} className="text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={14} /></button>
-              <button onClick={() => excluir(c)} className="text-[#94A3B8] hover:text-red-500"><Trash2 size={14} /></button>
+              <button onClick={() => { setEditando(c); setNome(c.nome); setCor(c.cor) }} aria-label={`Editar categoria ${c.nome}`} title="Editar categoria" className="p-2 text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={14} /></button>
+              <button onClick={() => excluir(c)} aria-label={`Excluir categoria ${c.nome}`} title="Excluir categoria" className="p-2 text-[#94A3B8] hover:text-red-500"><Trash2 size={14} /></button>
             </div>
           </div>
         ))}
@@ -1489,7 +1714,7 @@ function ConfigurarCategorias({ estoqueId, categorias, onUpdated }: { estoqueId:
           ))}
         </div>
         <div className="flex gap-2">
-          <button onClick={salvar} disabled={saving || !nome.trim()} className="btn-primary text-sm py-2">{editando ? 'Salvar' : 'Adicionar'}</button>
+          <button onClick={salvar} disabled={saving || !nome.trim()} className="btn-primary text-sm py-2">{saving ? 'Salvando…' : editando ? 'Salvar' : 'Adicionar'}</button>
           {editando && (
             <button onClick={() => { setEditando(null); setNome(''); setCor(CORES[0]) }} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg">Cancelar</button>
           )}

@@ -6,6 +6,8 @@ import { ArrowLeft, Upload, Package, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
+import { numeroOuPadrao } from '@/lib/numero'
+import { mensagemErro } from '@/lib/erros'
 import { EstoqueCategoria, EstoqueItem } from '@/lib/types'
 
 const unidades = ['un', 'm', 'kg', 'L', 'm²', 'par', 'cx', 'rolo', 'peça', 'conjunto']
@@ -74,7 +76,7 @@ export default function EditarItemPage() {
     if (foto) {
       const path = `itens/${Date.now()}_${sanitizarNomeArquivo(foto.name)}`
       const { error: uploadError } = await supabase.storage.from('estoque').upload(path, foto)
-      if (uploadError) { setError(uploadError.message); setLoading(false); return }
+      if (uploadError) { setError(mensagemErro(uploadError, 'Erro ao enviar foto')); setLoading(false); return }
       foto_path = path
       const { data: urlData } = supabase.storage.from('estoque').getPublicUrl(path)
       foto_url = urlData.publicUrl
@@ -83,23 +85,24 @@ export default function EditarItemPage() {
     const { error: updateError } = await supabase.from('estoque_itens').update({
       nome: form.nome, descricao: form.descricao || null,
       categoria_id: form.categoria_id || null, unidade: form.unidade,
-      quantidade_atual: parseFloat(form.quantidade_atual) || 0,
-      quantidade_minima: parseFloat(form.quantidade_minima) || 5,
-      quantidade_maxima: form.quantidade_maxima ? parseFloat(form.quantidade_maxima) : null,
+      quantidade_atual: numeroOuPadrao(form.quantidade_atual, 0),
+      quantidade_minima: numeroOuPadrao(form.quantidade_minima, 5),
+      quantidade_maxima: form.quantidade_maxima ? numeroOuPadrao(form.quantidade_maxima, 0) : null,
       codigo_barras: form.codigo_barras || null, codigo_interno: form.codigo_interno || null,
       localizacao: form.localizacao || null,
-      preco_unitario: form.preco_unitario ? parseFloat(form.preco_unitario) : null,
+      preco_unitario: form.preco_unitario ? numeroOuPadrao(form.preco_unitario, 0) : null,
       foto_url, foto_path, updated_at: new Date().toISOString(),
     }).eq('id', id)
 
-    if (updateError) { setError(updateError.message); setLoading(false); return }
+    if (updateError) { setError(mensagemErro(updateError, 'Erro ao salvar item')); setLoading(false); return }
     router.push(`/estoque/itens/${id}`)
   }
 
   async function handleDelete() {
-    if (!confirm('Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita.')) return
+    if (!confirm(`Excluir "${form.nome || 'este item'}"? Ele sai da lista de itens; o histórico de movimentações é mantido.`)) return
     const supabase = createClient()
-    await supabase.from('estoque_itens').update({ ativo: false }).eq('id', id)
+    const { error: delError } = await supabase.from('estoque_itens').update({ ativo: false }).eq('id', id)
+    if (delError) { setError(mensagemErro(delError, 'Erro ao excluir item')); return }
     router.push('/estoque/itens')
   }
 
@@ -160,7 +163,7 @@ export default function EditarItemPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$)</label>
-                <input type="number" step="0.01" className="field" value={form.preco_unitario} onChange={e => set('preco_unitario', e.target.value)} />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.preco_unitario} onChange={e => set('preco_unitario', e.target.value)} />
               </div>
             </div>
           </div>
@@ -170,15 +173,15 @@ export default function EditarItemPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd. Atual</label>
-                <input type="number" step="0.01" className="field" value={form.quantidade_atual} onChange={e => set('quantidade_atual', e.target.value)} />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.quantidade_atual} onChange={e => set('quantidade_atual', e.target.value)} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd. Mínima ⚠️</label>
-                <input type="number" step="0.01" className="field" value={form.quantidade_minima} onChange={e => set('quantidade_minima', e.target.value)} />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.quantidade_minima} onChange={e => set('quantidade_minima', e.target.value)} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd. Máxima</label>
-                <input type="number" step="0.01" className="field" value={form.quantidade_maxima} onChange={e => set('quantidade_maxima', e.target.value)} />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.quantidade_maxima} onChange={e => set('quantidade_maxima', e.target.value)} />
               </div>
             </div>
           </div>

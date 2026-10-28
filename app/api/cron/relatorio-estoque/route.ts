@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { enviarTelegram } from '@/lib/telegram'
+import { enviarTelegram, escaparTelegram } from '@/lib/telegram'
+import { formatarQtd } from '@/lib/numero'
+import { cronAutorizado } from '@/lib/apiAuth'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
-  if (process.env.CRON_SECRET) {
-    const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-    }
-  }
+  const negado = cronAutorizado(req, 'cron/relatorio-estoque')
+  if (negado) return negado
 
   const supabase = createServiceClient()
-  const { data: estoques } = await supabase.from('estoques').select('*').order('nome')
+  const { data: estoques, error: erroEstoques } = await supabase.from('estoques').select('*').order('nome')
+  if (erroEstoques) {
+    console.error('[cron/relatorio-estoque] erro ao ler estoques', erroEstoques)
+    return NextResponse.json({ ok: false, error: 'Erro ao ler estoques' }, { status: 500 })
+  }
   const categoriasComQuantidade = (estoques ?? []).filter(e => e.ativo !== false && !['wrench', 'building2', 'hammer'].includes(e.icone))
 
   if (categoriasComQuantidade.length === 0) {
@@ -39,23 +41,31 @@ export async function GET(req: NextRequest) {
   await enviar(`📦 <b>Relatório diário de estoque — ${dataHoje} ${horaAgora}</b>`)
 
   for (const estoque of categoriasComQuantidade) {
-    const { data: produtos } = await supabase
+    const { data: produtos, error: erroProdutos } = await supabase
       .from('estoque_produtos')
       .select('nome, quantidade_atual, quantidade_minima, unidade')
       .eq('estoque_id', estoque.id)
       .eq('ativo', true)
       .order('nome')
+    if (erroProdutos) {
+      console.error(`[cron/relatorio-estoque] erro ao ler produtos de ${estoque.nome}`, erroProdutos)
+      erros.push(`Erro ao ler produtos de ${estoque.nome}`)
+      continue
+    }
 
     if (!produtos || produtos.length === 0) continue
 
     const linhas = produtos.map(p => {
-      const critico = p.quantidade_minima > 0 && p.quantidade_atual <= p.quantidade_minima
-      const negativo = p.quantidade_atual < 0
+      const atual = Number(p.quantidade_atual ?? 0)
+      const minima = Number(p.quantidade_minima ?? 0)
+      // Mesmo critério do sino e do Dashboard: crítico = atual <= mínimo (com mínimo definido)
+      const critico = minima > 0 && atual <= minima
+      const negativo = atual < 0
       const marca = negativo ? '🔴' : critico ? '🟠' : '🟢'
-      return `${marca} ${p.nome}: <b>${p.quantidade_atual}</b> ${p.unidade ?? ''}`
+      return `${marca} ${escaparTelegram(p.nome)}: <b>${formatarQtd(atual)}</b> ${escaparTelegram(p.unidade ?? '')}`
     })
 
-    await enviar(`<b>${estoque.nome}</b>\n${linhas.join('\n')}\n<i>${horaAgora}</i>`)
+    await enviar(`<b>${escaparTelegram(estoque.nome)}</b>\n${linhas.join('\n')}\n<i>${horaAgora}</i>`)
   }
 
   return NextResponse.json({

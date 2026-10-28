@@ -1,25 +1,24 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
-import { Wrench, CheckCircle2, XCircle, AlertTriangle, FileText } from 'lucide-react'
+import { FileText } from 'lucide-react'
 
-function fmtDate(d?: string | null) {
-  return d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
-}
 function competenciaLabel(c: string) {
   const [ano, mes] = c.split('-')
   const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
   return `${meses[parseInt(mes) - 1]}/${ano}`
 }
-function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 
+// Ficha aberta pelo QR, sem login. As tabelas de manutenção só têm policy para
+// autenticados, então a leitura é feita no servidor com o service client,
+// buscando só o que aparece na tela (sem custo de corretiva, nº de série etc.).
 export default async function PubEquipamentoPage({ params }: { params: { equipId: string } }) {
-  const sb = await createClient()
+  const sb = createServiceClient()
 
   const [{ data: equip }, { data: dados }, { data: historico }] = await Promise.all([
-    sb.from('equipamentos').select('*, contrato:contratos_manutencao(empresa:empresas(razao_social, apelido))').eq('id', params.equipId).single(),
-    sb.from('equipamento_dados').select('*, campo:campos_tecnicos(nome, unidade)').eq('equipamento_id', params.equipId),
-    sb.from('manutencao_historico').select('*').eq('equipamento_id', params.equipId).order('competencia', { ascending: false }).limit(12),
+    sb.from('equipamentos').select('id, nome, tipo, foto_url, manual_url, manual_nome, contrato:contratos_manutencao(empresa:empresas(razao_social, apelido))').eq('id', params.equipId).single(),
+    sb.from('equipamento_dados').select('id, valor, campo:campos_tecnicos(nome, unidade)').eq('equipamento_id', params.equipId),
+    sb.from('manutencao_historico').select('id, competencia, preventiva_feita, corretiva, corretiva_descricao').eq('equipamento_id', params.equipId).order('competencia', { ascending: false }).limit(12),
   ])
 
   if (!equip) notFound()
@@ -77,7 +76,7 @@ export default async function PubEquipamentoPage({ params }: { params: { equipId
               {(dados as any[]).map((d: any) => (
                 <div key={d.id}>
                   <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>
-                    {d.campo.nome}{d.campo.unidade ? ` (${d.campo.unidade})` : ''}
+                    {d.campo?.nome}{d.campo?.unidade ? ` (${d.campo.unidade})` : ''}
                   </p>
                   <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{d.valor || '—'}</p>
                 </div>

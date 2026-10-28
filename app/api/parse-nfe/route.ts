@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { exigirUsuarioAtivo } from '@/lib/apiAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -92,9 +93,15 @@ Analise o PDF e retorne APENAS um JSON válido, sem markdown, sem explicações,
 Retorne null nos campos que não encontrar. Retorne array vazio em produtos se não houver itens.`
 
 export async function POST(req: NextRequest) {
+  const auth = await exigirUsuarioAtivo()
+  if (!auth.ok) return auth.resposta
+
   try {
     const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY não configurada' }, { status: 500 })
+    if (!apiKey) {
+      console.error('[parse-nfe] GEMINI_API_KEY não configurada')
+      return NextResponse.json({ error: 'Leitura automática indisponível no momento. Preencha manualmente.' }, { status: 500 })
+    }
 
     const formData = await req.formData()
     const file = formData.get('file') as File | null
@@ -117,6 +124,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(parsed)
   } catch (err) {
     console.error('parse-nfe gemini error', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    const msg = err instanceof Error ? err.message : String(err)
+    const motivo = err instanceof SyntaxError
+      ? 'Não consegui entender o conteúdo do arquivo.'
+      : transitorio(msg) ? 'O serviço de leitura está sobrecarregado.' : 'Não consegui ler o arquivo.'
+    return NextResponse.json({ error: `${motivo} Tente de novo ou preencha manualmente.` }, { status: 500 })
   }
 }

@@ -185,10 +185,12 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
     if (vincErr) throw new Error(`Erro ao vincular RDOs à obra: ${vincErr.message}`)
   }
 
-  const { data: jaImportados } = await supabase
+  const { data: jaImportados, error: lerErr } = await supabase
     .from('diario_obra_relatorios')
     .select('id, diario_relatorio_id, numero, status_descricao, atualizado_em, drive_file_id')
     .eq('diario_obra_id_externo', diarioObraId)
+  // Sem a lista do que já existe, tudo pareceria novo e seria importado em dobro.
+  if (lerErr) throw new Error(`Erro ao ler RDOs já importados: ${lerErr.message}`)
   const existentes = new Map((jaImportados ?? []).map(r => [r.diario_relatorio_id as string, r]))
 
   let importados = 0, atualizados = 0, ignorados = 0
@@ -232,11 +234,12 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
         }
         if (driveFileUrl) { patch.drive_file_id = driveFileId; patch.drive_file_url = driveFileUrl }
 
-        await supabase
+        const { error: updErr } = await supabase
           .from('diario_obra_relatorios')
           .update(patch)
           .eq('diario_obra_id_externo', diarioObraId)
           .eq('diario_relatorio_id', resumo._id)
+        if (updErr) throw new Error(`erro ao gravar no banco: ${updErr.message}`)
         atualizados++
       } catch (e) {
         erros.push(`RDO ${resumo.numero}: ${e instanceof Error ? e.message : String(e)}`)
@@ -253,7 +256,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
       const nomeArquivo = `RDO-${String(resumo.numero).padStart(3, '0')}_${resumo.data.replace(/\//g, '-')}.pdf`
       const arquivo = await enviarPdf(pastaId, nomeArquivo, detalhe.linkPdf)
 
-      await supabase.from('diario_obra_relatorios').insert({
+      const { error: insErr } = await supabase.from('diario_obra_relatorios').insert({
         obra_id: obraId,
         diario_obra_id_externo: diarioObraId,
         diario_obra_nome: diarioObraNome,
@@ -265,6 +268,7 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
         drive_file_id: arquivo.id,
         drive_file_url: arquivo.url,
       })
+      if (insErr) throw new Error(`erro ao gravar no banco: ${insErr.message}`)
       importados++
     } catch (e) {
       erros.push(`RDO ${resumo.numero}: ${e instanceof Error ? e.message : String(e)}`)
@@ -297,6 +301,28 @@ async function sincronizarObraExterna(diarioObraId: string, diarioObraNome: stri
   return { importados, atualizados, ignorados, removidos, erros, pendente }
 }
 
+// Nome usado para a pasta da obra no Drive: SEMPRE o nome da obra no Diário de
+// Obra (o mesmo que o backup completo usa), pra sincronização da obra e backup
+// não criarem duas pastas. Sem vínculo / API fora → título da obra no marv-gestão.
+async function nomeObraNoDiario(diarioObraId: string | null, tituloFallback: string): Promise<string> {
+  if (!diarioObraId) return tituloFallback
+  try {
+    const externa = (await listarObrasExternas()).find(o => o._id === diarioObraId)
+    if (externa?.nome) return externa.nome
+  } catch (e) {
+    console.error('[diarioObra] não consegui buscar o nome da obra no Diário de Obra', e)
+  }
+  return tituloFallback
+}
+
+// Nome da pasta no Drive para uma obra do marv-gestão (usado na limpeza de duplicados)
+export async function nomePastaDaObra(obraId: string): Promise<string> {
+  const supabase = createServiceClient()
+  const { data: obra, error } = await supabase.from('obras').select('titulo, diario_obra_id').eq('id', obraId).single()
+  if (error || !obra) throw new Error('Obra não encontrada')
+  return nomeObraNoDiario(obra.diario_obra_id ?? null, obra.titulo)
+}
+
 // ── Sincronização de uma obra vinculada no marv-gestão ───────────────
 export async function sincronizarRdosDaObra(obraId: string, orcamento = 30): Promise<ResultadoSincronizacao> {
   const supabase = createServiceClient()
@@ -304,7 +330,8 @@ export async function sincronizarRdosDaObra(obraId: string, orcamento = 30): Pro
   if (obraErr || !obra) throw new Error('Obra não encontrada')
   if (!obra.diario_obra_id) throw new Error('Esta obra não está vinculada a uma obra no Diário de Obra')
 
-  return sincronizarObraExterna(obra.diario_obra_id, obra.titulo, obraId, orcamento)
+  const nome = await nomeObraNoDiario(obra.diario_obra_id, obra.titulo)
+  return sincronizarObraExterna(obra.diario_obra_id, nome, obraId, orcamento)
 }
 
 // ── Backup completo: TODAS as obras do Diário de Obra, vinculadas ou não ──

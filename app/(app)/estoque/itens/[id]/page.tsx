@@ -8,11 +8,16 @@ import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, EstoqueMovimentacao } from '@/lib/types'
 import Link from 'next/link'
 import { PhotoLightbox, usePhotoLightbox } from '@/components/PhotoLightbox'
+import { hojeLocal, parseData } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import { arred } from '@/lib/numero'
 
 function formatDate(d?: string | null) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('pt-BR')
+  return parseData(d).toLocaleDateString('pt-BR')
 }
+
+const TIPO_LABEL: Record<string, string> = { entrada: 'Entrada', saida: 'Saída', devolucao: 'Devolução', ajuste: 'Ajuste' }
 
 export default function ItemDetailPage() {
   const router = useRouter()
@@ -21,6 +26,7 @@ export default function ItemDetailPage() {
   const [item, setItem] = useState<EstoqueItem | null>(null)
   const [movs, setMovs] = useState<EstoqueMovimentacao[]>([])
   const [loading, setLoading] = useState(true)
+  const [devolvendo, setDevolvendo] = useState<string | null>(null)
   const { lightboxUrl, openLightbox, closeLightbox } = usePhotoLightbox()
 
   async function load() {
@@ -38,19 +44,29 @@ export default function ItemDetailPage() {
   useEffect(() => { load() }, [id])
 
   async function registrarDevolucao(movId: string, quantidade: number) {
+    if (!item || devolvendo) return
+    if (!confirm(`Registrar a devolução de ${quantidade} ${item.unidade}? O saldo do item aumenta nessa quantidade.`)) return
+    setDevolvendo(movId)
     const supabase = createClient()
-    await supabase.from('estoque_movimentacoes').update({
-      status: 'devolvido_total',
-      quantidade_devolvida: quantidade,
-      data_devolucao: new Date().toISOString().split('T')[0],
-    }).eq('id', movId)
-    // Atualiza quantidade no estoque
-    if (item) {
-      await supabase.from('estoque_itens').update({
-        quantidade_atual: item.quantidade_atual + quantidade
+    try {
+      // 1) Marca como devolvida (só se ainda não estava — evita somar duas vezes)
+      const { data: marcadas, error: errMov } = await supabase.from('estoque_movimentacoes').update({
+        status: 'devolvido_total',
+        quantidade_devolvida: quantidade,
+        data_devolucao: hojeLocal(),
+      }).eq('id', movId).neq('status', 'devolvido_total').select('id')
+      if (errMov) { alert(mensagemErro(errMov, 'Erro ao registrar devolução')); return }
+      if (!marcadas || marcadas.length === 0) { alert('Esta devolução já tinha sido registrada.'); return }
+      // 2) Saldo relido do banco na hora de gravar (não o carregado quando a tela abriu)
+      const { data: atual, error: errLer } = await supabase.from('estoque_itens').select('quantidade_atual').eq('id', item.id).single()
+      const { error: errSaldo } = errLer ? { error: errLer } : await supabase.from('estoque_itens').update({
+        quantidade_atual: arred(Number(atual?.quantidade_atual ?? 0) + quantidade),
       }).eq('id', item.id)
+      if (errSaldo) alert(mensagemErro(errSaldo, 'Devolução registrada, mas o saldo do item não foi atualizado'))
+    } finally {
+      setDevolvendo(null)
+      load()
     }
-    load()
   }
 
   if (loading) return (
@@ -86,7 +102,7 @@ export default function ItemDetailPage() {
       </header>
 
       <div className="p-6">
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: info do item */}
           <div className="space-y-4">
             {/* Foto */}
@@ -129,9 +145,9 @@ export default function ItemDetailPage() {
           </div>
 
           {/* Right: estoque e movimentações */}
-          <div className="col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-4">
             {/* Status do estoque */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className={`card text-center ${nivel === 'critico' ? 'border-red-200 bg-red-50/50' : nivel === 'baixo' ? 'border-amber-200 bg-amber-50/50' : 'border-emerald-200 bg-emerald-50/50'}`}>
                 <div className={`font-syne text-4xl font-bold ${nivel === 'critico' ? 'text-red-500' : nivel === 'baixo' ? 'text-amber-500' : 'text-emerald-600'}`}>
                   {item.quantidade_atual}
@@ -186,9 +202,10 @@ export default function ItemDetailPage() {
                       </div>
                       <button
                         onClick={() => registrarDevolucao(mov.id, mov.quantidade)}
-                        className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition-colors"
+                        disabled={devolvendo !== null}
+                        className="shrink-0 disabled:opacity-50 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition-colors"
                       >
-                        Devolvido
+                        {devolvendo === mov.id ? 'Salvando…' : 'Devolvido'}
                       </button>
                     </div>
                   ))}
@@ -201,7 +218,8 @@ export default function ItemDetailPage() {
               <div className="px-4 py-3 border-b border-[#E2E8F0] bg-[#F8FAFC]">
                 <h3 className="font-syne font-semibold text-sm text-[#0F172A]">Histórico de Movimentações</h3>
               </div>
-              <table className="w-full">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px]">
                 <thead>
                   <tr className="border-b border-[#E2E8F0]">
                     <th className="text-left text-xs font-semibold text-[#64748B] px-4 py-2.5">Tipo</th>
@@ -226,14 +244,15 @@ export default function ItemDetailPage() {
                           }`}>
                             {mov.tipo === 'entrada' ? <TrendingUp size={11} className="text-emerald-600" /> :
                              mov.tipo === 'devolucao' ? <RefreshCw size={11} className="text-blue-600" /> :
+                             mov.tipo === 'ajuste' ? <Edit2 size={11} className="text-purple-600" /> :
                              <TrendingDown size={11} className="text-red-600" />}
                           </div>
-                          <span className="text-xs font-medium capitalize text-[#374151]">{mov.tipo}</span>
+                          <span className="text-xs font-medium text-[#374151]">{TIPO_LABEL[mov.tipo] ?? mov.tipo}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-[#374151]">{mov.responsavel}</td>
-                      <td className={`px-4 py-3 text-sm font-bold text-right ${mov.tipo === 'saida' ? 'text-red-500' : 'text-emerald-600'}`}>
-                        {mov.tipo === 'saida' ? '-' : '+'}{mov.quantidade}
+                      <td className={`px-4 py-3 text-sm font-bold text-right ${mov.tipo === 'saida' ? 'text-red-500' : mov.tipo === 'ajuste' ? 'text-purple-600' : 'text-emerald-600'}`}>
+                        {mov.tipo === 'saida' ? '-' : mov.tipo === 'ajuste' ? '= ' : '+'}{mov.quantidade}
                       </td>
                       <td className="px-4 py-3 text-xs text-[#64748B]">{(mov.obra as any)?.titulo || '—'}</td>
                       <td className="px-4 py-3">
@@ -244,6 +263,7 @@ export default function ItemDetailPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>

@@ -4,6 +4,29 @@ import Topbar from '@/components/Topbar'
 import { createClient } from '@/lib/supabase/client'
 import { Cliente, Empresa, TipoCliente } from '@/lib/types'
 import { Plus, X, Pencil, Building2, ShoppingCart, Trash2, ChevronRight, MapPin, Phone, Mail, Hash, ShieldCheck } from 'lucide-react'
+import { mensagemErro } from '@/lib/erros'
+
+// ─── Máscaras simples (só dígitos → formato) ─────────────────────────────────
+const soDigitos = (v: string) => v.replace(/\D/g, '')
+function mascaraCnpj(v: string) {
+  const d = soDigitos(v).slice(0, 14)
+  return d
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2')
+}
+function mascaraCep(v: string) {
+  const d = soDigitos(v).slice(0, 8)
+  return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d
+}
+function mascaraTelefone(v: string) {
+  const d = soDigitos(v).slice(0, 11)
+  if (d.length <= 2) return d.length ? `(${d}` : ''
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
 
 // ─── Modal Empresa ───────────────────────────────────────────────────────────
 function ModalEmpresa({ empresa, onClose, onSaved }: {
@@ -24,6 +47,7 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!razaoSocial.trim()) { setError('Informe a razão social.'); return }
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -42,7 +66,7 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
       ? await supabase.from('empresas').update(payload).eq('id', empresa!.id)
       : await supabase.from('empresas').insert(payload)
     setLoading(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(mensagemErro(err, 'Erro ao salvar')); return }
     onSaved()
   }
 
@@ -51,7 +75,7 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] shrink-0">
           <h2 className="font-semibold text-[#0F172A]">{editing ? 'Editar Empresa' : 'Nova Empresa'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-2 gap-3">
@@ -65,7 +89,7 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
             </div>
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">CNPJ</label>
-              <input className="field font-mono" value={cnpj} onChange={e => setCnpj(e.target.value)} placeholder="00.000.000/0000-00" />
+              <input className="field font-mono" inputMode="numeric" value={cnpj} onChange={e => setCnpj(mascaraCnpj(e.target.value))} placeholder="00.000.000/0000-00" />
             </div>
           </div>
 
@@ -88,11 +112,11 @@ function ModalEmpresa({ empresa, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">CEP</label>
-              <input className="field font-mono" value={cep} onChange={e => setCep(e.target.value)} placeholder="00000-000" />
+              <input className="field font-mono" inputMode="numeric" value={cep} onChange={e => setCep(mascaraCep(e.target.value))} placeholder="00000-000" />
             </div>
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Telefone</label>
-              <input className="field" value={telefone} onChange={e => setTelefone(e.target.value)} placeholder="(00) 00000-0000" />
+              <input type="tel" inputMode="tel" className="field" value={telefone} onChange={e => setTelefone(mascaraTelefone(e.target.value))} placeholder="(00) 00000-0000" />
             </div>
           </div>
 
@@ -129,13 +153,14 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!nome.trim()) { setError('Informe o nome.'); return }
     setLoading(true)
     setError('')
     const supabase = createClient()
     const payload = {
-      nome,
-      email: email || null,
-      telefone: telefone || null,
+      nome: nome.trim(),
+      email: email.trim() || null,
+      telefone: telefone.trim() || null,
       tipo,
       empresa_id: empresaId || null,
     }
@@ -143,7 +168,7 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
       ? await supabase.from('clientes').update(payload).eq('id', cliente!.id)
       : await supabase.from('clientes').insert(payload)
     setLoading(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(mensagemErro(err, 'Erro ao salvar')); return }
     onSaved()
   }
 
@@ -152,7 +177,7 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-semibold text-[#0F172A]">{editing ? 'Editar Pessoa' : 'Nova Pessoa'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Tipo */}
@@ -202,7 +227,7 @@ function ModalCliente({ cliente, empresas, onClose, onSaved }: {
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Telefone</label>
-              <input className="field" value={telefone} onChange={e => setTelefone(e.target.value)} placeholder="(00) 00000-0000" />
+              <input type="tel" inputMode="tel" className="field" value={telefone} onChange={e => setTelefone(mascaraTelefone(e.target.value))} placeholder="(00) 00000-0000" />
             </div>
           </div>
 
@@ -244,9 +269,9 @@ function TabelaClientes({ clientes, empresas, onEdit, onDelete }: {
                 : <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700"><ShoppingCart size={10} /> Comprador</span>}
             </td>
             <td className="px-4 py-3">
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => onEdit(c)} className="p-1.5 rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={13} /></button>
-                <button onClick={() => onDelete(c)} className="p-1.5 rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+              <div className="flex items-center gap-0.5 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                <button onClick={() => onEdit(c)} aria-label={`Editar ${c.nome}`} title="Editar" className="p-2 rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={14} /></button>
+                <button onClick={() => onDelete(c)} aria-label={`Excluir ${c.nome}`} title="Excluir" className="p-2 rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
               </div>
             </td>
           </tr>
@@ -266,33 +291,84 @@ export default function ClientesPage() {
   const [editCliente, setEditCliente] = useState<Cliente | null>(null)
   const [showModalEmpresa, setShowModalEmpresa] = useState(false)
   const [editEmpresa, setEditEmpresa] = useState<Empresa | null>(null)
+  const [erroCarga, setErroCarga] = useState<string | null>(null)
 
   async function load() {
     const supabase = createClient()
-    const [{ data: c }, { data: e }] = await Promise.all([
+    const [{ data: c, error: errC }, { data: e, error: errE }] = await Promise.all([
       supabase.from('clientes').select('*').order('nome'),
       supabase.from('empresas').select('*').order('razao_social'),
     ])
+    if (errC || errE) { setErroCarga(mensagemErro(errC ?? errE, 'Erro ao carregar os clientes')); return }
+    setErroCarga(null)
     if (c) setClientes(c as Cliente[])
     if (e) setEmpresas(e as Empresa[])
   }
   useEffect(() => { load() }, [])
 
   async function excluirCliente(c: Cliente) {
-    if (!confirm(`Excluir "${c.nome}"? Obras vinculadas a este cliente serão desvinculadas.`)) return
     const supabase = createClient()
-    // Desvincular obras antes de excluir (FK obras.cliente_id)
-    const { error: errObras } = await supabase.from('obras').update({ cliente_id: null }).eq('cliente_id', c.id)
-    if (errObras) { alert('Erro ao desvincular obras: ' + errObras.message); return }
+    // Obras que apontam para esta pessoa (cliente, gestor ou comprador)
+    const { data: vinc, error: errVinc } = await supabase
+      .from('obras')
+      .select('id, cliente_id, gestor_id, comprador_id')
+      .or(`cliente_id.eq.${c.id},gestor_id.eq.${c.id},comprador_id.eq.${c.id}`)
+    if (errVinc) { alert(mensagemErro(errVinc, 'Erro ao verificar obras vinculadas')); return }
+    type Vinc = { id: string; cliente_id: string | null; gestor_id: string | null; comprador_id: string | null }
+    const obras = (vinc ?? []) as Vinc[]
+    const idsCliente = obras.filter(o => o.cliente_id === c.id).map(o => o.id)
+    const idsGestor = obras.filter(o => o.gestor_id === c.id).map(o => o.id)
+    const idsComprador = obras.filter(o => o.comprador_id === c.id).map(o => o.id)
+    const plural = (n: number, s: string) => `${s} de ${n} obra${n !== 1 ? 's' : ''}`
+    const partes = [
+      idsCliente.length ? plural(idsCliente.length, 'cliente') : '',
+      idsGestor.length ? plural(idsGestor.length, 'gestor(a)') : '',
+      idsComprador.length ? plural(idsComprador.length, 'comprador(a)') : '',
+    ].filter(Boolean)
+    const msg = partes.length
+      ? `Excluir "${c.nome}"?\n\nEssa pessoa é ${partes.join(', ')}. Essas obras ficarão sem esse vínculo.`
+      : `Excluir "${c.nome}"? Nenhuma obra está vinculada a essa pessoa.`
+    if (!confirm(msg)) return
+
+    // Desvincula os três campos (FKs de obras) antes de excluir
+    const campos = [
+      ['cliente_id', idsCliente],
+      ['gestor_id', idsGestor],
+      ['comprador_id', idsComprador],
+    ] as const
+    const feitos: (typeof campos)[number][] = []
+    for (const par of campos) {
+      const [campo, ids] = par
+      if (!ids.length) continue
+      const { error: errUpd } = await supabase.from('obras').update({ [campo]: null }).in('id', ids)
+      if (errUpd) {
+        await revincular(feitos)
+        alert(mensagemErro(errUpd, 'Erro ao desvincular obras'))
+        return
+      }
+      feitos.push(par)
+    }
     const { error } = await supabase.from('clientes').delete().eq('id', c.id)
-    if (error) { alert('Erro ao excluir: ' + error.message); return }
+    if (error) {
+      // Desfaz: vincula de novo as obras que acabamos de soltar
+      await revincular(feitos)
+      alert(mensagemErro(error, 'Erro ao excluir'))
+      return
+    }
     load()
+
+    async function revincular(lista: (typeof campos)[number][]) {
+      for (const [campo, ids] of lista) {
+        const { error: errVolta } = await supabase.from('obras').update({ [campo]: c.id }).in('id', ids)
+        if (errVolta) alert(mensagemErro(errVolta, `Não foi possível refazer o vínculo (${campo}) de ${ids.length} obra(s)`))
+      }
+    }
   }
 
   async function excluirEmpresa(e: Empresa) {
     if (!confirm(`Excluir "${e.razao_social}"? As pessoas vinculadas a ela serão desvinculadas.`)) return
     const { error } = await createClient().from('empresas').delete().eq('id', e.id)
-    if (error) { alert('Erro ao excluir: ' + error.message); return }
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir')); return }
     load()
   }
 
@@ -351,8 +427,15 @@ export default function ClientesPage() {
           ))}
         </div>
 
+        {erroCarga && (
+          <div className="card flex flex-col sm:flex-row items-center justify-between gap-3 py-4 bg-red-50 border-red-100">
+            <p className="text-sm text-red-600">{erroCarga}</p>
+            <button onClick={load} className="btn-primary text-sm">Tentar de novo</button>
+          </div>
+        )}
+
         {/* ── ABA PESSOAS ── */}
-        {aba === 'pessoas' && (
+        {aba === 'pessoas' && !erroCarga && (
           <div className="space-y-5">
             {/* Gestores */}
             <div className="card p-0 overflow-hidden">
@@ -420,7 +503,7 @@ export default function ClientesPage() {
         )}
 
         {/* ── ABA EMPRESAS ── */}
-        {aba === 'empresas' && (
+        {aba === 'empresas' && !erroCarga && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredEmpresas.length === 0 && (
               <div className="col-span-3 card text-center py-12">
@@ -439,11 +522,13 @@ export default function ClientesPage() {
                     <div className="w-10 h-10 rounded-xl bg-[#EEF2FF] flex items-center justify-center shrink-0">
                       <Building2 size={18} className="text-[#4F7CFF]" />
                     </div>
-                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-0.5 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
                       <button onClick={() => { setEditEmpresa(emp); setShowModalEmpresa(true) }}
-                        className="p-1.5 rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={13} /></button>
+                        aria-label="Editar empresa" title="Editar empresa"
+                        className="p-2 rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={14} /></button>
                       <button onClick={() => excluirEmpresa(emp)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                        aria-label="Excluir empresa" title="Excluir empresa"
+                        className="p-2 rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
                     </div>
                   </div>
 

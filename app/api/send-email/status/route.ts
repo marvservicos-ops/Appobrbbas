@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@/lib/supabase/server'
+import { exigirUsuarioAtivo } from '@/lib/apiAuth'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -13,9 +14,9 @@ export async function POST(req: NextRequest) {
   const { obraId } = await req.json()
   if (!obraId) return NextResponse.json({ error: 'obraId obrigatório' }, { status: 400 })
 
+  const auth = await exigirUsuarioAtivo()
+  if (!auth.ok) return auth.resposta
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   const { data: pendentes } = await supabase
     .from('obra_emails_enviados')

@@ -5,6 +5,7 @@ import { Plus, Package, Thermometer, Droplets, Shield, Sparkles, Shirt, Wrench, 
 import { createClient } from '@/lib/supabase/client'
 import { Estoque } from '@/lib/types'
 import Link from 'next/link'
+import { mensagemErro } from '@/lib/erros'
 
 const ICONE_MAP: Record<string, React.ReactNode> = {
   shield: <Shield size={22} />,
@@ -31,15 +32,12 @@ export default function EstoquePage() {
     setEstoques(data ?? [])
 
     if (data && data.length > 0) {
-      const ids = data.map(e => e.id)
-      const { data: regs } = await supabase
-        .from('estoque_registros')
-        .select('estoque_id')
-        .in('estoque_id', ids)
+      // Só a contagem (head: true) — baixar as linhas esbarrava no limite de 1000
+      const contas = await Promise.all(data.map(e =>
+        supabase.from('estoque_registros').select('id', { count: 'exact', head: true }).eq('estoque_id', e.id)
+      ))
       const map: Record<string, number> = {}
-      for (const r of regs ?? []) {
-        map[r.estoque_id] = (map[r.estoque_id] ?? 0) + 1
-      }
+      data.forEach((e, i) => { if (!contas[i].error) map[e.id] = contas[i].count ?? 0 })
       setContagens(map)
     }
     setLoading(false)
@@ -82,7 +80,7 @@ export default function EstoquePage() {
                 <ChevronRight size={16} className="text-[#94A3B8] group-hover:text-[#4F7CFF] transition-colors mt-1" />
               </div>
               <div className="mt-4 pt-4 border-t border-[#F1F5F9] flex items-center justify-between">
-                <span className="text-xs text-[#64748B]">{contagens[e.id] ?? 0} registros</span>
+                <span className="text-xs text-[#64748B]">{e.id in contagens ? `${contagens[e.id]} registros` : '—'}</span>
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: e.cor }}>
                   Ver →
                 </span>
@@ -124,9 +122,10 @@ function ModalNovoEstoque({ onClose, onCreated }: { onClose: () => void; onCreat
     e.preventDefault()
     if (!nome.trim()) return
     setLoading(true)
+    setError('')
     const supabase = createClient()
     const { error: err } = await supabase.from('estoques').insert({ nome: nome.trim(), descricao: descricao || null, cor, icone })
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) { setError(mensagemErro(err, 'Erro ao criar estoque')); setLoading(false); return }
     onCreated()
   }
 
@@ -135,7 +134,7 @@ function ModalNovoEstoque({ onClose, onCreated }: { onClose: () => void; onCreat
           <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100dvh-env(safe-area-inset-top))] overflow-y-auto mt-auto sm:mt-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">Novo Estoque</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
           <div>

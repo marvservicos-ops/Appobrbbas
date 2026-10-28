@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Printer, Plus, Trash2, ShieldAlert, ClipboardCheck, Settings, Save } from 'lucide-react'
+import { ArrowLeft, Printer, Plus, Trash2, ShieldAlert, ClipboardCheck, Settings, Save, RotateCcw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { mensagemErro } from '@/lib/erros'
 import Topbar from '@/components/Topbar'
 import AprDocument from '@/components/documentos/AprDocument'
 import PtDocument from '@/components/documentos/PtDocument'
@@ -15,6 +16,27 @@ import {
   novoRiscoItem, novoMembroEquipe, criarFormDataInicial,
   extrairDadosModelo, normalizarDadosModelo, extrairDadosModeloApr, normalizarDadosModeloApr,
 } from '@/components/documentos/types'
+
+// Rascunho do formulário no navegador, para não perder tudo ao sair da página
+const RASCUNHO_KEY = 'marv-doc-seguranca-rascunho'
+interface Rascunho { tipo: TipoDocumentoSeguranca; form: DocumentoSegurancaFormData; salvoEm: string }
+
+// Formulário sem os ids aleatórios — compara com o inicial para saber se há algo preenchido
+function assinatura(f: DocumentoSegurancaFormData) {
+  return JSON.stringify(f, (k, v) => k === 'id' ? undefined : v)
+}
+
+function riscosPreenchidos(f: DocumentoSegurancaFormData) {
+  return f.observacoes.trim() !== '' || f.riscos.some(r =>
+    r.etapa.trim() || r.riscos.trim() || r.causas.trim() || r.recomendacoes.trim() || r.classificacaoRisco)
+}
+
+function checklistsPtMarcados(f: DocumentoSegurancaFormData) {
+  const listas = [f.riscosAssociadosCol1, f.riscosAssociadosCol2, f.precaucoesCol1, f.precaucoesCol2, f.epiCol1, f.epiCol2, f.epiCol3, ...f.agentesFatalidade]
+  return f.precaucoesOutros.trim() !== '' || listas.some(l => l.some(Boolean))
+}
+
+type AvisoModelo = { tipo: 'ok' | 'erro'; texto: string } | null
 
 type ListaBooleana = 'riscosAssociadosCol1' | 'riscosAssociadosCol2' | 'precaucoesCol1' | 'precaucoesCol2' | 'epiCol1' | 'epiCol2' | 'epiCol3'
 type CampoEquipe = 'equipeExecucao' | 'participantesApr'
@@ -138,6 +160,7 @@ interface ModeloCardProps {
   modeloSelecionadoId: string
   nomeNovoModelo: string
   salvando: boolean
+  aviso: AvisoModelo
   onSelecionar: (id: string) => void
   onNomeChange: (v: string) => void
   onSalvarNovo: () => void
@@ -146,7 +169,7 @@ interface ModeloCardProps {
 }
 
 function ModeloCard({
-  descricao, modelos, modeloSelecionadoId, nomeNovoModelo, salvando,
+  descricao, modelos, modeloSelecionadoId, nomeNovoModelo, salvando, aviso,
   onSelecionar, onNomeChange, onSalvarNovo, onAtualizar, onGerenciar,
 }: ModeloCardProps) {
   return (
@@ -170,13 +193,18 @@ function ModeloCard({
           onChange={e => onNomeChange(e.target.value)}
         />
         <button onClick={onSalvarNovo} disabled={!nomeNovoModelo.trim() || salvando} className="btn-secondary text-xs px-3 min-h-0 disabled:opacity-50 shrink-0">
-          <Save size={14} /> Salvar
+          <Save size={14} /> {salvando ? 'Salvando…' : 'Salvar'}
         </button>
       </div>
       {modeloSelecionadoId && (
         <button onClick={onAtualizar} disabled={salvando} className="text-xs text-[#4F7CFF] hover:underline disabled:opacity-50">
           Atualizar &quot;{modelos.find(m => m.id === modeloSelecionadoId)?.nome}&quot; com os dados atuais
         </button>
+      )}
+      {aviso && (
+        <p className={`text-xs rounded-lg px-3 py-2 ${aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+          {aviso.texto}
+        </p>
       )}
     </div>
   )
@@ -220,6 +248,75 @@ export default function NovoDocumentoSegurancaPage() {
 
   const [tipo, setTipo] = useState<TipoDocumentoSeguranca>('apr')
   const [form, setForm] = useState<DocumentoSegurancaFormData>(() => criarFormDataInicial())
+  const [assinaturaVazia] = useState(() => assinatura(criarFormDataInicial()))
+  const [avisoModelo, setAvisoModelo] = useState<AvisoModelo>(null)
+  const [rascunhoPendente, setRascunhoPendente] = useState<Rascunho | null>(null)
+  // Só grava o rascunho depois de o usuário decidir sobre um rascunho anterior
+  const rascunhoDecidido = useRef(false)
+  const temDados = assinatura(form) !== assinaturaVazia
+
+  function avisar(aviso: AvisoModelo) {
+    setAvisoModelo(aviso)
+    if (aviso?.tipo === 'ok') setTimeout(() => setAvisoModelo(a => a === aviso ? null : a), 4000)
+  }
+
+  // Procura um rascunho salvo ao abrir a página
+  useEffect(() => {
+    try {
+      const bruto = localStorage.getItem(RASCUNHO_KEY)
+      if (bruto) {
+        const r = JSON.parse(bruto) as Rascunho
+        if (r?.form && assinatura({ ...criarFormDataInicial(), ...r.form }) !== assinaturaVazia) {
+          setRascunhoPendente(r)
+          return
+        }
+      }
+    } catch { /* localStorage indisponível ou rascunho inválido */ }
+    rascunhoDecidido.current = true
+  }, [assinaturaVazia])
+
+  // Grava o rascunho (com um pequeno atraso para não gravar a cada tecla)
+  useEffect(() => {
+    if (!rascunhoDecidido.current) return
+    const t = setTimeout(() => {
+      try {
+        if (temDados) localStorage.setItem(RASCUNHO_KEY, JSON.stringify({ tipo, form, salvoEm: new Date().toISOString() }))
+        else localStorage.removeItem(RASCUNHO_KEY)
+      } catch { /* sem espaço ou bloqueado: segue sem rascunho */ }
+    }, 600)
+    return () => clearTimeout(t)
+  }, [form, tipo, temDados])
+
+  // Avisa antes de sair da página com o formulário preenchido
+  useEffect(() => {
+    if (!temDados) return
+    function antesDeSair(e: BeforeUnloadEvent) { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', antesDeSair)
+    return () => window.removeEventListener('beforeunload', antesDeSair)
+  }, [temDados])
+
+  function restaurarRascunho() {
+    if (!rascunhoPendente) return
+    const base = { ...criarFormDataInicial(), ...rascunhoPendente.form }
+    setForm({ ...base, ...normalizarDadosModelo(base) })
+    if (rascunhoPendente.tipo) setTipo(rascunhoPendente.tipo)
+    setRascunhoPendente(null)
+    rascunhoDecidido.current = true
+  }
+
+  function descartarRascunho() {
+    try { localStorage.removeItem(RASCUNHO_KEY) } catch { /* ignora */ }
+    setRascunhoPendente(null)
+    rascunhoDecidido.current = true
+  }
+
+  function limparFormulario() {
+    if (temDados && !confirm('Limpar todo o formulário? O rascunho salvo também será apagado.')) return
+    setForm(criarFormDataInicial())
+    setModeloPtSelecionadoId('')
+    setModeloAprSelecionadoId('')
+    try { localStorage.removeItem(RASCUNHO_KEY) } catch { /* ignora */ }
+  }
 
   async function recarregarModelosPt(): Promise<ModeloPt[]> {
     const { data, error } = await createClient().from('pt_modelos').select('id,nome,dados').order('nome')
@@ -357,10 +454,11 @@ export default function NovoDocumentoSegurancaPage() {
   }
 
   function aplicarModeloPt(modeloId: string) {
-    setModeloPtSelecionadoId(modeloId)
-    if (!modeloId) return
+    if (!modeloId) { setModeloPtSelecionadoId(''); return }
     const modelo = modelosPt.find(m => m.id === modeloId)
     if (!modelo) return
+    if (checklistsPtMarcados(form) && !confirm(`Substituir os checklists já marcados (agentes, riscos, precauções e EPI) pelos do modelo "${modelo.nome}"?`)) return
+    setModeloPtSelecionadoId(modeloId)
     const dados = normalizarDadosModelo(modelo.dados)
     setForm(prev => ({ ...prev, ...dados }))
   }
@@ -369,29 +467,35 @@ export default function NovoDocumentoSegurancaPage() {
     if (!nomeNovoModeloPt.trim()) return
     setSalvandoModeloPt(true)
     const dados = extrairDadosModelo(form)
-    const { data, error } = await createClient().from('pt_modelos').insert({ nome: nomeNovoModeloPt.trim(), dados }).select('id,nome,dados').single()
+    const nome = nomeNovoModeloPt.trim()
+    const { data, error } = await createClient().from('pt_modelos').insert({ nome, dados }).select('id,nome,dados').single()
     setSalvandoModeloPt(false)
-    if (error) { console.error('Erro ao salvar modelo de PT:', error); return }
+    if (error) { avisar({ tipo: 'erro', texto: mensagemErro(error, 'Erro ao salvar o modelo de PT') }); return }
     setNomeNovoModeloPt('')
     await recarregarModelosPt()
     if (data) setModeloPtSelecionadoId(data.id)
+    avisar({ tipo: 'ok', texto: `Modelo "${nome}" salvo.` })
   }
 
   async function atualizarModeloPtSelecionado() {
     if (!modeloPtSelecionadoId) return
+    const nome = modelosPt.find(m => m.id === modeloPtSelecionadoId)?.nome ?? ''
+    if (!confirm(`Sobrescrever o modelo "${nome}" com os checklists atuais? O conteúdo anterior do modelo será perdido.`)) return
     setSalvandoModeloPt(true)
     const dados = extrairDadosModelo(form)
     const { error } = await createClient().from('pt_modelos').update({ dados, updated_at: new Date().toISOString() }).eq('id', modeloPtSelecionadoId)
     setSalvandoModeloPt(false)
-    if (error) { console.error('Erro ao atualizar modelo de PT:', error); return }
+    if (error) { avisar({ tipo: 'erro', texto: mensagemErro(error, 'Erro ao atualizar o modelo de PT') }); return }
     await recarregarModelosPt()
+    avisar({ tipo: 'ok', texto: `Modelo "${nome}" atualizado.` })
   }
 
   function aplicarModeloApr(modeloId: string) {
-    setModeloAprSelecionadoId(modeloId)
-    if (!modeloId) return
+    if (!modeloId) { setModeloAprSelecionadoId(''); return }
     const modelo = modelosApr.find(m => m.id === modeloId)
     if (!modelo) return
+    if (riscosPreenchidos(form) && !confirm(`Substituir a tabela de riscos e as observações já preenchidas pelas do modelo "${modelo.nome}"?`)) return
+    setModeloAprSelecionadoId(modeloId)
     const dados = normalizarDadosModeloApr(modelo.dados)
     setForm(prev => ({ ...prev, ...dados }))
   }
@@ -400,22 +504,27 @@ export default function NovoDocumentoSegurancaPage() {
     if (!nomeNovoModeloApr.trim()) return
     setSalvandoModeloApr(true)
     const dados = extrairDadosModeloApr(form)
-    const { data, error } = await createClient().from('apr_modelos').insert({ nome: nomeNovoModeloApr.trim(), dados }).select('id,nome,dados').single()
+    const nome = nomeNovoModeloApr.trim()
+    const { data, error } = await createClient().from('apr_modelos').insert({ nome, dados }).select('id,nome,dados').single()
     setSalvandoModeloApr(false)
-    if (error) { console.error('Erro ao salvar modelo de APR:', error); return }
+    if (error) { avisar({ tipo: 'erro', texto: mensagemErro(error, 'Erro ao salvar o modelo de APR') }); return }
     setNomeNovoModeloApr('')
     await recarregarModelosApr()
     if (data) setModeloAprSelecionadoId(data.id)
+    avisar({ tipo: 'ok', texto: `Modelo "${nome}" salvo.` })
   }
 
   async function atualizarModeloAprSelecionado() {
     if (!modeloAprSelecionadoId) return
+    const nome = modelosApr.find(m => m.id === modeloAprSelecionadoId)?.nome ?? ''
+    if (!confirm(`Sobrescrever o modelo "${nome}" com a tabela de riscos atual? O conteúdo anterior do modelo será perdido.`)) return
     setSalvandoModeloApr(true)
     const dados = extrairDadosModeloApr(form)
     const { error } = await createClient().from('apr_modelos').update({ dados, updated_at: new Date().toISOString() }).eq('id', modeloAprSelecionadoId)
     setSalvandoModeloApr(false)
-    if (error) { console.error('Erro ao atualizar modelo de APR:', error); return }
+    if (error) { avisar({ tipo: 'erro', texto: mensagemErro(error, 'Erro ao atualizar o modelo de APR') }); return }
     await recarregarModelosApr()
+    avisar({ tipo: 'ok', texto: `Modelo "${nome}" atualizado.` })
   }
 
   return (
@@ -446,10 +555,27 @@ export default function NovoDocumentoSegurancaPage() {
               <p className="text-sm text-[#64748B]">Preencha os dados e acompanhe o documento em tempo real</p>
             </div>
           </div>
-          <button onClick={() => window.print()} className="btn-primary">
-            <Printer size={16} /> Exportar PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={limparFormulario} className="btn-secondary" title="Limpar formulário e rascunho">
+              <RotateCcw size={16} /> Limpar
+            </button>
+            <button onClick={() => window.print()} className="btn-primary">
+              <Printer size={16} /> Exportar PDF
+            </button>
+          </div>
         </div>
+
+        {rascunhoPendente && (
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm text-amber-800">
+              Há um rascunho não finalizado{rascunhoPendente.salvoEm ? ` de ${new Date(rascunhoPendente.salvoEm).toLocaleString('pt-BR')}` : ''}. Deseja continuar de onde parou?
+            </p>
+            <div className="flex gap-2 shrink-0">
+              <button onClick={descartarRascunho} className="btn-secondary text-xs px-3 py-1.5 min-h-0">Descartar</button>
+              <button onClick={restaurarRascunho} className="btn-primary text-xs px-3 py-1.5 min-h-0">Restaurar</button>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2 mt-5">
           <button
@@ -571,6 +697,7 @@ export default function NovoDocumentoSegurancaPage() {
               modeloSelecionadoId={modeloAprSelecionadoId}
               nomeNovoModelo={nomeNovoModeloApr}
               salvando={salvandoModeloApr}
+              aviso={avisoModelo}
               onSelecionar={aplicarModeloApr}
               onNomeChange={setNomeNovoModeloApr}
               onSalvarNovo={salvarComoNovoModeloApr}
@@ -586,6 +713,7 @@ export default function NovoDocumentoSegurancaPage() {
               modeloSelecionadoId={modeloPtSelecionadoId}
               nomeNovoModelo={nomeNovoModeloPt}
               salvando={salvandoModeloPt}
+              aviso={avisoModelo}
               onSelecionar={aplicarModeloPt}
               onNomeChange={setNomeNovoModeloPt}
               onSalvarNovo={salvarComoNovoModeloPt}

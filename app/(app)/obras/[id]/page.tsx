@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Search, Bell, Building2, MapPin, FileText, PlusCircle, BarChart2, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, Mail, Send, Cloud, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Building2, MapPin, FileText, PlusCircle, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, Mail, Send, Cloud, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO, Empresa, DiarioObraRelatorio } from '@/lib/types'
 import StatusChip from '@/components/StatusChip'
 import Link from 'next/link'
 import { useAccess } from '@/lib/useAccess'
+import { hojeLocal, diasEntre } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import ModalNovaObra from '@/components/ModalNovaObra'
 
 type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais' | 'equipe'
 
@@ -237,12 +240,17 @@ export default function ObraDetailPage() {
   const id = params.id as string
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('visao-geral')
-  // Permite abrir direto numa aba via ?aba=materiais (links do painel de Pendências)
+  const { can, isAdmin, profile, loading: carregandoAcesso } = useAccess()
+  // Permite abrir direto numa aba via ?aba=materiais (links do painel de Pendências).
+  // "equipe" (custo de mão de obra) só para admin — espera o perfil carregar antes de decidir.
   useEffect(() => {
     const aba = new URLSearchParams(window.location.search).get('aba') as Tab | null
-    if (aba && ['visao-geral', 'documentos', 'cronograma', 'relatorios', 'materiais', 'equipe'].includes(aba)) setTab(aba)
+    if (aba && ['visao-geral', 'documentos', 'cronograma', 'relatorios', 'materiais'].includes(aba)) setTab(aba)
   }, [])
-  const { can, isAdmin, profile } = useAccess()
+  useEffect(() => {
+    if (carregandoAcesso || !isAdmin) return
+    if (new URLSearchParams(window.location.search).get('aba') === 'equipe') setTab('equipe')
+  }, [carregandoAcesso, isAdmin])
   const podeEnviarEmail = Boolean(profile?.active)
   const [obra, setObra] = useState<Obra | null>(null)
   const [etapas, setEtapas] = useState<CronogramaEtapa[]>([])
@@ -282,6 +290,9 @@ export default function ObraDetailPage() {
   const [showAddDoc, setShowAddDoc] = useState(false)
   const [showNovaPasta, setShowNovaPasta] = useState(false)
   const [criandoSubpastaEm, setCriandoSubpastaEm] = useState<string | null>(null)
+  const [renomeandoPasta, setRenomeandoPasta] = useState<string | null>(null)
+  const [editandoDoc, setEditandoDoc] = useState<Documento | null>(null)
+  const [showEditarObra, setShowEditarObra] = useState(false)
   const [pastaParaDoc, setPastaParaDoc] = useState<string | null>(null)
   const [importandoExcel, setImportandoExcel] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -299,15 +310,23 @@ export default function ObraDetailPage() {
       const parseDate = (v: any) => {
         if (!v) return null
         if (typeof v === 'number') {
+          // Serial do Excel = dias desde 1899-12-30 em UTC; a data certa é a parte UTC (não a local)
           const d = new Date(Math.round((v - 25569) * 86400 * 1000))
-          return d.toISOString().split('T')[0]
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
         }
         const s = String(v).trim()
         if (!s) return null
         const parts = s.split(/[/\-.]/)
         if (parts.length === 3) {
-          if (parts[0].length <= 2) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
-          return `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`
+          let iso: string
+          if (parts[0].length <= 2) {
+            // dd/mm/aa ou dd/mm/aaaa — ano com 2 dígitos vira 20xx ("01/07/25" → 2025-07-01)
+            const ano = parts[2].length === 2 ? `20${parts[2]}` : parts[2]
+            iso = `${ano}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+          } else {
+            iso = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`
+          }
+          return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null
         }
         return null
       }
@@ -333,33 +352,43 @@ export default function ObraDetailPage() {
         })
 
       if (etapasParaInserir.length > 0) {
-        await supabase.from('cronograma_etapas').insert(etapasParaInserir)
+        const { error } = await supabase.from('cronograma_etapas').insert(etapasParaInserir)
+        if (error) {
+          alert(mensagemErro(error, 'Erro ao importar as etapas') + ' Nenhuma etapa foi importada.')
+          return
+        }
         await load()
         alert(`${etapasParaInserir.length} etapas importadas com sucesso!`)
       } else {
         alert('Nenhuma etapa encontrada. Verifique se o arquivo tem a coluna "Etapa" ou "Nome".')
       }
     } catch (e) {
+      console.error('Importar Excel', e)
       alert('Erro ao ler o arquivo Excel.')
+    } finally {
+      setImportandoExcel(false)
     }
-    setImportandoExcel(false)
   }
 
   async function excluirEtapa(etapaId: string) {
     if (!confirm('Excluir esta etapa?')) return
     const supabase = createClient()
-    await supabase.from('cronograma_etapas').delete().eq('id', etapaId)
+    const { error } = await supabase.from('cronograma_etapas').delete().eq('id', etapaId)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir a etapa')); return }
     load()
   }
 
   async function excluirEtapas(ids: string[]) {
     const supabase = createClient()
-    await supabase.from('cronograma_etapas').delete().in('id', ids)
+    const { error } = await supabase.from('cronograma_etapas').delete().in('id', ids)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir as etapas')); return false }
     load()
+    return true
   }
 
+  // Spinner de tela cheia só no primeiro carregamento; recargas depois de salvar
+  // acontecem em segundo plano (sem desmontar a página nem perder rolagem/filtros).
   async function load() {
-    setLoading(true)
     const supabase = createClient()
     const [obraRes, etapasRes, docsRes, pastasRes, rdosRes, materiaisRes, templatesRes] = await Promise.all([
       supabase.from('obras').select('*').eq('id', id).single(),
@@ -397,19 +426,22 @@ export default function ObraDetailPage() {
 
   async function alterarStatusObra(novoStatus: string) {
     const supabase = createClient()
-    await supabase.from('obras').update({ status: novoStatus }).eq('id', id)
+    // Só troca o chip depois que o banco confirmar
+    const { error } = await supabase.from('obras').update({ status: novoStatus }).eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao alterar o status da obra')); return }
     setObra(prev => prev ? { ...prev, status: novoStatus as Obra['status'] } : prev)
   }
 
   async function excluirMaterial(materialId: string) {
     if (!confirm('Excluir este material?')) return
     const supabase = createClient()
-    await supabase.from('obra_materiais').delete().eq('id', materialId)
+    const { error } = await supabase.from('obra_materiais').delete().eq('id', materialId)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir o material')); return }
     setMateriais(prev => prev.filter(m => m.id !== materialId))
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load() }, [id])
+  useEffect(() => { setLoading(true); load() }, [id])
   useEffect(() => { if (obra?.diario_obra_id) loadDiarioRelatorios() }, [obra?.diario_obra_id])
 
   if (loading) return (
@@ -425,16 +457,25 @@ export default function ObraDetailPage() {
     </div>
   )
 
-  // Calc time
-  const today = new Date()
-  const startDate = obra.data_inicio ? new Date(obra.data_inicio) : null
-  const endDate = obra.previsao_termino ? new Date(obra.previsao_termino) : null
-  const diasDecorridos = startDate ? Math.max(0, Math.floor((today.getTime() - startDate.getTime()) / 86400000)) : 0
-  const diasRestantes = endDate ? Math.max(0, Math.floor((endDate.getTime() - today.getTime()) / 86400000)) : 0
-  const prazoOk = endDate ? today <= endDate : true
+  // Calc time (datas 'aaaa-mm-dd' comparadas no fuso local, sem voltar um dia)
+  const hoje = hojeLocal()
+  const obraConcluida = obra.status === 'Concluída'
+  const endDate = obra.previsao_termino || null
+  // Obra concluída para de contar: sem data de conclusão gravada, conta até a previsão de término
+  const fimContagem = obraConcluida && endDate && endDate < hoje ? endDate : hoje
+  const diasDecorridos = obra.data_inicio ? Math.max(0, diasEntre(obra.data_inicio, fimContagem)) : 0
+  const diasRestantes = endDate && !obraConcluida ? Math.max(0, diasEntre(hoje, endDate)) : 0
+  const prazoOk = obraConcluida || (endDate ? hoje <= endDate : true)
 
   // Cronograma stats
   const atrasadas = etapas.filter(e => e.status === 'Atrasada').length
+  const statusPrazo = obraConcluida
+    ? { ok: true, texto: 'Obra concluída' }
+    : !prazoOk
+      ? { ok: false, texto: 'Prazo vencido' }
+      : atrasadas > 0
+        ? { ok: false, texto: `${atrasadas} etapa${atrasadas !== 1 ? 's' : ''} atrasada${atrasadas !== 1 ? 's' : ''}` }
+        : { ok: true, texto: 'Cronograma em dia' }
   const totalEtapas = etapas.length
   const progressoGeral = totalEtapas > 0 ? Math.round(etapas.reduce((s, e) => s + e.progresso, 0) / totalEtapas) : 0
 
@@ -469,40 +510,81 @@ export default function ObraDetailPage() {
   async function excluirDoc(docId: string, arquivoPath?: string) {
     if (!confirm('Excluir este documento?')) return
     const supabase = createClient()
-    if (arquivoPath) await supabase.storage.from('documentos').remove([arquivoPath])
-    await supabase.from('documentos').delete().eq('id', docId)
+    // Apaga o registro primeiro: se falhar, o arquivo continua lá e o link não quebra
+    const { error } = await supabase.from('documentos').delete().eq('id', docId)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir o documento')); return }
+    if (arquivoPath) {
+      const { error: errArq } = await supabase.storage.from('documentos').remove([arquivoPath])
+      if (errArq) console.error('Remover arquivo do documento', errArq)
+    }
     load()
   }
 
   async function criarPasta(nome: string, parentId?: string | null) {
     const supabase = createClient()
-    await supabase.from('doc_pastas').insert({ obra_id: id, nome, ordem: pastas.length, parent_id: parentId || null })
+    const { error } = await supabase.from('doc_pastas').insert({ obra_id: id, nome, ordem: pastas.length, parent_id: parentId || null })
+    if (error) { alert(mensagemErro(error, 'Erro ao criar a pasta')); return false }
     load()
+    return true
+  }
+
+  async function renomearPasta(pastaId: string, novoNome: string) {
+    const pasta = pastas.find(p => p.id === pastaId)
+    if (!pasta || pasta.nome === novoNome) return true
+    const supabase = createClient()
+    const { error } = await supabase.from('doc_pastas').update({ nome: novoNome }).eq('id', pastaId)
+    if (error) { alert(mensagemErro(error, 'Erro ao renomear a pasta')); return false }
+    // Legado: documentos que guardam a pasta pelo nome passam a apontar para o id (senão sairiam da pasta)
+    const { error: errDocs } = await supabase.from('documentos').update({ pasta: pastaId }).eq('obra_id', id).eq('pasta', pasta.nome)
+    if (errDocs) alert(mensagemErro(errDocs, 'A pasta foi renomeada, mas alguns documentos antigos não foram atualizados'))
+    load()
+    return true
   }
 
   async function excluirRdo(rdoId: string) {
     if (!confirm('Excluir este RDO? Todos os dados (clima, mão de obra, fotos, assinaturas) serão apagados permanentemente.')) return
     const supabase = createClient()
-    await supabase.from('rdos').delete().eq('id', rdoId)
+    const { error } = await supabase.from('rdos').delete().eq('id', rdoId)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir o RDO')); return }
     setRdos(prev => prev.filter(r => r.id !== rdoId))
   }
 
   async function criarNovoRdo() {
+    if (criandoRdo) return
     setCriandoRdo(true)
-    const supabase = createClient()
-    const proximoNumero = rdos.length > 0 ? Math.max(...rdos.map(r => r.numero)) + 1 : 1
-    const { data: rdo } = await supabase.from('rdos').insert({
-      obra_id: id, numero: proximoNumero, data: new Date().toISOString().split('T')[0], status: 'preenchendo',
-    }).select().single()
-    if (rdo) {
-      await supabase.from('rdo_clima').insert([
+    try {
+      const supabase = createClient()
+      // Número calculado a partir do banco logo antes de inserir (não da lista carregada),
+      // para dois usuários não criarem o mesmo "RDO #12". Com o índice único da migração
+      // 2026_10_28_lote_a.sql, um conflito vira erro 23505 e tentamos o próximo número.
+      let rdo: RDO | null = null
+      let proximoNumero = 0
+      for (let tentativa = 0; tentativa < 3 && !rdo; tentativa++) {
+        const { data: ultimo, error: errNum } = await supabase.from('rdos').select('numero')
+          .eq('obra_id', id).order('numero', { ascending: false }).limit(1).maybeSingle()
+        if (errNum) { alert(mensagemErro(errNum, 'Erro ao criar o RDO')); return }
+        proximoNumero = (ultimo?.numero ?? 0) + 1
+        const { data, error } = await supabase.from('rdos').insert({
+          obra_id: id, numero: proximoNumero, data: hojeLocal(), status: 'preenchendo',
+        }).select().single()
+        if (!error && data) { rdo = data as RDO; break }
+        if (error?.code !== '23505') { alert(mensagemErro(error, 'Erro ao criar o RDO')); return }
+      }
+      if (!rdo) {
+        alert(`Outra pessoa está criando RDOs nesta obra agora (o RDO #${proximoNumero} já existe). Atualize a página e tente de novo.`)
+        return
+      }
+      const { error: errClima } = await supabase.from('rdo_clima').insert([
         { rdo_id: rdo.id, periodo: 'manha', ativo: true, tempo: 'claro', condicao: 'praticavel' },
         { rdo_id: rdo.id, periodo: 'tarde', ativo: true, tempo: 'claro', condicao: 'praticavel' },
         { rdo_id: rdo.id, periodo: 'noite', ativo: false },
       ])
+      // O RDO já existe: avisa e abre mesmo assim, para o clima ser preenchido na tela dele
+      if (errClima) alert(mensagemErro(errClima, `O RDO #${rdo.numero} foi criado, mas o clima padrão não foi gravado`) + ' Preencha o clima na tela do RDO.')
       router.push(`/obras/${id}/rdo/${rdo.id}`)
+    } finally {
+      setCriandoRdo(false)
     }
-    setCriandoRdo(false)
   }
 
   async function loadDiarioRelatorios() {
@@ -564,12 +646,14 @@ export default function ObraDetailPage() {
     // Desvincular docs desta pasta e subpastas
     const todosIds = descendantIds(pastaId)
     for (const pid of todosIds) {
-      await supabase.from('documentos').update({ pasta: null }).eq('obra_id', id).eq('pasta', pid)
+      const { error: e1 } = await supabase.from('documentos').update({ pasta: null }).eq('obra_id', id).eq('pasta', pid)
       // legado: pasta guardada como nome
       const p = pastas.find(pp => pp.id === pid)
-      if (p) await supabase.from('documentos').update({ pasta: null }).eq('obra_id', id).eq('pasta', p.nome)
+      const { error: e2 } = p ? await supabase.from('documentos').update({ pasta: null }).eq('obra_id', id).eq('pasta', p.nome) : { error: null }
+      if (e1 || e2) { alert(mensagemErro(e1 ?? e2, 'Erro ao desvincular os documentos da pasta') + ' A pasta não foi excluída.'); load(); return }
     }
-    await supabase.from('doc_pastas').delete().eq('id', pastaId)
+    const { error } = await supabase.from('doc_pastas').delete().eq('id', pastaId)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir a pasta')); load(); return }
     if (descendantIds(pastaId).includes(pastaAtiva)) setPastaAtiva('__todas__')
     load()
   }
@@ -610,26 +694,41 @@ export default function ObraDetailPage() {
 
   async function confirmarEnvioEmail() {
     if (!emailModal) return
+    // A API envia para um único destinatário: valida o formato antes de mandar
+    const para = emailModal.to.trim()
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(para)) {
+      alert(/[,;\s]/.test(para)
+        ? 'Informe apenas um e-mail no campo "Para".'
+        : 'O e-mail do campo "Para" parece inválido. Confira e tente de novo.')
+      return
+    }
     setEnviandoEmail(true)
-    const res = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: emailModal.to, subject: emailModal.assunto, body: emailModal.corpo,
-        obraId: id, templateId: emailModal.templateId, templateNome: emailModal.templateNome,
-      }),
-    })
-    setEnviandoEmail(false)
-    if (res.ok) {
-      const { copiaPara } = await res.json()
-      setEmailModal(null)
-      loadEmailsEnviados()
-      // Polling curto: o Resend costuma confirmar a entrega em poucos segundos.
-      setTimeout(() => loadEmailsEnviados(true), 8000)
-      alert(`Email enviado para ${emailModal.to}.\n\nO envio sai pelo sistema da MARV (não pelo Gmail), por isso não aparece em "Enviados". ${copiaPara ? `Uma cópia oculta foi enviada para ${copiaPara} e o envio` : 'O envio'} fica registrado no histórico da obra (botão Enviar Email).`)
-    } else {
-      const { error } = await res.json()
-      alert(`Erro ao enviar: ${error}`)
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: para, subject: emailModal.assunto, body: emailModal.corpo,
+          obraId: id, templateId: emailModal.templateId, templateNome: emailModal.templateNome,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        const { copiaPara } = json
+        setEmailModal(null)
+        loadEmailsEnviados()
+        // Polling curto: o Resend costuma confirmar a entrega em poucos segundos.
+        setTimeout(() => loadEmailsEnviados(true), 8000)
+        alert(`Email enviado para ${para}.\n\nO envio sai pelo sistema da MARV (não pelo Gmail), por isso não aparece em "Enviados". ${copiaPara ? `Uma cópia oculta foi enviada para ${copiaPara} e o envio` : 'O envio'} fica registrado no histórico da obra (botão Enviar Email).`)
+      } else {
+        console.error('Enviar email', json)
+        // A mensagem do provedor vem em inglês: vai para o console, na tela fica a explicação
+        alert('Não foi possível enviar o e-mail. Confira o destinatário e tente de novo em instantes.')
+      }
+    } catch (e) {
+      alert(mensagemErro(e as Error, 'Erro ao enviar o e-mail'))
+    } finally {
+      setEnviandoEmail(false)
     }
   }
 
@@ -712,18 +811,15 @@ export default function ObraDetailPage() {
           </div>
         )}
 
-        <div className={`${podeEnviarEmail && emailTemplates.length > 0 ? '' : 'ml-auto'} hidden md:flex items-center gap-3`}>
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-            <input placeholder="Buscar..." className="pl-9 pr-4 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-sm w-52 focus:outline-none focus:border-[#4F7CFF] transition-colors" />
-          </div>
-
-          <button className="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
-            <Bell size={18} className="text-[#64748B]" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#4F7CFF] rounded-full" />
-          </button>
-          <div className="w-8 h-8 rounded-full bg-[#4F7CFF] text-white text-xs font-semibold flex items-center justify-center">MG</div>
-        </div>
+        {/* Editar obra (cadastro sempre editável) */}
+        <button
+          onClick={() => setShowEditarObra(true)}
+          aria-label="Editar obra"
+          title="Editar obra"
+          className={`${podeEnviarEmail && emailTemplates.length > 0 ? '' : 'ml-auto'} shrink-0 flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-[#E2E8F0] text-[#374151] hover:bg-[#F1F5F9] text-sm font-medium rounded-lg transition-colors`}>
+          <Pencil size={14} />
+          <span className="hidden md:inline">Editar obra</span>
+        </button>
       </header>
 
       {/* Tabs */}
@@ -833,17 +929,17 @@ export default function ObraDetailPage() {
                   </div>
                 </div>
 
-                <div className={`flex items-center gap-2 p-2.5 rounded-lg mb-2 ${prazoOk ? 'bg-emerald-50' : 'bg-red-50'}`}>
-                  {prazoOk
+                <div className={`flex items-center gap-2 p-2.5 rounded-lg mb-2 ${statusPrazo.ok ? 'bg-emerald-50' : prazoOk ? 'bg-amber-50' : 'bg-red-50'}`}>
+                  {statusPrazo.ok
                     ? <CheckCircle2 size={14} className="text-emerald-500" />
-                    : <AlertTriangle size={14} className="text-red-500" />
+                    : <AlertTriangle size={14} className={prazoOk ? 'text-amber-500' : 'text-red-500'} />
                   }
-                  <span className={`text-xs font-medium ${prazoOk ? 'text-emerald-700' : 'text-red-700'}`}>
-                    Status do Prazo: {prazoOk ? 'Cronograma em dia' : 'Prazo vencido'}
+                  <span className={`text-xs font-medium ${statusPrazo.ok ? 'text-emerald-700' : prazoOk ? 'text-amber-700' : 'text-red-700'}`}>
+                    Status do Prazo: {statusPrazo.texto}
                   </span>
                 </div>
 
-                {endDate && (
+                {endDate && !obraConcluida && (
                   <div className="flex items-center gap-2 p-2.5 bg-amber-50 rounded-lg">
                     <Clock size={14} className="text-amber-500" />
                     <span className="text-xs font-medium text-amber-700">
@@ -856,7 +952,7 @@ export default function ObraDetailPage() {
               {/* Ações rápidas */}
               <div className="card">
                 <h3 className="font-syne font-semibold text-sm text-[#0F172A] mb-3">Ações Rápidas</h3>
-                <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setTab('documentos')} className="flex flex-col items-center gap-1.5 p-3 rounded-lg bg-[#F8FAFC] hover:bg-[#EEF2FF] hover:text-[#4F7CFF] transition-colors text-[#64748B]">
                     <FileText size={18} />
                     <span className="text-xs font-medium">Documentos</span>
@@ -866,10 +962,6 @@ export default function ObraDetailPage() {
                     <span className="text-xs font-medium">Nova Etapa</span>
                   </button>
                 </div>
-                <button className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#4F7CFF] hover:bg-[#3D68F0] text-white text-sm font-semibold rounded-lg transition-colors">
-                  <BarChart2 size={16} />
-                  Gerar Relatório Geral
-                </button>
               </div>
             </div>
           </div>
@@ -883,7 +975,7 @@ export default function ObraDetailPage() {
               <div className="card p-3">
                 <div className="flex items-center justify-between mb-3 px-1">
                   <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wide">Pastas</span>
-                  <button onClick={() => setShowNovaPasta(true)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#EEF2FF] transition-colors" title="Nova pasta">
+                  <button onClick={() => setShowNovaPasta(true)} className="w-9 h-9 -my-1.5 -mr-1.5 flex items-center justify-center rounded hover:bg-[#EEF2FF] transition-colors" title="Nova pasta" aria-label="Nova pasta">
                     <Plus size={14} className="text-[#4F7CFF]" />
                   </button>
                 </div>
@@ -909,6 +1001,13 @@ export default function ObraDetailPage() {
                   return (
                     <div key={pasta.id}>
                       {/* Pasta raiz */}
+                      {renomeandoPasta === pasta.id ? (
+                        <NovaPastaInline
+                          inicial={pasta.nome}
+                          onConfirm={async nome => { if (await renomearPasta(pasta.id, nome)) setRenomeandoPasta(null) }}
+                          onCancel={() => setRenomeandoPasta(null)}
+                        />
+                      ) : (
                       <div className="group/pasta relative flex items-center">
                         {temFilhos && (
                           <button onClick={() => togglePasta(pasta.id)} className="shrink-0 w-4 h-6 flex items-center justify-center text-[#94A3B8] hover:text-[#64748B]">
@@ -923,22 +1022,32 @@ export default function ObraDetailPage() {
                           <span className="flex-1 text-left truncate text-xs">{pasta.nome}</span>
                           <span className="text-[10px] text-[#94A3B8]">{qtd}</span>
                         </button>
-                        {/* Ações hover: add subpasta + excluir */}
-                        <div className="absolute right-0 top-1/2 -translate-y-1/2 hidden group-hover/pasta:flex items-center gap-0.5 bg-white pl-1">
+                        {/* Ações: add subpasta + renomear + excluir (no celular sempre visíveis; no desktop no hover) */}
+                        <div className="flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover/pasta:flex [@media(hover:hover)]:absolute right-0 top-1/2 [@media(hover:hover)]:-translate-y-1/2 items-center gap-0.5 bg-white pl-1 shrink-0">
                           <button
                             title="Nova subpasta"
+                            aria-label={`Nova subpasta em ${pasta.nome}`}
                             onClick={() => { setCriandoSubpastaEm(pasta.id); setPastasAbertas(p => ({ ...p, [pasta.id]: true })) }}
-                            className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                            <Plus size={11} />
+                            className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                            <Plus size={13} />
+                          </button>
+                          <button
+                            title="Renomear pasta"
+                            aria-label={`Renomear pasta ${pasta.nome}`}
+                            onClick={() => setRenomeandoPasta(pasta.id)}
+                            className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                            <Pencil size={12} />
                           </button>
                           <button
                             title="Excluir pasta"
+                            aria-label={`Excluir pasta ${pasta.nome}`}
                             onClick={() => excluirPasta(pasta.id, pasta.nome)}
-                            className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                            <Trash2 size={10} />
+                            className="w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                            <Trash2 size={12} />
                           </button>
                         </div>
                       </div>
+                      )}
 
                       {/* Subpastas */}
                       {expandida && (
@@ -946,6 +1055,14 @@ export default function ObraDetailPage() {
                           {filhos.map(sub => {
                             const subQtd = docs.filter(d => resolveDocPastaId(d) === sub.id).length
                             const subAtiva = pastaAtiva === sub.id
+                            if (renomeandoPasta === sub.id) return (
+                              <NovaPastaInline
+                                key={sub.id}
+                                inicial={sub.nome}
+                                onConfirm={async nome => { if (await renomearPasta(sub.id, nome)) setRenomeandoPasta(null) }}
+                                onCancel={() => setRenomeandoPasta(null)}
+                              />
+                            )
                             return (
                               <div key={sub.id} className="group/sub relative flex items-center">
                                 <button
@@ -956,12 +1073,20 @@ export default function ObraDetailPage() {
                                   <span className="flex-1 text-left truncate">{sub.nome}</span>
                                   <span className="text-[10px] text-[#94A3B8]">{subQtd}</span>
                                 </button>
-                                <div className="absolute right-0 top-1/2 -translate-y-1/2 hidden group-hover/sub:flex items-center bg-white pl-0.5">
+                                <div className="flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover/sub:flex [@media(hover:hover)]:absolute right-0 top-1/2 [@media(hover:hover)]:-translate-y-1/2 items-center gap-0.5 bg-white pl-0.5 shrink-0">
+                                  <button
+                                    title="Renomear subpasta"
+                                    aria-label={`Renomear subpasta ${sub.nome}`}
+                                    onClick={() => setRenomeandoPasta(sub.id)}
+                                    className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                                    <Pencil size={12} />
+                                  </button>
                                   <button
                                     title="Excluir subpasta"
+                                    aria-label={`Excluir subpasta ${sub.nome}`}
                                     onClick={() => excluirPasta(sub.id, sub.nome)}
-                                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                                    <Trash2 size={10} />
+                                    className="w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                                    <Trash2 size={12} />
                                   </button>
                                 </div>
                               </div>
@@ -971,7 +1096,7 @@ export default function ObraDetailPage() {
                           {/* Input inline de nova subpasta */}
                           {criandoSubpastaEm === pasta.id && (
                             <NovaPastaInline
-                              onConfirm={nome => { criarPasta(nome, pasta.id); setCriandoSubpastaEm(null) }}
+                              onConfirm={async nome => { if (await criarPasta(nome, pasta.id)) setCriandoSubpastaEm(null) }}
                               onCancel={() => setCriandoSubpastaEm(null)}
                             />
                           )}
@@ -984,7 +1109,7 @@ export default function ObraDetailPage() {
                 {/* Nova pasta raiz inline */}
                 {showNovaPasta && (
                   <NovaPastaInline
-                    onConfirm={nome => { criarPasta(nome); setShowNovaPasta(false) }}
+                    onConfirm={async nome => { if (await criarPasta(nome)) setShowNovaPasta(false) }}
                     onCancel={() => setShowNovaPasta(false)}
                   />
                 )}
@@ -1037,7 +1162,7 @@ export default function ObraDetailPage() {
                         </button>
                         {aberta && (
                           <>
-                            {docsNaPasta.length > 0 && <DocTable docs={docsNaPasta} onDelete={excluirDoc} />}
+                            {docsNaPasta.length > 0 && <DocTable docs={docsNaPasta} onDelete={excluirDoc} onEdit={setEditandoDoc} />}
                             {filhos.map(sub => {
                               const docsSub = docs.filter(d => resolveDocPastaId(d) === sub.id)
                               if (docsSub.length === 0) return null
@@ -1053,7 +1178,7 @@ export default function ObraDetailPage() {
                                     <span className="text-xs font-medium text-[#374151]">{sub.nome}</span>
                                     <span className="text-[10px] text-[#94A3B8] ml-auto">{docsSub.length} arquivo{docsSub.length !== 1 ? 's' : ''}</span>
                                   </button>
-                                  {subAberta && <DocTable docs={docsSub} onDelete={excluirDoc} />}
+                                  {subAberta && <DocTable docs={docsSub} onDelete={excluirDoc} onEdit={setEditandoDoc} />}
                                 </div>
                               )
                             })}
@@ -1076,7 +1201,7 @@ export default function ObraDetailPage() {
                           <span className="font-syne font-semibold text-sm text-[#64748B]">Sem pasta</span>
                           <span className="text-xs text-[#94A3B8] ml-auto">{semPasta.length} arquivo{semPasta.length !== 1 ? 's' : ''}</span>
                         </button>
-                        {aberta && <DocTable docs={semPasta} onDelete={excluirDoc} />}
+                        {aberta && <DocTable docs={semPasta} onDelete={excluirDoc} onEdit={setEditandoDoc} />}
                       </div>
                     )
                   })()}
@@ -1092,7 +1217,7 @@ export default function ObraDetailPage() {
                 </div>
               ) : (
                 <div className="card p-0 overflow-hidden">
-                  <DocTable docs={docsFiltrados} onDelete={excluirDoc} />
+                  <DocTable docs={docsFiltrados} onDelete={excluirDoc} onEdit={setEditandoDoc} />
                   {docsFiltrados.length === 0 && (
                     <div className="text-center py-10">
                       <p className="text-sm text-[#94A3B8] mb-3">Nenhum documento nesta pasta.</p>
@@ -1326,7 +1451,7 @@ export default function ObraDetailPage() {
                                   Abrir
                                 </Link>
                                 <button onClick={() => excluirRdo(rdo.id)}
-                                  className="text-[#94A3B8] hover:text-red-500 p-1 rounded transition-colors" title="Excluir RDO">
+                                  className="text-[#94A3B8] hover:text-red-500 p-2 rounded transition-colors" title="Excluir RDO" aria-label={`Excluir RDO #${rdo.numero}`}>
                                   <Trash2 size={14} />
                                 </button>
                               </div>
@@ -1373,7 +1498,7 @@ export default function ObraDetailPage() {
                         } else {
                           alert(parsed?.error ?? 'Não foi possível extrair dados desta NF.')
                         }
-                      } catch (err) { alert('Erro: ' + String(err)) }
+                      } catch (err) { alert(mensagemErro(err as Error, 'Erro ao ler o orçamento')) }
                       setImportandoNF(false)
                       e.target.value = ''
                     }} />
@@ -1423,7 +1548,7 @@ export default function ObraDetailPage() {
         )}
 
         {/* ===== EQUIPE ===== */}
-        {tab === 'equipe' && (
+        {tab === 'equipe' && isAdmin && (
           <AbaEquipe obraId={id} />
         )}
       </div>
@@ -1462,7 +1587,7 @@ export default function ObraDetailPage() {
                 </div>
                 <h2 className="font-syne font-semibold text-[#0F172A]">Novo Email</h2>
               </div>
-              <button onClick={() => setEmailModal(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
+              <button onClick={() => setEmailModal(null)} aria-label="Fechar" title="Fechar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
                 <X size={16} className="text-[#64748B]" />
               </button>
             </div>
@@ -1481,6 +1606,9 @@ export default function ObraDetailPage() {
                   className="flex-1 text-sm text-[#374151] focus:outline-none bg-transparent"
                   value={emailModal.to}
                   onChange={e => setEmailModal(m => m ? { ...m, to: e.target.value } : m)}
+                  type="email"
+                  inputMode="email"
+                  autoCapitalize="none"
                   placeholder="destinatario@email.com"
                 />
               </div>
@@ -1578,6 +1706,26 @@ export default function ObraDetailPage() {
         />
       )}
 
+      {/* Modal Editar Doc */}
+      {editandoDoc && (
+        <ModalEditarDoc
+          doc={editandoDoc}
+          pastaAtualId={resolveDocPastaId(editandoDoc)}
+          pastas={pastas}
+          onClose={() => setEditandoDoc(null)}
+          onSaved={() => { setEditandoDoc(null); load() }}
+        />
+      )}
+
+      {/* Modal Editar Obra */}
+      {showEditarObra && (
+        <ModalNovaObra
+          obra={obra}
+          onClose={() => setShowEditarObra(false)}
+          onCreated={() => { setShowEditarObra(false); load() }}
+        />
+      )}
+
       {/* Modal Add Doc */}
       {showAddDoc && (
         <ModalAddDoc
@@ -1653,9 +1801,14 @@ function TomadorNFCard({ obraId, tomadorId }: { obraId: string; tomadorId?: stri
 
   async function salvar() {
     setSalvando(true)
-    await createClient().from('obras').update({ tomador_empresa_id: selecionado || null }).eq('id', obraId)
-    const { data } = await createClient().from('empresas').select('*').eq('id', selecionado).single()
-    setTomador(data as Empresa | null)
+    const { error } = await createClient().from('obras').update({ tomador_empresa_id: selecionado || null }).eq('id', obraId)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar o tomador da NF')); setSalvando(false); return }
+    if (selecionado) {
+      const { data } = await createClient().from('empresas').select('*').eq('id', selecionado).single()
+      setTomador(data as Empresa | null)
+    } else {
+      setTomador(null)
+    }
     setSalvando(false)
     setEditando(false)
   }
@@ -1743,7 +1896,7 @@ function ModalImportacaoExcel({ importando, onClose, onImport }: {
               <p className="text-[11px] text-[#64748B]">Monte sua planilha seguindo a estrutura abaixo</p>
             </div>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         {/* Body */}
@@ -1867,6 +2020,7 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
   const [status, setStatus] = useState<StatusEtapa>(etapa?.status ?? 'Pendente')
   const [cor, setCor] = useState(etapa?.cor ?? '#4F7CFF')
   const [loading, setLoading] = useState(false)
+  const [erro, setErro] = useState('')
 
   const STATUS_OPS: StatusEtapa[] = ['Pendente', 'Em Andamento', 'Concluída', 'Atrasada']
   const STATUS_CLS: Record<StatusEtapa, string> = {
@@ -1879,6 +2033,8 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!titulo.trim()) return
+    if (dataInicio && dataFim && dataFim < dataInicio) { setErro('A Data Fim não pode ser antes da Data Início.'); return }
+    setErro('')
     setLoading(true)
     const supabase = createClient()
     const payload = {
@@ -1893,20 +2049,19 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
       cor,
       ordem: etapa?.ordem ?? ordem,
     }
-    if (editing) {
-      await supabase.from('cronograma_etapas').update(payload).eq('id', etapa!.id)
-    } else {
-      await supabase.from('cronograma_etapas').insert(payload)
-    }
+    const { error } = editing
+      ? await supabase.from('cronograma_etapas').update(payload).eq('id', etapa!.id)
+      : await supabase.from('cronograma_etapas').insert(payload)
+    if (error) { setErro(mensagemErro(error, 'Erro ao salvar a etapa')); setLoading(false); return }
     onSaved()
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-semibold text-[#0F172A]">{editing ? 'Editar Etapa' : 'Nova Etapa'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-[80px_1fr] gap-3">
@@ -1940,7 +2095,7 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
             </div>
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Data Fim</label>
-              <input type="date" className="field" value={dataFim} onChange={e => setDataFim(e.target.value)} />
+              <input type="date" className="field" value={dataFim} min={dataInicio || undefined} onChange={e => setDataFim(e.target.value)} />
             </div>
           </div>
 
@@ -1950,7 +2105,9 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
               onChange={e => {
                 const v = Number(e.target.value)
                 setProgresso(v)
+                // "Atrasada" escolhida à mão continua até a etapa chegar a 100%
                 if (v === 100) setStatus('Concluída')
+                else if (status === 'Atrasada') return
                 else if (v > 0) setStatus('Em Andamento')
                 else setStatus('Pendente')
               }}
@@ -1962,6 +2119,7 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
             <div className="flex gap-2 flex-wrap">
               {GANTT_COLORS.map(c => (
                 <button key={c} type="button" onClick={() => setCor(c)}
+                  aria-label={`Cor ${c}`} title={`Cor ${c}`}
                   className="w-7 h-7 rounded-full border-2 transition-all"
                   style={{
                     background: c,
@@ -1978,9 +2136,11 @@ function ModalEtapa({ obraId, ordem, etapa, onClose, onSaved }: {
             </div>
           </div>
 
+          {erro && <p className="text-sm text-red-500">{erro}</p>}
+
           <div className="flex justify-end gap-3 pt-2 border-t border-[#E2E8F0]">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
-            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : editing ? 'Salvar Alterações' : 'Adicionar Etapa'}</button>
+            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando…' : editing ? 'Salvar Alterações' : 'Adicionar Etapa'}</button>
           </div>
         </form>
       </div>
@@ -2015,26 +2175,45 @@ function ModalAddDoc({ obraId, pastaInicialId, pastas, onClose, onCreated }: {
     setError('')
     const supabase = createClient()
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      setProgresso(Math.round(((i) / files.length) * 100))
-      const path = `${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-      const { error: uploadError } = await supabase.storage.from('documentos').upload(path, file)
-      if (uploadError) { setError(uploadError.message); setLoading(false); return }
-      const { data: urlData } = supabase.storage.from('documentos').getPublicUrl(path)
-      await supabase.from('documentos').insert({
-        obra_id: obraId,
-        nome: file.name.replace(/\.[^/.]+$/, ''),
-        categoria,
-        pasta: pastaId || null,
-        fornecedor: fornecedor || null,
-        data_documento: dataDoc || null,
-        arquivo_url: urlData.publicUrl,
-        arquivo_path: path,
-      })
+    // Cada arquivo enviado com sucesso sai da fila: se um falhar no meio, o reenvio
+    // manda só os que faltam (sem duplicar os primeiros).
+    let enviados = 0
+    const fila = [...files]
+    try {
+      for (let i = 0; i < fila.length; i++) {
+        const file = fila[i]
+        setProgresso(Math.round(((i) / fila.length) * 100))
+        const path = `${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+        const { error: uploadError } = await supabase.storage.from('documentos').upload(path, file)
+        if (uploadError) { setError(mensagemErro(uploadError, `Erro ao enviar "${file.name}"`)); return }
+        const { data: urlData } = supabase.storage.from('documentos').getPublicUrl(path)
+        const { error: insertError } = await supabase.from('documentos').insert({
+          obra_id: obraId,
+          nome: file.name.replace(/\.[^/.]+$/, ''),
+          categoria,
+          pasta: pastaId || null,
+          fornecedor: fornecedor || null,
+          data_documento: dataDoc || null,
+          arquivo_url: urlData.publicUrl,
+          arquivo_path: path,
+        })
+        if (insertError) {
+          // Sem o registro o arquivo ficaria órfão no storage
+          await supabase.storage.from('documentos').remove([path])
+          setError(mensagemErro(insertError, `Erro ao salvar "${file.name}"`))
+          return
+        }
+        enviados++
+        setFiles(f => f.filter(x => x !== file))
+      }
+      setProgresso(100)
+      onCreated()
+    } finally {
+      setLoading(false)
+      if (enviados > 0 && enviados < fila.length) {
+        setError(e => `${enviados} de ${fila.length} arquivo(s) já foram enviados e saíram da lista. ${e}`)
+      }
     }
-    setProgresso(100)
-    onCreated()
   }
 
   return (
@@ -2042,7 +2221,7 @@ function ModalAddDoc({ obraId, pastaInicialId, pastas, onClose, onCreated }: {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">Adicionar Documentos</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Drop zone */}
@@ -2064,7 +2243,7 @@ function ModalAddDoc({ obraId, pastaInicialId, pastas, onClose, onCreated }: {
                     <FileText size={14} className="text-[#4F7CFF] shrink-0" />
                     <span className="text-xs text-[#374151] flex-1 truncate">{f.name}</span>
                     <span className="text-xs text-[#94A3B8] shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button type="button" onClick={() => removeFile(idx)} className="text-[#94A3B8] hover:text-red-400">
+                    <button type="button" onClick={() => removeFile(idx)} disabled={loading} aria-label={`Tirar ${f.name} da lista`} title="Tirar da lista" className="p-2 -m-1.5 text-[#94A3B8] hover:text-red-400">
                       <X size={12} />
                     </button>
                   </div>
@@ -2159,7 +2338,7 @@ function getExtInfo(nome: string, url?: string): { ext: string; bg: string; text
   return { ext: ext || '—', ...(map[ext] ?? { bg: 'bg-gray-100', text: 'text-gray-500' }) }
 }
 
-function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string, path?: string) => void }) {
+function DocTable({ docs, onDelete, onEdit }: { docs: Documento[]; onDelete: (id: string, path?: string) => void; onEdit: (doc: Documento) => void }) {
   const categoriaConfig: Record<string, { bg: string; text: string }> = {
     Financeiro: { bg: 'bg-blue-50', text: 'text-blue-700' },
     Técnico: { bg: 'bg-teal-50', text: 'text-teal-700' },
@@ -2199,7 +2378,17 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
                 )}
                 <button
                   type="button"
+                  aria-label={`Editar ${doc.nome}`}
+                  title="Editar documento"
+                  onClick={() => onEdit(doc)}
+                  className="w-10 h-10 shrink-0 inline-flex items-center justify-center rounded-lg border border-[#E2E8F0] text-[#4F7CFF]"
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  type="button"
                   aria-label={`Excluir ${doc.nome}`}
+                  title="Excluir documento"
                   onClick={() => onDelete(doc.id, doc.arquivo_path)}
                   className="w-10 h-10 shrink-0 inline-flex items-center justify-center rounded-lg border border-red-100 text-red-500"
                 >
@@ -2252,8 +2441,18 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
                     </a>
                   )}
                   <button
+                    onClick={() => onEdit(doc)}
+                    aria-label={`Editar ${doc.nome}`}
+                    title="Editar documento"
+                    className="p-2 rounded opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100 transition-opacity text-[#94A3B8] hover:text-[#4F7CFF] hover:bg-[#EEF2FF]"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button
                     onClick={() => onDelete(doc.id, doc.arquivo_path)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-[#94A3B8] hover:text-red-500"
+                    aria-label={`Excluir ${doc.nome}`}
+                    title="Excluir documento"
+                    className="p-2 rounded opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100 transition-opacity text-[#94A3B8] hover:text-red-500 hover:bg-red-50"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -2268,22 +2467,119 @@ function DocTable({ docs, onDelete }: { docs: Documento[]; onDelete: (id: string
   )
 }
 
-// Input inline de nova pasta
-function NovaPastaInline({ onConfirm, onCancel }: { onConfirm: (nome: string) => void; onCancel: () => void }) {
-  const [nome, setNome] = useState('')
+// Input inline de nova pasta (ou renomear, com `inicial`). onConfirm devolve false se falhou → mantém o campo
+function NovaPastaInline({ onConfirm, onCancel, inicial = '' }: { onConfirm: (nome: string) => unknown; onCancel: () => void; inicial?: string }) {
+  const [nome, setNome] = useState(inicial)
+  const [salvando, setSalvando] = useState(false)
+  async function confirmar() {
+    if (!nome.trim() || salvando) return
+    setSalvando(true)
+    try { await onConfirm(nome.trim()) } finally { setSalvando(false) }
+  }
   return (
     <div className="mt-2 flex items-center gap-1">
       <Folder size={14} className="text-[#94A3B8] shrink-0" />
       <input
         autoFocus
-        className="flex-1 text-sm px-2 py-1 border border-[#4F7CFF] rounded-lg focus:outline-none"
+        className="flex-1 min-w-0 text-sm px-2 py-1 border border-[#4F7CFF] rounded-lg focus:outline-none"
         placeholder="Nome da pasta"
         value={nome}
+        disabled={salvando}
         onChange={e => setNome(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter' && nome.trim()) onConfirm(nome.trim()); if (e.key === 'Escape') onCancel() }}
+        onKeyDown={e => { if (e.key === 'Enter') confirmar(); if (e.key === 'Escape') onCancel() }}
       />
-      <button type="button" onClick={() => nome.trim() && onConfirm(nome.trim())} className="text-[#4F7CFF] hover:text-[#3D68F0]"><CheckCircle2 size={16} /></button>
-      <button type="button" onClick={onCancel} className="text-[#94A3B8] hover:text-[#64748B]"><X size={14} /></button>
+      <button type="button" onClick={confirmar} disabled={salvando} aria-label={inicial ? 'Salvar nome' : 'Criar pasta'} title={inicial ? 'Salvar nome' : 'Criar pasta'} className="p-1.5 text-[#4F7CFF] hover:text-[#3D68F0] disabled:opacity-50">
+        {salvando ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+      </button>
+      <button type="button" onClick={onCancel} aria-label="Cancelar" title="Cancelar" className="p-1.5 text-[#94A3B8] hover:text-[#64748B]"><X size={14} /></button>
+    </div>
+  )
+}
+
+// Editar dados de um documento já enviado (nome, pasta, categoria, fornecedor, data)
+function ModalEditarDoc({ doc, pastaAtualId, pastas, onClose, onSaved }: {
+  doc: Documento; pastaAtualId: string | null; pastas: DocPasta[]; onClose: () => void; onSaved: () => void
+}) {
+  const [nome, setNome] = useState(doc.nome)
+  const [pastaId, setPastaId] = useState<string>(pastaAtualId ?? '')
+  const [categoria, setCategoria] = useState<CategoriaDoc>(doc.categoria)
+  const [fornecedor, setFornecedor] = useState(doc.fornecedor ?? '')
+  const [dataDoc, setDataDoc] = useState(doc.data_documento ?? '')
+  const [salvando, setSalvando] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!nome.trim()) { setError('Informe o nome do documento.'); return }
+    setSalvando(true)
+    setError('')
+    const { error: err } = await createClient().from('documentos').update({
+      nome: nome.trim(),
+      pasta: pastaId || null,
+      categoria,
+      fornecedor: fornecedor.trim() || null,
+      data_documento: dataDoc || null,
+    }).eq('id', doc.id)
+    if (err) { setError(mensagemErro(err, 'Erro ao salvar o documento')); setSalvando(false); return }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
+          <h2 className="font-syne font-semibold text-[#0F172A]">Editar Documento</h2>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[#374151] mb-1.5">Nome *</label>
+            <input className="field" value={nome} onChange={e => setNome(e.target.value)} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Pasta</label>
+              <select className="field" value={pastaId} onChange={e => setPastaId(e.target.value)}>
+                <option value="">— Sem pasta —</option>
+                {pastas.filter(p => !p.parent_id).map(p => (
+                  <optgroup key={p.id} label={p.nome}>
+                    <option value={p.id}>{p.nome}</option>
+                    {pastas.filter(s => s.parent_id === p.id).map(s => (
+                      <option key={s.id} value={s.id}>{'  ↳ ' + s.nome}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Categoria</label>
+              <select className="field" value={categoria} onChange={e => setCategoria(e.target.value as CategoriaDoc)}>
+                <option value="Financeiro">Financeiro</option>
+                <option value="Técnico">Técnico</option>
+                <option value="Jurídico">Jurídico</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Fornecedor</label>
+              <input className="field" value={fornecedor} onChange={e => setFornecedor(e.target.value)} placeholder="Opcional" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#374151] mb-1.5">Data do Documento</label>
+              <input type="date" className="field" value={dataDoc} onChange={e => setDataDoc(e.target.value)} />
+            </div>
+          </div>
+
+          {error && <p className="text-sm text-red-500">{error}</p>}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
+            <button type="submit" disabled={salvando} className="btn-primary">{salvando ? 'Salvando…' : 'Salvar Alterações'}</button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -2459,9 +2755,9 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
                   <td className="px-3 py-2.5 text-sm font-medium text-[#0F172A]">{m.valor_total != null ? fmtMoeda(m.valor_total) : '—'}</td>
                   <td className="px-3 py-2.5 text-xs text-[#64748B]">{m.data_chegada ? fmt(m.data_chegada) : m.data_prevista_chegada ? `prev. ${fmt(m.data_prevista_chegada)}` : '—'}</td>
                   <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => onEdit(m)} className="text-[#94A3B8] hover:text-[#4F7CFF] p-1 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={12} /></button>
-                      <button onClick={() => onDelete(m)} className="text-[#94A3B8] hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button>
+                    <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button onClick={() => onEdit(m)} aria-label={`Editar ${m.descricao}`} title="Editar" className="text-[#94A3B8] hover:text-[#4F7CFF] p-2 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={13} /></button>
+                      <button onClick={() => onDelete(m)} aria-label={`Excluir ${m.descricao}`} title="Excluir" className="text-[#94A3B8] hover:text-red-500 p-2 rounded hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
                     </div>
                   </td>
                 </tr>
@@ -2501,7 +2797,7 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
   etapas: CronogramaEtapa[]
   onEdit: (e: CronogramaEtapa) => void
   onDelete: (id: string) => void
-  onDeleteMany: (ids: string[]) => void
+  onDeleteMany: (ids: string[]) => Promise<boolean>
   onProgressUpdate: () => void
 }) {
   const [dayW, setDayW] = useState(22)
@@ -2517,10 +2813,10 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
   function toggleAll() {
     setSelecionadas(prev => prev.size === etapas.length ? new Set() : new Set(etapas.map(e => e.id)))
   }
-  function excluirSelecionadas() {
+  async function excluirSelecionadas() {
     if (!confirm(`Excluir ${selecionadas.size} etapa${selecionadas.size > 1 ? 's' : ''} selecionada${selecionadas.size > 1 ? 's' : ''}?`)) return
-    onDeleteMany(Array.from(selecionadas))
-    setSelecionadas(new Set())
+    // Só limpa a seleção se o banco confirmou
+    if (await onDeleteMany(Array.from(selecionadas))) setSelecionadas(new Set())
   }
 
   const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'
@@ -2570,7 +2866,7 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
 
   const CHK_W = 36
   const ITEM_W = 56
-  const LEFT_W = CHK_W + ITEM_W + 220 + 100 + 80 + 70 + 48 + 56
+  const LEFT_W = CHK_W + ITEM_W + 220 + 100 + 80 + 70 + 48 + 72
   const ROW_H = 38
 
   return (
@@ -2579,13 +2875,13 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
       {hasGantt && (
         <div className="flex items-center gap-3 px-4 py-2 border-b border-[#E2E8F0] bg-[#FAFBFF]">
           <span className="text-[11px] text-[#64748B] font-medium">Zoom do Gantt</span>
-          <button onClick={() => setDayW(d => Math.max(8, d - 4))}
-            className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] hover:bg-[#EEF2FF] text-[#64748B] hover:text-[#4F7CFF] text-sm font-bold transition-colors">−</button>
+          <button onClick={() => setDayW(d => Math.max(8, d - 4))} aria-label="Diminuir zoom" title="Diminuir zoom"
+            className="w-8 h-8 flex items-center justify-center rounded border border-[#E2E8F0] hover:bg-[#EEF2FF] text-[#64748B] hover:text-[#4F7CFF] text-sm font-bold transition-colors">−</button>
           <input type="range" min={8} max={48} step={2} value={dayW}
             onChange={e => setDayW(Number(e.target.value))}
             className="w-28 accent-[#4F7CFF] h-1" />
-          <button onClick={() => setDayW(d => Math.min(48, d + 4))}
-            className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] hover:bg-[#EEF2FF] text-[#64748B] hover:text-[#4F7CFF] text-sm font-bold transition-colors">+</button>
+          <button onClick={() => setDayW(d => Math.min(48, d + 4))} aria-label="Aumentar zoom" title="Aumentar zoom"
+            className="w-8 h-8 flex items-center justify-center rounded border border-[#E2E8F0] hover:bg-[#EEF2FF] text-[#64748B] hover:text-[#4F7CFF] text-sm font-bold transition-colors">+</button>
           <span className="text-[10px] text-[#94A3B8]">{dayW}px/dia</span>
           <div className="ml-auto flex items-center gap-1.5">
             <div className="w-4 h-px bg-red-400" />
@@ -2628,7 +2924,7 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
               <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 80 }}>Início</span>
               <span className="text-[11px] font-semibold text-[#64748B] px-2" style={{ width: 70 }}>Fim</span>
               <span className="text-[11px] font-semibold text-[#64748B] px-2 text-center" style={{ width: 48 }}>%</span>
-              <span style={{ width: 56 }} />
+              <span style={{ width: 72 }} />
             </div>
             {hasGantt && (
               <div className="flex" style={{ width: totalDays * dayW }}>
@@ -2723,9 +3019,9 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
                   <span className="text-xs text-[#64748B] px-2" style={{ width: 80 }}>{fmt(etapa.data_inicio)}</span>
                   <span className="text-xs text-[#64748B] px-2" style={{ width: 70 }}>{fmt(etapa.data_fim)}</span>
                   <span className={`text-xs font-semibold px-2 text-center ${grupo ? 'text-[#0F172A]' : 'text-[#4F7CFF]'}`} style={{ width: 48 }}>{etapa.progresso}%</span>
-                  <div className="flex items-center gap-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ width: 56 }}>
-                    <button onClick={() => onEdit(etapa)} className="p-1 rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={12} /></button>
-                    <button onClick={() => onDelete(etapa.id)} className="p-1 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
+                  <div className="flex items-center gap-0.5 px-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 transition-opacity" style={{ width: 72 }}>
+                    <button onClick={() => onEdit(etapa)} aria-label={`Editar etapa ${etapa.titulo}`} title="Editar etapa" className="p-2 rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={13} /></button>
+                    <button onClick={() => onDelete(etapa.id)} aria-label={`Excluir etapa ${etapa.titulo}`} title="Excluir etapa" className="p-2 rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
                   </div>
                 </div>
 
@@ -2789,8 +3085,8 @@ function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMateria
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button onClick={onEdit} className="text-[#94A3B8] hover:text-[#4F7CFF] p-1.5 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={13} /></button>
-          <button onClick={onDelete} className="text-[#94A3B8] hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
+          <button onClick={onEdit} aria-label={`Editar ${m.descricao}`} title="Editar" className="text-[#94A3B8] hover:text-[#4F7CFF] p-2 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={14} /></button>
+          <button onClick={onDelete} aria-label={`Excluir ${m.descricao}`} title="Excluir" className="text-[#94A3B8] hover:text-red-500 p-2 rounded hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
         </div>
       </div>
 
@@ -2873,7 +3169,7 @@ function SeletorOC({ obraId, ocId, onChange }: {
       .insert({ obra_id: obraId, numero_oc: novoNumero.trim(), tipo: novoTipo, valor_total: Number(novoValor) })
       .select('id, numero_oc').single()
     setSaving(false)
-    if (error) { alert(error.message); return }
+    if (error) { alert(mensagemErro(error, 'Erro ao criar a OC')); return }
     setShowNova(false); setNovoNumero(''); setNovoValor('')
     await load()
     onChange(data.id, data.numero_oc)
@@ -2884,7 +3180,7 @@ function SeletorOC({ obraId, ocId, onChange }: {
       <div className="border border-[#C7D2FE] bg-[#EEF2FF]/50 rounded-xl p-3 space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-[#4F7CFF]">Nova OC</p>
-          <button type="button" onClick={() => setShowNova(false)} className="text-[#94A3B8] hover:text-[#374151]"><X size={14} /></button>
+          <button type="button" onClick={() => setShowNova(false)} aria-label="Cancelar nova OC" title="Cancelar" className="p-2 -m-2 text-[#94A3B8] hover:text-[#374151]"><X size={14} /></button>
         </div>
         <input className="field text-sm" placeholder="Número da OC" value={novoNumero} onChange={e => setNovoNumero(e.target.value)} />
         <div className="grid grid-cols-2 gap-2">
@@ -2893,7 +3189,7 @@ function SeletorOC({ obraId, ocId, onChange }: {
             <option value="material">Material</option>
             <option value="outro">Outro</option>
           </select>
-          <input type="number" step="0.01" min="0" className="field text-sm" placeholder="Valor total (R$)" value={novoValor} onChange={e => setNovoValor(e.target.value)} />
+          <input type="number" inputMode="decimal" step="0.01" min="0" className="field text-sm" placeholder="Valor total (R$)" value={novoValor} onChange={e => setNovoValor(e.target.value)} />
         </div>
         <button type="button" onClick={criarOC} disabled={saving || !novoNumero.trim() || !novoValor}
           className="btn-primary text-xs w-full justify-center disabled:opacity-50">
@@ -2951,49 +3247,57 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
 
   async function uploadNF(file: File) {
     setUploadingNf(true)
-    const supabase = createClient()
-    const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+    try {
+      const supabase = createClient()
+      const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
 
-    // Parse NFe PDF in parallel with upload (only PDFs)
-    const parsePromise = file.type === 'application/pdf' ? (async () => {
-      try {
-        const fd = new FormData(); fd.append('file', file)
-        const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
-        if (res.ok) return await res.json()
-      } catch { /* ignore */ }
-      return null
-    })() : Promise.resolve(null)
+      // Parse NFe PDF in parallel with upload (only PDFs)
+      const parsePromise = file.type === 'application/pdf' ? (async () => {
+        try {
+          const fd = new FormData(); fd.append('file', file)
+          const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
+          if (res.ok) return await res.json()
+        } catch { /* ignore */ }
+        return null
+      })() : Promise.resolve(null)
 
-    const [, parsed] = await Promise.all([
-      supabase.storage.from('documentos').upload(path, file, { upsert: true }),
-      parsePromise,
-    ])
+      const [{ error: upErr }, parsed] = await Promise.all([
+        supabase.storage.from('documentos').upload(path, file, { upsert: true }),
+        parsePromise,
+      ])
+      // Sem o arquivo no storage não grava a URL (seria um link quebrado)
+      if (upErr) { alert(mensagemErro(upErr, 'Erro ao anexar o orçamento')); return }
 
-    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
-    setNfUrl(data.publicUrl)
-    setNfPath(path)
+      const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+      setNfUrl(data.publicUrl)
+      setNfPath(path)
 
-    if (parsed && (parsed.emitente || parsed.valorTotal)) {
-      setNfDados(parsed)
-      // Auto-fill fields that are still empty
-      if (parsed.emitente && !fornecedor) setFornecedor(parsed.emitente)
-      if (parsed.dataEmissao && !dataCompra) setDataCompra(parsed.dataEmissao)
-      if (parsed.valorTotal && !valorTotal) setValorTotal(String(parsed.valorTotal))
-      if (parsed.descricao && !descricao) setDescricao(parsed.descricao)
+      if (parsed && (parsed.emitente || parsed.valorTotal)) {
+        setNfDados(parsed)
+        // Auto-fill fields that are still empty
+        if (parsed.emitente && !fornecedor) setFornecedor(parsed.emitente)
+        if (parsed.dataEmissao && !dataCompra) setDataCompra(parsed.dataEmissao)
+        if (parsed.valorTotal && !valorTotal) setValorTotal(String(parsed.valorTotal))
+        if (parsed.descricao && !descricao) setDescricao(parsed.descricao)
+      }
+    } finally {
+      setUploadingNf(false)
     }
-
-    setUploadingNf(false)
   }
 
   async function uploadNfPagamento(file: File) {
     setUploadingNfPag(true)
-    const supabase = createClient()
-    const path = `nf-pagamento/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    await supabase.storage.from('documentos').upload(path, file, { upsert: true })
-    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
-    setNfPagamentoUrl(data.publicUrl)
-    setNfPagamentoPath(path)
-    setUploadingNfPag(false)
+    try {
+      const supabase = createClient()
+      const path = `nf-pagamento/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+      const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+      if (error) { alert(mensagemErro(error, 'Erro ao anexar a NF de pagamento')); return }
+      const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+      setNfPagamentoUrl(data.publicUrl)
+      setNfPagamentoPath(path)
+    } finally {
+      setUploadingNfPag(false)
+    }
   }
 
   async function salvar(e: React.FormEvent) {
@@ -3027,12 +3331,11 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
       nf_pagamento_path: nfPagamentoPath || null,
       observacoes: observacoes.trim() || null,
     }
-    if (material?.id) {
-      await supabase.from('obra_materiais').update(payload).eq('id', material.id)
-    } else {
-      await supabase.from('obra_materiais').insert(payload)
-    }
+    const { error } = material?.id
+      ? await supabase.from('obra_materiais').update(payload).eq('id', material.id)
+      : await supabase.from('obra_materiais').insert(payload)
     setSaving(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar o material')); return }
     onSaved()
   }
 
@@ -3042,7 +3345,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">{material ? 'Editar Material' : 'Novo Material'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <form onSubmit={salvar} className="p-6 space-y-4">
@@ -3107,7 +3410,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
 
           <div className="grid grid-cols-3 gap-3">
             <F label="Quantidade">
-              <input type="number" step="any" min="0" className="field" value={quantidade}
+              <input type="number" inputMode="decimal" step="any" min="0" className="field" value={quantidade}
                 onChange={e => {
                   const q = e.target.value
                   setQuantidade(q)
@@ -3119,7 +3422,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
               <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
             </F>
             <F label="Valor unitário (R$)">
-              <input type="number" step="any" min="0" className="field" value={valorUnitario}
+              <input type="number" inputMode="decimal" step="any" min="0" className="field" value={valorUnitario}
                 onChange={e => {
                   setValorUnitario(e.target.value)
                   if (quantidade && e.target.value) setValorTotal(String((parseFloat(quantidade) * parseFloat(e.target.value)).toFixed(2)))
@@ -3128,7 +3431,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
           </div>
 
           <F label="Valor total de custo (R$)">
-            <input type="number" step="any" min="0" className="field" value={valorTotal} onChange={e => setValorTotal(e.target.value)} placeholder="Calculado automaticamente ou preencha manualmente" />
+            <input type="number" inputMode="decimal" step="any" min="0" className="field" value={valorTotal} onChange={e => setValorTotal(e.target.value)} placeholder="Calculado automaticamente ou preencha manualmente" />
           </F>
 
           {/* Preço de venda (OC do cliente) */}
@@ -3140,14 +3443,14 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
               </F>
               <div className="grid grid-cols-2 gap-3">
                 <F label="Preço venda unitário (R$)">
-                  <input type="number" step="any" min="0" className="field" value={precoVendaUnitario}
+                  <input type="number" inputMode="decimal" step="any" min="0" className="field" value={precoVendaUnitario}
                     onChange={e => {
                       setPrecoVendaUnitario(e.target.value)
                       if (quantidade && e.target.value) setValorVendaTotal(String((parseFloat(quantidade) * parseFloat(e.target.value)).toFixed(2)))
                     }} placeholder="0,00" />
                 </F>
                 <F label="Total de venda (R$)">
-                  <input type="number" step="any" min="0" className="field" value={valorVendaTotal} onChange={e => setValorVendaTotal(e.target.value)} placeholder="0,00" />
+                  <input type="number" inputMode="decimal" step="any" min="0" className="field" value={valorVendaTotal} onChange={e => setValorVendaTotal(e.target.value)} placeholder="0,00" />
                 </F>
               </div>
               {valorTotal && valorVendaTotal && (
@@ -3179,7 +3482,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadNF(f) }} />
               </label>
-              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath(''); setNfDados(null) }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath(''); setNfDados(null) }} aria-label="Remover orçamento anexado" title="Remover anexo" className="p-2 text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
             </div>
             {nfDados && (
               <div className="mt-2 bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-800">
@@ -3214,7 +3517,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNfPag}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadNfPagamento(f) }} />
               </label>
-              {nfPagamentoUrl && <button type="button" onClick={() => { setNfPagamentoUrl(''); setNfPagamentoPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+              {nfPagamentoUrl && <button type="button" onClick={() => { setNfPagamentoUrl(''); setNfPagamentoPath('') }} aria-label="Remover NF de pagamento anexada" title="Remover anexo" className="p-2 text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
             </div>
           </F>
 
@@ -3258,43 +3561,61 @@ function ModalImportNF({ obraId, arquivo, onClose, onSaved }: {
 
   const itens = nf.produtos ?? []
   const allSelected = Object.values(selecionados).every(Boolean)
+  // Sem produtos detectados: importa 1 item com o valor total/fornecedor/data extraídos
+  const semItens = itens.length === 0
+  const [descricaoUnica, setDescricaoUnica] = useState(
+    nf.descricao || (nf.nfNumero ? `Orçamento ${nf.nfNumero}` : 'Material (orçamento importado)')
+  )
+  const qtdSelecionados = semItens ? 1 : Object.values(selecionados).filter(Boolean).length
 
   async function importar() {
+    if (semItens && !descricaoUnica.trim()) { alert('Informe a descrição do item.'); return }
     const supabase = createClient()
     setSaving(true)
-    // Guarda o PDF importado: a URL dele é o que agrupa os itens no mesmo card de orçamento
-    let nfUrl: string | null = null
-    let nfPath: string | null = null
-    if (arquivo) {
-      const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(arquivo.name)}`
-      const { error } = await supabase.storage.from('documentos').upload(path, arquivo, { upsert: true })
-      if (!error) {
+    try {
+      // Guarda o PDF importado: a URL dele é o que agrupa os itens no mesmo card de orçamento
+      let nfUrl: string | null = null
+      let nfPath: string | null = null
+      if (arquivo) {
+        const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(arquivo.name)}`
+        const { error } = await supabase.storage.from('documentos').upload(path, arquivo, { upsert: true })
+        if (error) { alert(mensagemErro(error, 'Erro ao enviar o PDF do orçamento') + ' Nada foi importado.'); return }
         nfUrl = supabase.storage.from('documentos').getPublicUrl(path).data.publicUrl
         nfPath = path
       }
+      const produtos: NfItem[] = semItens
+        ? [{ codigo: '', descricao: descricaoUnica.trim(), quantidade: 1, unidade: 'UN', valorUnitario: nf.valorTotal ?? 0, valorTotal: nf.valorTotal ?? 0 }]
+        : itens.filter((_, i) => selecionados[i])
+      const payload = produtos
+        .map(p => ({
+          obra_id: obraId,
+          descricao: p.descricao,
+          tipo_compra: tipCompra,
+          fornecedor: nf.emitente ?? null,
+          comprador: comprador.trim() || null,
+          data_compra: nf.dataEmissao ?? null,
+          quantidade: p.quantidade,
+          unidade: p.unidade,
+          valor_unitario: p.valorUnitario,
+          valor_total: p.valorTotal,
+          status: 'pendente' as const,
+          nota_fiscal_url: nfUrl,
+          nota_fiscal_path: nfPath,
+          observacoes: nf.nfNumero ? `NF: ${nf.nfNumero}` : null,
+        }))
+      if (payload.length > 0) {
+        const { error } = await supabase.from('obra_materiais').insert(payload)
+        if (error) {
+          if (nfPath) await supabase.storage.from('documentos').remove([nfPath])
+          alert(mensagemErro(error, 'Erro ao importar os itens'))
+          return
+        }
+      }
+      sessionStorage.removeItem('nf_import')
+      onSaved()
+    } finally {
+      setSaving(false)
     }
-    const payload = itens
-      .filter((_, i) => selecionados[i])
-      .map(p => ({
-        obra_id: obraId,
-        descricao: p.descricao,
-        tipo_compra: tipCompra,
-        fornecedor: nf.emitente ?? null,
-        comprador: comprador.trim() || null,
-        data_compra: nf.dataEmissao ?? null,
-        quantidade: p.quantidade,
-        unidade: p.unidade,
-        valor_unitario: p.valorUnitario,
-        valor_total: p.valorTotal,
-        status: 'pendente' as const,
-        nota_fiscal_url: nfUrl,
-        nota_fiscal_path: nfPath,
-        observacoes: nf.nfNumero ? `NF: ${nf.nfNumero}` : null,
-      }))
-    if (payload.length > 0) await supabase.from('obra_materiais').insert(payload)
-    sessionStorage.removeItem('nf_import')
-    setSaving(false)
-    onSaved()
   }
 
   return (
@@ -3305,7 +3626,7 @@ function ModalImportNF({ obraId, arquivo, onClose, onSaved }: {
             <h2 className="font-syne font-semibold text-[#0F172A]">Importar Orçamento</h2>
             {nf.nfNumero && <p className="text-xs text-[#64748B] mt-0.5">{nf.nfNumero} · {nf.emitente}</p>}
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <div className="p-6 space-y-4">
@@ -3363,10 +3684,14 @@ function ModalImportNF({ obraId, arquivo, onClose, onSaved }: {
             </div>
           )}
 
-          {itens.length === 0 && (
-            <div className="text-center py-6 text-sm text-[#64748B]">
-              Nenhum item de produto detectado nesta NF.<br />
-              Os dados gerais (fornecedor, valor, data) foram extraídos.
+          {semItens && (
+            <div className="space-y-2">
+              <p className="text-sm text-[#64748B]">
+                Nenhum item de produto detectado nesta NF. Os dados gerais (fornecedor, valor, data) foram extraídos —
+                dá para importar como <b>1 item</b> com o valor total{nf.valorTotal ? ` (${formatCurrency(nf.valorTotal)})` : ''} e ajustar depois no lápis.
+              </p>
+              <label className="block text-xs font-medium text-[#64748B] mb-1">Descrição do item</label>
+              <input className="field" value={descricaoUnica} onChange={e => setDescricaoUnica(e.target.value)} />
             </div>
           )}
 
@@ -3375,10 +3700,10 @@ function ModalImportNF({ obraId, arquivo, onClose, onSaved }: {
               className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
               Cancelar
             </button>
-            <button onClick={importar} disabled={saving || Object.values(selecionados).every(v => !v)}
+            <button onClick={importar} disabled={saving || qtdSelecionados === 0}
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              {saving ? 'Importando...' : `Importar ${Object.values(selecionados).filter(Boolean).length} ite${Object.values(selecionados).filter(Boolean).length === 1 ? 'm' : 'ns'}`}
+              {saving ? 'Importando...' : `Importar ${qtdSelecionados} ite${qtdSelecionados === 1 ? 'm' : 'ns'}`}
             </button>
           </div>
         </div>
@@ -3425,22 +3750,30 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
 
   async function uploadOrc(file: File) {
     setUploadingNf(true)
-    const supabase = createClient()
-    const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    await supabase.storage.from('documentos').upload(path, file, { upsert: true })
-    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
-    setNfUrl(data.publicUrl); setNfPath(path)
-    setUploadingNf(false)
+    try {
+      const supabase = createClient()
+      const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+      const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+      if (error) { alert(mensagemErro(error, 'Erro ao anexar o orçamento')); return }
+      const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+      setNfUrl(data.publicUrl); setNfPath(path)
+    } finally {
+      setUploadingNf(false)
+    }
   }
 
   async function uploadNfPag(file: File) {
     setUploadingNfPag(true)
-    const supabase = createClient()
-    const path = `nf-pagamento/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    await supabase.storage.from('documentos').upload(path, file, { upsert: true })
-    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
-    setNfPagamentoUrl(data.publicUrl); setNfPagamentoPath(path)
-    setUploadingNfPag(false)
+    try {
+      const supabase = createClient()
+      const path = `nf-pagamento/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+      const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+      if (error) { alert(mensagemErro(error, 'Erro ao anexar a NF de pagamento')); return }
+      const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+      setNfPagamentoUrl(data.publicUrl); setNfPagamentoPath(path)
+    } finally {
+      setUploadingNfPag(false)
+    }
   }
 
   async function salvar() {
@@ -3449,7 +3782,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
     const obs = [nfNumero.trim() ? `NF: ${nfNumero.trim()}` : '', observacoes.trim()].filter(Boolean).join(' | ') || null
     const ids = itens.map(m => m.id)
     const extrasValidos = custosExtras.filter(c => c.descricao.trim() && parseFloat(c.valor) > 0)
-    await supabase.from('obra_materiais').update({
+    const { error } = await supabase.from('obra_materiais').update({
       tipo_compra: tipCompra,
       fornecedor: fornecedor.trim() || null,
       comprador: comprador.trim() || null,
@@ -3464,6 +3797,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
       custos_extras: extrasValidos.length > 0 ? extrasValidos.map(c => ({ descricao: c.descricao.trim(), valor: parseFloat(c.valor) })) : null,
     }).in('id', ids)
     setSaving(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar o orçamento')); return }
     onSaved()
   }
 
@@ -3472,7 +3806,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">Editar Orçamento</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-4">
           {/* Tipo de compra */}
@@ -3530,7 +3864,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadOrc(f) }} />
               </label>
-              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} aria-label="Remover orçamento anexado" title="Remover anexo" className="p-2 text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
             </div>
           </F>
 
@@ -3549,7 +3883,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNfPag}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadNfPag(f) }} />
               </label>
-              {nfPagamentoUrl && <button type="button" onClick={() => { setNfPagamentoUrl(''); setNfPagamentoPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+              {nfPagamentoUrl && <button type="button" onClick={() => { setNfPagamentoUrl(''); setNfPagamentoPath('') }} aria-label="Remover NF de pagamento anexada" title="Remover anexo" className="p-2 text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
             </div>
           </F>
 
@@ -3570,9 +3904,9 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
                   <div key={i} className="flex gap-2 items-center">
                     <input className="field flex-1 text-sm" placeholder="Descrição (ex: Frete, ICMS)" value={c.descricao}
                       onChange={e => updateExtra(i, 'descricao', e.target.value)} />
-                    <input className="field w-32 text-sm" placeholder="R$ 0,00" type="number" min="0" step="0.01" value={c.valor}
+                    <input className="field w-32 text-sm" placeholder="R$ 0,00" type="number" inputMode="decimal" min="0" step="0.01" value={c.valor}
                       onChange={e => updateExtra(i, 'valor', e.target.value)} />
-                    <button type="button" onClick={() => removeExtra(i)} className="text-[#94A3B8] hover:text-red-500 shrink-0"><X size={14} /></button>
+                    <button type="button" onClick={() => removeExtra(i)} aria-label="Remover custo extra" title="Remover" className="p-2 text-[#94A3B8] hover:text-red-500 shrink-0"><X size={14} /></button>
                   </div>
                 ))}
                 <div className="flex justify-end pt-1">
@@ -3598,7 +3932,7 @@ function ModalEditarOrcamento({ obraId, itens, onClose, onSaved }: {
             <button onClick={salvar} disabled={saving}
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
               {saving ? <Loader2 size={15} className="animate-spin" /> : null}
-              {saving ? 'Salvando...' : 'Salvar'}
+              {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>
         </div>
@@ -3642,13 +3976,17 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
 
   async function uploadNF(file: File) {
     setUploadingNf(true)
-    const supabase = createClient()
-    const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    await supabase.storage.from('documentos').upload(path, file, { upsert: true })
-    const { data } = supabase.storage.from('documentos').getPublicUrl(path)
-    setNfUrl(data.publicUrl)
-    setNfPath(path)
-    setUploadingNf(false)
+    try {
+      const supabase = createClient()
+      const path = `nf/${obraId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+      const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+      if (error) { alert(mensagemErro(error, 'Erro ao anexar o orçamento')); return }
+      const { data } = supabase.storage.from('documentos').getPublicUrl(path)
+      setNfUrl(data.publicUrl)
+      setNfPath(path)
+    } finally {
+      setUploadingNf(false)
+    }
   }
 
   function updateItem(i: number, field: keyof ItemNF, value: string) {
@@ -3704,8 +4042,9 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
       custos_extras: custosExtrasNF.filter(c => c.descricao.trim() && parseFloat(c.valor) > 0)
         .map(c => ({ descricao: c.descricao.trim(), valor: parseFloat(c.valor) })),
     }))
-    await supabase.from('obra_materiais').insert(payload)
+    const { error } = await supabase.from('obra_materiais').insert(payload)
     setSaving(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao lançar o orçamento')); return }
     onSaved()
   }
 
@@ -3717,7 +4056,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">Lançar Orçamento</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <div className="p-6 space-y-4">
@@ -3809,7 +4148,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                         placeholder={`Item ${i + 1} — descrição do material`} />
                     </div>
                     {itens.length > 1 && (
-                      <button type="button" onClick={() => removeItem(i)} className="mt-1 text-[#94A3B8] hover:text-red-500 shrink-0">
+                      <button type="button" onClick={() => removeItem(i)} aria-label={`Remover item ${i + 1}`} title="Remover item" className="p-2 text-[#94A3B8] hover:text-red-500 shrink-0">
                         <X size={14} />
                       </button>
                     )}
@@ -3817,7 +4156,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                   <div className="grid grid-cols-4 gap-2">
                     <div>
                       <label className="text-xs text-[#94A3B8] mb-0.5 block">Qtd</label>
-                      <input type="number" min="0" step="any" className="field text-sm" value={item.quantidade}
+                      <input type="number" inputMode="decimal" min="0" step="any" className="field text-sm" value={item.quantidade}
                         onChange={e => updateItem(i, 'quantidade', e.target.value)} />
                     </div>
                     <div>
@@ -3827,12 +4166,12 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                     </div>
                     <div>
                       <label className="text-xs text-[#94A3B8] mb-0.5 block">Custo unit.</label>
-                      <input type="number" min="0" step="any" className="field text-sm" value={item.valorUnitario}
+                      <input type="number" inputMode="decimal" min="0" step="any" className="field text-sm" value={item.valorUnitario}
                         onChange={e => updateItem(i, 'valorUnitario', e.target.value)} placeholder="0,00" />
                     </div>
                     <div>
                       <label className="text-xs text-[#94A3B8] mb-0.5 block">Total custo</label>
-                      <input type="number" min="0" step="any" className="field text-sm" value={item.valorTotal}
+                      <input type="number" inputMode="decimal" min="0" step="any" className="field text-sm" value={item.valorTotal}
                         onChange={e => updateItem(i, 'valorTotal', e.target.value)} placeholder="0,00" />
                     </div>
                   </div>
@@ -3840,12 +4179,12 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                     <div className="grid grid-cols-2 gap-2 pt-1 border-t border-purple-100">
                       <div>
                         <label className="text-xs text-purple-500 mb-0.5 block">Venda unit. (OC)</label>
-                        <input type="number" min="0" step="any" className="field text-sm border-purple-200 focus:border-purple-400" value={item.precoVendaUnitario}
+                        <input type="number" inputMode="decimal" min="0" step="any" className="field text-sm border-purple-200 focus:border-purple-400" value={item.precoVendaUnitario}
                           onChange={e => updateItem(i, 'precoVendaUnitario', e.target.value)} placeholder="0,00" />
                       </div>
                       <div>
                         <label className="text-xs text-purple-500 mb-0.5 block">Total venda</label>
-                        <input type="number" min="0" step="any" className="field text-sm border-purple-200 focus:border-purple-400" value={item.valorVendaTotal}
+                        <input type="number" inputMode="decimal" min="0" step="any" className="field text-sm border-purple-200 focus:border-purple-400" value={item.valorVendaTotal}
                           onChange={e => updateItem(i, 'valorVendaTotal', e.target.value)} placeholder="0,00" />
                       </div>
                       {item.valorTotal && item.valorVendaTotal && (
@@ -3875,7 +4214,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                 <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingNf}
                   onChange={e => { const f = e.target.files?.[0]; if (f) uploadNF(f) }} />
               </label>
-              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} className="text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
+              {nfUrl && <button type="button" onClick={() => { setNfUrl(''); setNfPath('') }} aria-label="Remover orçamento anexado" title="Remover anexo" className="p-2 text-[#94A3B8] hover:text-red-500"><X size={14} /></button>}
             </div>
           </F>
 
@@ -3894,9 +4233,9 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
                   <div key={i} className="flex gap-2 items-center">
                     <input className="field flex-1 text-sm" placeholder="Descrição (ex: Frete, ICMS)" value={c.descricao}
                       onChange={e => updateExtraNF(i, 'descricao', e.target.value)} />
-                    <input className="field w-32 text-sm" placeholder="R$ 0,00" type="number" min="0" step="0.01" value={c.valor}
+                    <input className="field w-32 text-sm" placeholder="R$ 0,00" type="number" inputMode="decimal" min="0" step="0.01" value={c.valor}
                       onChange={e => updateExtraNF(i, 'valor', e.target.value)} />
-                    <button type="button" onClick={() => removeExtraNF(i)} className="text-[#94A3B8] hover:text-red-500 shrink-0"><X size={14} /></button>
+                    <button type="button" onClick={() => removeExtraNF(i)} aria-label="Remover custo extra" title="Remover" className="p-2 text-[#94A3B8] hover:text-red-500 shrink-0"><X size={14} /></button>
                   </div>
                 ))}
               </div>
@@ -4222,12 +4561,11 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
       data_fim: dataFim || null,
       observacoes: observacoes.trim() || null,
     }
-    if (alocacao) {
-      await supabase.from('obra_funcionarios').update(payload).eq('id', alocacao.id)
-    } else {
-      await supabase.from('obra_funcionarios').insert(payload)
-    }
+    const { error } = alocacao
+      ? await supabase.from('obra_funcionarios').update(payload).eq('id', alocacao.id)
+      : await supabase.from('obra_funcionarios').insert(payload)
     setSaving(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar a alocação')); return }
     onSaved()
   }
 
@@ -4236,7 +4574,7 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">{alocacao ? 'Editar Alocação' : 'Alocar Funcionário'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-5">
 
@@ -4295,7 +4633,7 @@ function ModalAlocarFuncionario({ obraId, alocacao, onClose, onSaved }: {
               </div>
               <div>
                 <label className="block text-xs text-[#64748B] mb-1">Valor (R$)</label>
-                <input className="field" type="number" min="0" step="0.01" value={custoExtra}
+                <input className="field" type="number" inputMode="decimal" min="0" step="0.01" value={custoExtra}
                   onChange={e => setCustoExtra(e.target.value)} placeholder="0,00" />
               </div>
             </div>
@@ -4453,7 +4791,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
               <p className="text-xs text-[#94A3B8]">{rdos.length} relatório{rdos.length > 1 ? 's' : ''} selecionado{rdos.length > 1 ? 's' : ''}</p>
             </div>
           </div>
-          <button onClick={onClose} disabled={enviando} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
+          <button onClick={onClose} disabled={enviando} aria-label="Fechar" title="Fechar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
             <X size={16} className="text-[#64748B]" />
           </button>
         </div>
@@ -4515,7 +4853,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
           {erro && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2.5">
               <span className="flex-1">{erro}</span>
-              <button onClick={() => setErro('')}><X size={12} /></button>
+              <button onClick={() => setErro('')} aria-label="Fechar aviso" title="Fechar aviso" className="p-1.5 -m-1"><X size={12} /></button>
             </div>
           )}
         </div>
@@ -4639,7 +4977,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
               <p className="text-xs text-[#94A3B8]">{relatorios.length} relatório{relatorios.length > 1 ? 's' : ''} selecionado{relatorios.length > 1 ? 's' : ''}</p>
             </div>
           </div>
-          <button onClick={onClose} disabled={enviando} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
+          <button onClick={onClose} disabled={enviando} aria-label="Fechar" title="Fechar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
             <X size={16} className="text-[#64748B]" />
           </button>
         </div>
@@ -4701,7 +5039,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
           {erro && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2.5">
               <span className="flex-1">{erro}</span>
-              <button onClick={() => setErro('')}><X size={12} /></button>
+              <button onClick={() => setErro('')} aria-label="Fechar aviso" title="Fechar aviso" className="p-1.5 -m-1"><X size={12} /></button>
             </div>
           )}
         </div>

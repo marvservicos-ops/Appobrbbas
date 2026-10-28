@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@/lib/supabase/server'
+import { exigirUsuarioAtivo } from '@/lib/apiAuth'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const DEFAULT_FROM = process.env.EMAIL_FROM ?? 'joaovictor@marvservicos.com.br'
 const DOMINIO_VERIFICADO = '@marvservicos.com.br'
 
 export async function POST(req: NextRequest) {
+  const auth = await exigirUsuarioAtivo()
+  if (!auth.ok) return auth.resposta
+
   const { to, subject, body, obraId, templateId, templateNome } = await req.json()
 
   if (!to || !subject || !body) {
@@ -43,7 +47,8 @@ export async function POST(req: NextRequest) {
   })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('[send-email] falha no Resend', error)
+    return NextResponse.json({ error: 'Não foi possível enviar o e-mail. Confira o endereço e tente de novo.' }, { status: 500 })
   }
 
   let registrado = false
@@ -60,6 +65,7 @@ export async function POST(req: NextRequest) {
       enviado_por: user?.id ?? null,
       enviado_por_nome: nomeUsuario,
     })
+    if (logError) console.error('[send-email] e-mail enviado, mas não registrado no histórico', logError)
     registrado = !logError
   }
 

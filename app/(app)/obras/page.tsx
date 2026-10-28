@@ -7,11 +7,13 @@ import { Obra, Cliente, StatusObra } from '@/lib/types'
 import Topbar from '@/components/Topbar'
 import ModalNovaObra from '@/components/ModalNovaObra'
 import Link from 'next/link'
+import { parseData, formatarData, hojeLocal } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
 
 function calcProgress(obra: Obra): number {
   if (!obra.data_inicio || !obra.previsao_termino) return 0
-  const start = new Date(obra.data_inicio).getTime()
-  const end = new Date(obra.previsao_termino).getTime()
+  const start = parseData(obra.data_inicio).getTime()
+  const end = parseData(obra.previsao_termino).getTime()
   const now = Date.now()
   if (now >= end) return 100
   if (now <= start) return 0
@@ -20,12 +22,13 @@ function calcProgress(obra: Obra): number {
 
 function formatDate(d?: string) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('pt-BR')
+  return formatarData(d)
 }
 
 function isAtrasada(obra: Obra): boolean {
   if (obra.status === 'Concluída' || !obra.previsao_termino) return false
-  return new Date(obra.previsao_termino).getTime() < Date.now()
+  // Atrasada só a partir do dia seguinte ao término (comparação por data local)
+  return obra.previsao_termino.slice(0, 10) < hojeLocal()
 }
 
 const GRUPOS: { status: StatusObra; label: string; dot: string }[] = [
@@ -37,7 +40,7 @@ const GRUPOS: { status: StatusObra; label: string; dot: string }[] = [
 
 // Atrasadas primeiro, depois término mais próximo; concluídas: término mais recente primeiro
 function ordenar(lista: Obra[], status: StatusObra): Obra[] {
-  const t = (o: Obra) => (o.previsao_termino ? new Date(o.previsao_termino).getTime() : null)
+  const t = (o: Obra) => (o.previsao_termino ? parseData(o.previsao_termino).getTime() : null)
   return [...lista].sort((a, b) => {
     if (status === 'Concluída') return (t(b) ?? 0) - (t(a) ?? 0)
     const atrasoA = isAtrasada(a) ? 0 : 1
@@ -57,10 +60,12 @@ export default function ObrasPage() {
   const [editObra, setEditObra] = useState<Obra | null>(null)
   const [menuObraId, setMenuObraId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [erroCarregar, setErroCarregar] = useState<string | null>(null)
   const [recolhidos, setRecolhidos] = useState<Record<string, boolean>>({ 'Concluída': true })
 
   async function load() {
     setLoading(true)
+    setErroCarregar(null)
     const supabase = createClient()
     let { data, error } = await supabase
       .from('obras')
@@ -69,7 +74,7 @@ export default function ObrasPage() {
     if (error) {
       console.error('obras load error (com cliente):', error)
       ;({ data, error } = await supabase.from('obras').select('*').order('created_at', { ascending: false }))
-      if (error) console.error('obras load error:', error)
+      if (error) setErroCarregar(mensagemErro(error, 'Não foi possível carregar as obras'))
     }
     if (data) setObras(data as Obra[])
     setLoading(false)
@@ -101,7 +106,7 @@ export default function ObrasPage() {
     if (error) {
       console.error('mudar status error:', error)
       setObras(prev => prev.map(o => (o.id === obra.id ? { ...o, status: anterior } : o)))
-      alert('Não foi possível mudar o status da obra.')
+      alert(mensagemErro(error, 'Não foi possível mudar o status da obra'))
     }
   }
 
@@ -178,7 +183,9 @@ export default function ObrasPage() {
     return (
       <>
         <button
-          className="w-7 h-7 flex items-center justify-center rounded md:opacity-0 group-hover:opacity-100 hover:bg-[#F1F5F9] transition-all"
+          aria-label={`Ações da obra ${obra.titulo}`}
+          title="Ações da obra"
+          className="w-9 h-9 flex items-center justify-center rounded opacity-100 md:[@media(hover:hover)]:opacity-0 md:[@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100 hover:bg-[#F1F5F9] transition-all"
           onClick={e => { e.preventDefault(); e.stopPropagation(); setMenuObraId(menuObraId === obra.id ? null : obra.id) }}
         >
           <MoreVertical size={14} className="text-[#64748B]" />
@@ -244,6 +251,20 @@ export default function ObrasPage() {
             {[...Array(3)].map((_, i) => (
               <div key={i} className="card animate-pulse h-32 bg-[#F1F5F9]" />
             ))}
+          </div>
+        ) : erroCarregar ? (
+          <div className="card text-center py-10">
+            <AlertTriangle size={22} className="mx-auto text-red-500 mb-2" />
+            <p className="text-sm text-[#374151] mb-4">{erroCarregar}</p>
+            <button onClick={load} className="btn-primary text-sm px-4 py-2 mx-auto">Tentar de novo</button>
+          </div>
+        ) : obras.length === 0 ? (
+          <div className="card text-center py-10">
+            <p className="text-sm text-[#64748B] mb-4">Nenhuma obra cadastrada ainda.</p>
+            <button onClick={() => setShowModal(true)} className="btn-primary text-sm px-4 py-2 mx-auto">
+              <Plus size={15} />
+              Criar primeira obra
+            </button>
           </div>
         ) : (
           <div className="space-y-3">

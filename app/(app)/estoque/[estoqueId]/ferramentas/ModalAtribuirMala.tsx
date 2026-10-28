@@ -3,9 +3,14 @@
 import { useEffect, useState } from 'react'
 import { X, Loader2, UserCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { mensagemErro } from '@/lib/erros'
+import { abrirAbaVazia } from './devolucao'
 
-export default function ModalAtribuirMala({ ferramentaId, responsavelAtualId, onClose, onSaved }: {
-  ferramentaId: string; responsavelAtualId?: string | null; onClose: () => void; onSaved: () => void
+// urlContrato: abre o contrato da mala em nova aba ao salvar com responsável.
+// A aba é aberta já no clique (o iPhone bloqueia window.open depois de await);
+// onSaved recebe false se o navegador bloqueou.
+export default function ModalAtribuirMala({ ferramentaId, responsavelAtualId, urlContrato, onClose, onSaved }: {
+  ferramentaId: string; responsavelAtualId?: string | null; urlContrato?: string; onClose: () => void; onSaved: (contratoAberto: boolean) => void
 }) {
   const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string }[]>([])
   const [funcionarioId, setFuncionarioId] = useState(responsavelAtualId ?? '')
@@ -23,15 +28,21 @@ export default function ModalAtribuirMala({ ferramentaId, responsavelAtualId, on
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
+    if (loading) return
+    const aba = urlContrato && funcionarioId ? abrirAbaVazia() : null
     setLoading(true)
     setError('')
     const supabase = createClient()
     const { error: err } = await supabase.from('ferramentas').update({
       responsavel_atual_id: funcionarioId || null,
     }).eq('id', ferramentaId)
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) {
+      try { aba?.close() } catch {}
+      setError(mensagemErro(err, 'Erro ao salvar responsável')); setLoading(false); return
+    }
     setLoading(false)
-    onSaved()
+    if (aba && !aba.closed && urlContrato) { aba.location.href = urlContrato; onSaved(true) }
+    else onSaved(!(urlContrato && funcionarioId))
   }
 
   return (
@@ -39,7 +50,7 @@ export default function ModalAtribuirMala({ ferramentaId, responsavelAtualId, on
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-[420px]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">Responsável pela Mala</h3>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSave} className="p-5 space-y-4">
           <div>

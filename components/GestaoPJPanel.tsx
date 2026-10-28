@@ -3,10 +3,23 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, X, Calendar, DollarSign, Clock, ChevronDown, ChevronUp, Loader2, Pencil, Trash2, RefreshCw } from 'lucide-react'
+import { hojeLocal, formatarCompetencia } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import { parseNumeroBR } from '@/lib/numero'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const dataBR = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
-const hoje = () => new Date().toISOString().split('T')[0]
+const hoje = hojeLocal
+
+// Os arquivos do PJ ficam no bucket privado 'marv-pj'. As colunas *_url guardam o
+// caminho do arquivo no bucket; registros antigos guardam a URL pública inteira
+// (.../object/public/marv-pj/<caminho>) — nos dois casos extraímos o caminho e
+// abrimos com uma URL assinada temporária.
+const BUCKET_PJ = 'marv-pj'
+function caminhoArquivoPJ(v: string): string {
+  const m = v.match(/\/object\/(?:public|sign|authenticated)\/marv-pj\/([^?#]+)/)
+  return m ? decodeURIComponent(m[1]) : v
+}
 
 interface Contrato {
   id: string
@@ -94,7 +107,7 @@ export default function GestaoPJPanel() {
       sb.from('pj_pagamentos').select('*').order('competencia', { ascending: false }),
     ])
     const erroCarregamento = eC || eF || eP
-    if (erroCarregamento) setErro(`Falha ao carregar dados: ${erroCarregamento.message}`)
+    if (erroCarregamento) setErro(mensagemErro(erroCarregamento, 'Falha ao carregar dados'))
     setContratos((c ?? []) as Contrato[])
     setFerias((f ?? []) as Ferias[])
     setPagamentos((p ?? []) as Pagamento[])
@@ -139,7 +152,10 @@ export default function GestaoPJPanel() {
   }
 
   async function salvarContrato() {
-    if (!fContrato.data_inicio || !fContrato.data_fim || !fContrato.valor_mensal) return
+    const faltando = [!fContrato.data_inicio && 'Início', !fContrato.data_fim && 'Fim', !fContrato.valor_mensal && 'Valor mensal'].filter(Boolean)
+    if (faltando.length > 0) { setErro(`Preencha: ${faltando.join(', ')}.`); return }
+    const valorMensal = parseNumeroBR(fContrato.valor_mensal)
+    if (Number.isNaN(valorMensal)) { setErro('Valor mensal inválido.'); return }
     setSaving(true)
     setErro('')
     const sb = createClient()
@@ -147,7 +163,7 @@ export default function GestaoPJPanel() {
       numero_contrato: fContrato.numero_contrato || null,
       data_inicio: fContrato.data_inicio,
       data_fim: fContrato.data_fim,
-      valor_mensal: parseFloat(fContrato.valor_mensal),
+      valor_mensal: valorMensal,
       dias_ferias_acumulados: parseInt(fContrato.dias_ferias_acumulados) || 15,
       observacao: fContrato.observacao || null,
       arquivo_url: fContrato.arquivo_url || null,
@@ -156,7 +172,7 @@ export default function GestaoPJPanel() {
       ? await sb.from('pj_contratos').update(payload).eq('id', editandoContrato.id)
       : await sb.from('pj_contratos').insert(payload)
     setSaving(false)
-    if (error) { setErro(`Falha ao salvar contrato: ${error.message}`); return }
+    if (error) { setErro(mensagemErro(error, 'Falha ao salvar contrato')); return }
     setFContrato({ numero_contrato: '', data_inicio: '', data_fim: '', valor_mensal: '', dias_ferias_acumulados: '15', observacao: '', arquivo_url: '' })
     setEditandoContrato(null)
     setShowAddContrato(false)
@@ -190,36 +206,61 @@ export default function GestaoPJPanel() {
     setShowAddPagamento(true)
   }
 
-  async function uploadArquivo(file: File, bucket: string, folder: string): Promise<string | null> {
+  // Envia o arquivo e devolve o CAMINHO no bucket (não a URL pública)
+  function caminhoNovo(folder: string, file: File) {
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
+    return `${folder}/${Date.now()}_${crypto.randomUUID()}.${ext}`
+  }
+
+  async function uploadArquivo(file: File, folder: string): Promise<string | null> {
     setUploadingComprovante(true)
-    const sb = createClient()
-    const ext = file.name.split('.').pop()
-    const path = `${folder}/${Date.now()}.${ext}`
-    const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true })
-    if (error) { setUploadingComprovante(false); setErro(`Falha ao enviar arquivo: ${error.message}`); return null }
-    const { data } = sb.storage.from(bucket).getPublicUrl(path)
-    setUploadingComprovante(false)
-    return data.publicUrl
+    try {
+      const sb = createClient()
+      const path = caminhoNovo(folder, file)
+      const { error } = await sb.storage.from(BUCKET_PJ).upload(path, file)
+      if (error) { setErro(mensagemErro(error, 'Falha ao enviar arquivo')); return null }
+      return path
+    } finally {
+      setUploadingComprovante(false)
+    }
   }
 
   async function uploadNFs(files: FileList) {
     setUploadingNF(true)
-    const sb = createClient()
-    const urls: string[] = []
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop()
-      const path = `notas-fiscais/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-      const { error } = await sb.storage.from('marv-pj').upload(path, file, { upsert: true })
-      if (error) { setErro(`Falha ao enviar "${file.name}": ${error.message}`); continue }
-      const { data } = sb.storage.from('marv-pj').getPublicUrl(path)
-      urls.push(data.publicUrl)
+    try {
+      const sb = createClient()
+      const paths: string[] = []
+      for (const file of Array.from(files)) {
+        const path = caminhoNovo('notas-fiscais', file)
+        const { error } = await sb.storage.from(BUCKET_PJ).upload(path, file)
+        if (error) { setErro(mensagemErro(error, `Falha ao enviar "${file.name}"`)); continue }
+        paths.push(path)
+      }
+      if (paths.length > 0) setFPagamento(p => ({ ...p, nota_fiscal_urls: [...p.nota_fiscal_urls, ...paths] }))
+    } finally {
+      setUploadingNF(false)
     }
-    if (urls.length > 0) setFPagamento(p => ({ ...p, nota_fiscal_urls: [...p.nota_fiscal_urls, ...urls] }))
-    setUploadingNF(false)
+  }
+
+  // Abre o arquivo com URL assinada (1h). A aba é aberta antes do await para o
+  // navegador do celular não bloquear como pop-up.
+  async function abrirArquivo(valor: string) {
+    const aba = window.open('', '_blank')
+    const sb = createClient()
+    const { data, error } = await sb.storage.from(BUCKET_PJ).createSignedUrl(caminhoArquivoPJ(valor), 3600)
+    if (error || !data?.signedUrl) {
+      aba?.close()
+      setErro(mensagemErro(error, 'Falha ao abrir arquivo'))
+      return
+    }
+    if (aba) aba.location.href = data.signedUrl
+    else window.location.href = data.signedUrl
   }
 
   async function salvarFerias() {
-    if (!fFerias.data_inicio || !fFerias.data_fim) return
+    const faltando = [!fFerias.data_inicio && 'Início', !fFerias.data_fim && 'Fim'].filter(Boolean)
+    if (faltando.length > 0) { setErro(`Preencha: ${faltando.join(', ')}.`); return }
+    if (fFerias.data_fim < fFerias.data_inicio) { setErro('A data de fim é anterior ao início.'); return }
     setSaving(true)
     setErro('')
     const dias = calcDiasFerias(fFerias.data_inicio, fFerias.data_fim)
@@ -229,14 +270,14 @@ export default function GestaoPJPanel() {
       data_inicio: fFerias.data_inicio,
       data_fim: fFerias.data_fim,
       dias,
-      valor_pago: fFerias.valor_pago ? parseFloat(fFerias.valor_pago) : null,
+      valor_pago: fFerias.valor_pago ? parseNumeroBR(fFerias.valor_pago) : null,
       observacao: fFerias.observacao || null,
     }
     const { error } = editandoFerias
       ? await sb.from('pj_ferias').update(payload).eq('id', editandoFerias.id)
       : await sb.from('pj_ferias').insert(payload)
     setSaving(false)
-    if (error) { setErro(`Falha ao salvar férias: ${error.message}`); return }
+    if (error) { setErro(mensagemErro(error, 'Falha ao salvar férias')); return }
     setFFerias({ contrato_id: '', data_inicio: '', data_fim: '', valor_pago: '', observacao: '' })
     setEditandoFerias(null)
     setShowAddFerias(false)
@@ -244,7 +285,10 @@ export default function GestaoPJPanel() {
   }
 
   async function salvarPagamento() {
-    if (!fPagamento.competencia || !fPagamento.valor) return
+    const faltando = [!fPagamento.competencia && 'Competência', !fPagamento.valor && 'Valor'].filter(Boolean)
+    if (faltando.length > 0) { setErro(`Preencha: ${faltando.join(', ')}.`); return }
+    const valor = parseNumeroBR(fPagamento.valor)
+    if (Number.isNaN(valor)) { setErro('Valor inválido.'); return }
     setSaving(true)
     setErro('')
     const sb = createClient()
@@ -252,8 +296,8 @@ export default function GestaoPJPanel() {
       contrato_id: fPagamento.contrato_id || null,
       tipo: fPagamento.tipo,
       competencia: fPagamento.competencia,
-      valor: parseFloat(fPagamento.valor),
-      horas_extras: fPagamento.horas_extras ? parseFloat(fPagamento.horas_extras) : null,
+      valor,
+      horas_extras: fPagamento.horas_extras ? parseNumeroBR(fPagamento.horas_extras) : null,
       observacao: fPagamento.observacao || null,
       comprovante_url: fPagamento.comprovante_url || null,
       nota_fiscal_url: fPagamento.nota_fiscal_urls[0] || null,
@@ -263,7 +307,7 @@ export default function GestaoPJPanel() {
       ? await sb.from('pj_pagamentos').update(payload).eq('id', editandoPagamento.id)
       : await sb.from('pj_pagamentos').insert(payload)
     setSaving(false)
-    if (error) { setErro(`Falha ao salvar pagamento: ${error.message}`); return }
+    if (error) { setErro(mensagemErro(error, 'Falha ao salvar pagamento')); return }
     setFPagamento({ contrato_id: '', tipo: 'salario', competencia: '', valor: '', horas_extras: '', observacao: '', comprovante_url: '', nota_fiscal_urls: [] })
     setEditandoPagamento(null)
     setShowAddPagamento(false)
@@ -274,7 +318,7 @@ export default function GestaoPJPanel() {
     if (!confirm('Remover este registro de férias?')) return
     const sb = createClient()
     const { error } = await sb.from('pj_ferias').delete().eq('id', id)
-    if (error) { setErro(`Falha ao remover: ${error.message}`); return }
+    if (error) { setErro(mensagemErro(error, 'Falha ao remover')); return }
     load()
   }
 
@@ -282,7 +326,7 @@ export default function GestaoPJPanel() {
     if (!confirm('Remover este pagamento?')) return
     const sb = createClient()
     const { error } = await sb.from('pj_pagamentos').delete().eq('id', id)
-    if (error) { setErro(`Falha ao remover: ${error.message}`); return }
+    if (error) { setErro(mensagemErro(error, 'Falha ao remover')); return }
     load()
   }
 
@@ -309,7 +353,7 @@ export default function GestaoPJPanel() {
             {t.label}
           </button>
         ))}
-        <button onClick={load} className="ml-auto w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors self-center">
+        <button onClick={load} aria-label="Recarregar" title="Recarregar" className="ml-auto w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors self-center">
           <RefreshCw size={13} className="text-[#94A3B8]" />
         </button>
       </div>
@@ -388,7 +432,7 @@ export default function GestaoPJPanel() {
               {pagamentos.slice(0, 5).map(p => (
                 <div key={p.id} className="flex items-center gap-3 px-5 py-3 border-b border-[#F8FAFC] last:border-0">
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tipoColor[p.tipo]}`}>{tipoLabel[p.tipo]}</span>
-                  <span className="text-xs text-[#64748B]">{p.competencia}</span>
+                  <span className="text-xs text-[#64748B]">{formatarCompetencia(p.competencia)}</span>
                   <span className="ml-auto text-sm font-semibold text-[#0F172A]">{moeda(p.valor)}</span>
                 </div>
               ))}
@@ -438,7 +482,7 @@ export default function GestaoPJPanel() {
                   </div>
                   <div>
                     <label className="text-xs text-[#64748B] font-medium block mb-1">Valor mensal (R$) *</label>
-                    <input type="number" step="0.01" placeholder="0,00" value={fContrato.valor_mensal} onChange={e => setFContrato(p => ({ ...p, valor_mensal: e.target.value }))}
+                    <input type="number" inputMode="decimal" step="0.01" placeholder="0,00" value={fContrato.valor_mensal} onChange={e => setFContrato(p => ({ ...p, valor_mensal: e.target.value }))}
                       className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                   </div>
                   <div>
@@ -456,12 +500,12 @@ export default function GestaoPJPanel() {
                   <label className="text-xs text-[#64748B] font-medium block mb-1">Arquivo do contrato (PDF/DOCX)</label>
                   {fContrato.arquivo_url
                     ? <div className="flex items-center gap-2">
-                        <a href={fContrato.arquivo_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">Ver contrato</a>
+                        <button type="button" onClick={() => abrirArquivo(fContrato.arquivo_url)} className="text-xs text-[#4F7CFF] underline truncate flex-1 text-left">Ver contrato</button>
                         <button onClick={() => setFContrato(p => ({ ...p, arquivo_url: '' }))} className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
                       </div>
                     : <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-[#E2E8F0] rounded-lg text-xs text-[#64748B] cursor-pointer hover:border-[#4F7CFF] ${uploadingComprovante ? 'opacity-50' : ''}`}>
                         <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="hidden" disabled={uploadingComprovante}
-                          onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadArquivo(f, 'marv-pj', 'contratos'); if (url) setFContrato(p => ({ ...p, arquivo_url: url })) } }} />
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { const path = await uploadArquivo(f, 'contratos'); if (path) setFContrato(p => ({ ...p, arquivo_url: path })) } }} />
                         {uploadingComprovante ? 'Enviando...' : 'Selecionar arquivo'}
                       </label>}
                 </div>
@@ -496,8 +540,8 @@ export default function GestaoPJPanel() {
                       </div>
                       {isExpanded ? <ChevronUp size={16} className="text-[#94A3B8] shrink-0" /> : <ChevronDown size={16} className="text-[#94A3B8] shrink-0" />}
                     </button>
-                    <button onClick={e => { e.stopPropagation(); abrirEditarContrato(c) }}
-                      className="p-1.5 text-[#94A3B8] hover:text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors shrink-0">
+                    <button onClick={e => { e.stopPropagation(); abrirEditarContrato(c) }} aria-label="Editar contrato" title="Editar contrato"
+                      className="p-2 text-[#94A3B8] hover:text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors shrink-0">
                       <Pencil size={14} />
                     </button>
                   </div>
@@ -506,7 +550,7 @@ export default function GestaoPJPanel() {
                       {(c.observacao || c.arquivo_url) && (
                         <div className="flex items-center gap-3">
                           {c.observacao && <p className="text-xs text-[#64748B] flex-1">{c.observacao}</p>}
-                          {c.arquivo_url && <a href={c.arquivo_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline shrink-0">Ver contrato</a>}
+                          {c.arquivo_url && <button type="button" onClick={() => abrirArquivo(c.arquivo_url!)} className="text-xs text-[#4F7CFF] underline shrink-0">Ver contrato</button>}
                         </div>
                       )}
                       <div className="grid grid-cols-2 gap-3 text-sm">
@@ -527,7 +571,7 @@ export default function GestaoPJPanel() {
                               <span className="text-[#0F172A]">{dataBR(f.data_inicio)} → {dataBR(f.data_fim)}</span>
                               <span className="text-[#94A3B8]">({f.dias}d)</span>
                               {f.valor_pago && <span className="text-green-600">{moeda(f.valor_pago)}</span>}
-                              <button onClick={() => deletarFerias(f.id)} className="ml-auto w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
+                              <button onClick={() => deletarFerias(f.id)} aria-label="Remover férias" title="Remover férias" className="ml-auto w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
                                 <Trash2 size={12} />
                               </button>
                             </div>
@@ -607,7 +651,7 @@ export default function GestaoPJPanel() {
                   </div>
                   <div>
                     <label className="text-xs text-[#64748B] font-medium block mb-1">Valor pago (R$)</label>
-                    <input type="number" step="0.01" placeholder="Opcional" value={fFerias.valor_pago} onChange={e => setFFerias(p => ({ ...p, valor_pago: e.target.value }))}
+                    <input type="number" inputMode="decimal" step="0.01" placeholder="Opcional" value={fFerias.valor_pago} onChange={e => setFFerias(p => ({ ...p, valor_pago: e.target.value }))}
                       className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                   </div>
                 </div>
@@ -636,10 +680,10 @@ export default function GestaoPJPanel() {
                     <p className="text-sm font-medium text-[#0F172A]">{dataBR(f.data_inicio)} → {dataBR(f.data_fim)}</p>
                     <p className="text-xs text-[#94A3B8]">{f.dias} dias{f.valor_pago ? ` · ${moeda(f.valor_pago)}` : ''}{f.observacao ? ` · ${f.observacao}` : ''}</p>
                   </div>
-                  <button onClick={() => abrirEditarFerias(f)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF] transition-colors">
+                  <button onClick={() => abrirEditarFerias(f)} aria-label="Editar férias" title="Editar férias" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF] transition-colors">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => deletarFerias(f.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#CBD5E1] hover:text-red-400 transition-colors">
+                  <button onClick={() => deletarFerias(f.id)} aria-label="Remover férias" title="Remover férias" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#CBD5E1] hover:text-red-400 transition-colors">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -692,13 +736,13 @@ export default function GestaoPJPanel() {
                   </div>
                   <div>
                     <label className="text-xs text-[#64748B] font-medium block mb-1">Valor (R$) *</label>
-                    <input type="number" step="0.01" placeholder="0,00" value={fPagamento.valor} onChange={e => setFPagamento(p => ({ ...p, valor: e.target.value }))}
+                    <input type="number" inputMode="decimal" step="0.01" placeholder="0,00" value={fPagamento.valor} onChange={e => setFPagamento(p => ({ ...p, valor: e.target.value }))}
                       className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                   </div>
                   {fPagamento.tipo === 'hora_extra' && (
                     <div>
                       <label className="text-xs text-[#64748B] font-medium block mb-1">Horas extras</label>
-                      <input type="number" step="0.5" placeholder="0" value={fPagamento.horas_extras} onChange={e => setFPagamento(p => ({ ...p, horas_extras: e.target.value }))}
+                      <input type="number" inputMode="decimal" step="0.5" placeholder="0" value={fPagamento.horas_extras} onChange={e => setFPagamento(p => ({ ...p, horas_extras: e.target.value }))}
                         className="w-full px-3 py-2 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF]" />
                     </div>
                   )}
@@ -723,12 +767,12 @@ export default function GestaoPJPanel() {
                     <label className="text-xs text-[#64748B] font-medium block mb-1">Comprovante de pagamento</label>
                     {fPagamento.comprovante_url
                       ? <div className="flex items-center gap-2">
-                          <a href={fPagamento.comprovante_url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">Ver arquivo</a>
+                          <button type="button" onClick={() => abrirArquivo(fPagamento.comprovante_url)} className="text-xs text-[#4F7CFF] underline truncate flex-1 text-left">Ver arquivo</button>
                           <button onClick={() => setFPagamento(p => ({ ...p, comprovante_url: '' }))} className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
                         </div>
                       : <label className={`flex items-center gap-2 px-3 py-2 border border-dashed border-[#E2E8F0] rounded-lg text-xs text-[#64748B] cursor-pointer hover:border-[#4F7CFF] ${uploadingComprovante ? 'opacity-50' : ''}`}>
                           <input type="file" className="hidden" disabled={uploadingComprovante}
-                            onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadArquivo(f, 'marv-pj', 'comprovantes'); if (url) setFPagamento(p => ({ ...p, comprovante_url: url })) } }} />
+                            onChange={async e => { const f = e.target.files?.[0]; if (f) { const path = await uploadArquivo(f, 'comprovantes'); if (path) setFPagamento(p => ({ ...p, comprovante_url: path })) } }} />
                           {uploadingComprovante ? 'Enviando...' : 'Selecionar arquivo'}
                         </label>}
                   </div>
@@ -739,7 +783,7 @@ export default function GestaoPJPanel() {
                     <div className="space-y-1.5">
                       {fPagamento.nota_fiscal_urls.map((url, i) => (
                         <div key={i} className="flex items-center gap-2">
-                          <a href={url} target="_blank" rel="noreferrer" className="text-xs text-[#4F7CFF] underline truncate flex-1">NF {i + 1}</a>
+                          <button type="button" onClick={() => abrirArquivo(url)} className="text-xs text-[#4F7CFF] underline truncate flex-1 text-left">NF {i + 1}</button>
                           <button onClick={() => setFPagamento(p => ({ ...p, nota_fiscal_urls: p.nota_fiscal_urls.filter((_, idx) => idx !== i) }))}
                             className="text-[#94A3B8] hover:text-red-400"><X size={12} /></button>
                         </div>
@@ -754,7 +798,7 @@ export default function GestaoPJPanel() {
                 </div>
                 <div className="flex justify-end gap-2 pt-1">
                   <button onClick={() => { setShowAddPagamento(false); setEditandoPagamento(null) }} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
-                  <button onClick={salvarPagamento} disabled={saving || uploadingComprovante}
+                  <button onClick={salvarPagamento} disabled={saving || uploadingComprovante || uploadingNF}
                     className="px-4 py-2 text-sm font-medium bg-[#4F7CFF] text-white rounded-lg hover:bg-[#3D6AEE] disabled:opacity-50 transition-colors">
                     {saving ? 'Salvando...' : 'Salvar'}
                   </button>
@@ -771,20 +815,20 @@ export default function GestaoPJPanel() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${tipoColor[p.tipo]}`}>{tipoLabel[p.tipo]}</span>
-                      <span className="text-xs text-[#64748B]">{p.competencia}</span>
+                      <span className="text-xs text-[#64748B]">{formatarCompetencia(p.competencia)}</span>
                       {p.horas_extras && <span className="text-xs text-amber-600">{p.horas_extras}h</span>}
-                      {p.comprovante_url && <a href={p.comprovante_url} target="_blank" rel="noreferrer" className="text-[10px] text-[#4F7CFF] underline">Comprovante</a>}
+                      {p.comprovante_url && <button type="button" onClick={() => abrirArquivo(p.comprovante_url!)} className="text-[10px] text-[#4F7CFF] underline">Comprovante</button>}
                       {(p.nota_fiscal_urls ?? (p.nota_fiscal_url ? [p.nota_fiscal_url] : [])).map((url, i) => (
-                        <a key={i} href={url} target="_blank" rel="noreferrer" className="text-[10px] text-[#4F7CFF] underline">NF{(p.nota_fiscal_urls?.length ?? 1) > 1 ? ` ${i + 1}` : ''}</a>
+                        <button type="button" key={i} onClick={() => abrirArquivo(url)} className="text-[10px] text-[#4F7CFF] underline">NF{(p.nota_fiscal_urls?.length ?? 1) > 1 ? ` ${i + 1}` : ''}</button>
                       ))}
                     </div>
                     {p.observacao && <p className="text-xs text-[#94A3B8] mt-0.5 truncate">{p.observacao}</p>}
                   </div>
                   <p className="text-sm font-semibold text-[#0F172A] shrink-0">{moeda(p.valor)}</p>
-                  <button onClick={() => abrirEditarPagamento(p)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF] transition-colors">
+                  <button onClick={() => abrirEditarPagamento(p)} aria-label="Editar pagamento" title="Editar pagamento" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#CBD5E1] hover:text-[#4F7CFF] transition-colors">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => deletarPagamento(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#CBD5E1] hover:text-red-400 transition-colors">
+                  <button onClick={() => deletarPagamento(p.id)} aria-label="Remover pagamento" title="Remover pagamento" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#CBD5E1] hover:text-red-400 transition-colors">
                     <Trash2 size={13} />
                   </button>
                 </div>

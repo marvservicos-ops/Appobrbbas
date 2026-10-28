@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Banknote, CircleDollarSign, Clock3, Loader2, ReceiptText, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { mensagemErro } from '@/lib/erros'
+import { hojeLocal } from '@/lib/datas'
 
 type Linha = {
   id: string; obra_id: string; percentual: number; valor_previsto: number
@@ -16,14 +18,17 @@ const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency',
 export default function AdminFinanceiroPage() {
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('obra_medicoes')
         .select('id,obra_id,percentual,valor_previsto,valor_faturado,valor_recebido,status,data_vencimento,obra:obras(id,titulo)')
         .neq('status', 'cancelada')
+      // Sem isso, erro de leitura aparecia como "R$ 0" em todos os cards
+      if (error) setErro(mensagemErro(error, 'Não foi possível carregar as medições'))
       setLinhas((data ?? []) as unknown as Linha[])
       setLoading(false)
     }
@@ -34,7 +39,7 @@ export default function AdminFinanceiroPage() {
     const previsto = linhas.reduce((s, x) => s + Number(x.valor_previsto || 0), 0)
     const faturado = linhas.reduce((s, x) => s + Number(x.valor_faturado || 0), 0)
     const recebido = linhas.reduce((s, x) => s + Number(x.valor_recebido || 0), 0)
-    const vencidas = linhas.filter(x => x.status !== 'recebida' && x.data_vencimento && new Date(x.data_vencimento + 'T23:59:59') < new Date())
+    const vencidas = linhas.filter(x => x.status !== 'recebida' && x.data_vencimento && x.data_vencimento < hojeLocal())
     return { previsto, faturado, recebido, aberto: Math.max(0, faturado - recebido), aFaturar: Math.max(0, previsto - faturado), vencidas }
   }, [linhas])
 
@@ -52,6 +57,11 @@ export default function AdminFinanceiroPage() {
   }, [linhas])
 
   if (loading) return <div className="h-64 flex items-center justify-center"><Loader2 className="animate-spin text-[#4F7CFF]" /></div>
+  if (erro) return (
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-4">{erro}</p>
+    </div>
+  )
 
   const cards = [
     { label: 'Planejado', value: resumo.previsto, icon: TrendingUp, tone: 'bg-slate-50 text-slate-700' },

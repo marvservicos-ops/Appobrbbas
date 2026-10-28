@@ -1,8 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
+import { useAccess } from '@/lib/useAccess'
+import { mensagemErro } from '@/lib/erros'
+import { hojeLocal } from '@/lib/datas'
+import { parseNumeroBR } from '@/lib/numero'
 import {
   Plus, X, Loader2, Pencil, Trash2, RefreshCw, Settings,
   Zap, Droplets, Building2, Monitor, FileText, ShieldCheck, MoreHorizontal,
@@ -69,6 +74,9 @@ const mesAtual = () => {
 }
 
 export default function AdministrativoPage() {
+  const router = useRouter()
+  const { isAdmin, loading: accessLoading } = useAccess()
+  const [erro, setErro] = useState<string | null>(null)
   const [custos, setCustos] = useState<Custo[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
@@ -78,15 +86,28 @@ export default function AdministrativoPage() {
   const [editando, setEditando] = useState<Custo | null>(null)
   const [mesFiltro, setMesFiltro] = useState(mesAtual())
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (!accessLoading && !isAdmin) router.replace('/obras')
+  }, [isAdmin, accessLoading, router])
+
+  // Só carrega os custos depois de confirmar que é admin
+  useEffect(() => {
+    if (!accessLoading && isAdmin) load()
+  }, [accessLoading, isAdmin])
 
   async function load() {
     setLoading(true)
+    setErro(null)
     const sb = createClient()
-    const [{ data: cats }, { data: costs }] = await Promise.all([
+    const [{ data: cats, error: catErr }, { data: costs, error: costErr }] = await Promise.all([
       sb.from('categorias_administrativas').select('*').order('nome'),
       sb.from('custos_administrativos').select('*').order('data', { ascending: false }),
     ])
+    if (catErr || costErr) {
+      setErro(mensagemErro(catErr ?? costErr, 'Erro ao carregar os custos'))
+      setLoading(false)
+      return
+    }
     setCategorias((cats ?? []) as Categoria[])
     setCustos((costs ?? []) as Custo[])
     setLoading(false)
@@ -96,11 +117,17 @@ export default function AdministrativoPage() {
     return categorias.find(c => c.id === id) ?? { id: '', nome: 'Sem categoria', icone: 'MoreHorizontal', cor: '#94A3B8' }
   }
 
+  // Recorrente conta a partir da data de referência; não há data de término,
+  // então um recorrente desativado some também dos meses passados.
+  const fimMes = `${mesFiltro}-31`
+  const recorrenteNoMes = (c: Custo) => c.recorrencia !== 'unico' && c.data <= fimMes
+  const unicoNoMes = (c: Custo) => c.recorrencia === 'unico' && c.ativo && c.data.startsWith(mesFiltro)
+
   // KPIs
-  const recorrentes = custos.filter(c => c.ativo && c.recorrencia !== 'unico')
+  const recorrentes = custos.filter(c => c.ativo && recorrenteNoMes(c))
   const totalMensalRecorrente = recorrentes.reduce((s, c) => s + custoMensalEquivalente(c), 0)
   const totalAnualRecorrente = totalMensalRecorrente * 12
-  const unicosMes = custos.filter(c => c.recorrencia === 'unico' && c.data.startsWith(mesFiltro))
+  const unicosMes = custos.filter(unicoNoMes)
   const totalUnicosMes = unicosMes.reduce((s, c) => s + c.valor, 0)
   const totalMes = totalMensalRecorrente + totalUnicosMes
 
@@ -109,20 +136,34 @@ export default function AdministrativoPage() {
     const catOk = catFiltro === 'todas' || c.categoria_id === catFiltro
     if (!catOk) return false
     if (c.recorrencia === 'unico') return c.data.startsWith(mesFiltro)
-    return true
+    return c.data <= fimMes
   })
 
   // Breakdown por categoria
   const porCategoria = categorias.map(cat => ({
     ...cat,
-    mensal: custos.filter(c => c.categoria_id === cat.id && c.ativo).reduce((s, c) => s + custoMensalEquivalente(c), 0),
-    unicos: custos.filter(c => c.categoria_id === cat.id && c.recorrencia === 'unico' && c.data.startsWith(mesFiltro)).reduce((s, c) => s + c.valor, 0),
+    mensal: custos.filter(c => c.categoria_id === cat.id && c.ativo && recorrenteNoMes(c)).reduce((s, c) => s + custoMensalEquivalente(c), 0),
+    unicos: custos.filter(c => c.categoria_id === cat.id && unicoNoMes(c)).reduce((s, c) => s + c.valor, 0),
   })).filter(cat => cat.mensal > 0 || cat.unicos > 0)
 
   async function deletarCusto(id: string) {
     if (!confirm('Remover este custo?')) return
-    await createClient().from('custos_administrativos').delete().eq('id', id)
+    const { error } = await createClient().from('custos_administrativos').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao remover o custo')); return }
     load()
+  }
+
+  if (accessLoading || !isAdmin) {
+    return (
+      <div className="flex flex-col h-full">
+        <Topbar />
+        <div className="flex items-center justify-center py-16">
+          {accessLoading
+            ? <Loader2 size={24} className="animate-spin text-[#4F7CFF]" />
+            : <p className="text-sm text-[#64748B]">Acesso restrito a administradores.</p>}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -137,7 +178,7 @@ export default function AdministrativoPage() {
             <p className="text-sm text-[#64748B] mt-0.5">Controle de despesas fixas e variáveis da empresa</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={load} className="w-9 h-9 flex items-center justify-center rounded-lg border border-[#E2E8F0] hover:bg-[#F1F5F9] transition-colors">
+            <button onClick={load} aria-label="Atualizar" title="Atualizar" className="w-9 h-9 flex items-center justify-center rounded-lg border border-[#E2E8F0] hover:bg-[#F1F5F9] transition-colors">
               <RefreshCw size={14} className="text-[#94A3B8]" />
             </button>
             {tab === 'custos' && (
@@ -161,11 +202,18 @@ export default function AdministrativoPage() {
           </button>
         </div>
 
-        {tab === 'categorias' && (
+        {erro && !loading && (
+          <div className="card flex flex-col items-center justify-center py-10 text-center mb-6">
+            <p className="text-sm font-medium text-red-600">{erro}</p>
+            <button onClick={load} className="btn-primary mt-4 text-sm">Tentar de novo</button>
+          </div>
+        )}
+
+        {!erro && tab === 'categorias' && (
           <GerenciarCategorias categorias={categorias} onChanged={load} />
         )}
 
-        {tab === 'custos' && (
+        {!erro && tab === 'custos' && (
           <>
             {/* KPIs */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -190,6 +238,9 @@ export default function AdministrativoPage() {
                 <p className="text-[11px] text-[#94A3B8] mt-0.5">recorrente + avulsos</p>
               </div>
             </div>
+            <p className="text-[11px] text-[#94A3B8] -mt-3 mb-6">
+              Recorrentes contam a partir da data de referência. Como não há data de término, um recorrente desativado deixa de aparecer também nos meses passados.
+            </p>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Breakdown por categoria */}
@@ -337,12 +388,12 @@ function CustoRow({ custo, cat, onEdit, onDelete }: { custo: Custo; cat: Categor
         <p className="text-sm font-semibold text-[#0F172A]">{moeda(custo.valor)}</p>
         {custo.recorrencia === 'anual' && <p className="text-[10px] text-[#94A3B8]">{moeda(custo.valor / 12)}/mês</p>}
       </div>
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
-        <button onClick={onEdit} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
-          <Pencil size={12} className="text-[#4F7CFF]" />
+      <div className="flex gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity ml-1">
+        <button onClick={onEdit} aria-label="Editar custo" title="Editar custo" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
+          <Pencil size={14} className="text-[#4F7CFF]" />
         </button>
-        <button onClick={onDelete} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50">
-          <Trash2 size={12} className="text-red-400" />
+        <button onClick={onDelete} aria-label="Remover custo" title="Remover custo" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50">
+          <Trash2 size={14} className="text-red-400" />
         </button>
       </div>
     </div>
@@ -356,7 +407,8 @@ function GerenciarCategorias({ categorias, onChanged }: { categorias: Categoria[
 
   async function deletar(id: string) {
     if (!confirm('Remover esta categoria? Os custos vinculados ficarão sem categoria.')) return
-    await createClient().from('categorias_administrativas').delete().eq('id', id)
+    const { error } = await createClient().from('categorias_administrativas').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao remover a categoria')); return }
     onChanged()
   }
 
@@ -378,14 +430,16 @@ function GerenciarCategorias({ categorias, onChanged }: { categorias: Categoria[
               </div>
               <p className="flex-1 text-sm font-medium text-[#0F172A]">{cat.nome}</p>
               <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: cat.cor }} />
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
                 <button onClick={() => { setEditando(cat); setShowModal(true) }}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
-                  <Pencil size={12} className="text-[#4F7CFF]" />
+                  aria-label="Editar categoria" title="Editar categoria"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
+                  <Pencil size={14} className="text-[#4F7CFF]" />
                 </button>
                 <button onClick={() => deletar(cat.id)}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50">
-                  <Trash2 size={12} className="text-red-400" />
+                  aria-label="Remover categoria" title="Remover categoria"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50">
+                  <Trash2 size={14} className="text-red-400" />
                 </button>
               </div>
             </div>
@@ -422,12 +476,11 @@ function ModalCategoria({ categoria, onClose, onSaved }: { categoria: Categoria 
     setSaving(true)
     const sb = createClient()
     const payload = { nome: nome.trim(), icone, cor }
-    if (categoria) {
-      await sb.from('categorias_administrativas').update(payload).eq('id', categoria.id)
-    } else {
-      await sb.from('categorias_administrativas').insert(payload)
-    }
+    const { error } = categoria
+      ? await sb.from('categorias_administrativas').update(payload).eq('id', categoria.id)
+      : await sb.from('categorias_administrativas').insert(payload)
     setSaving(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar a categoria')); return }
     onSaved()
   }
 
@@ -441,7 +494,7 @@ function ModalCategoria({ categoria, onClose, onSaved }: { categoria: Categoria 
             </div>
             <h2 className="font-syne font-semibold text-[#0F172A]">{categoria ? 'Editar categoria' : 'Nova categoria'}</h2>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-5">
 
@@ -507,31 +560,32 @@ function ModalCusto({ custo, categorias, onClose, onSaved }: {
   const [descricao, setDescricao] = useState(custo?.descricao ?? '')
   const [categoriaId, setCategoriaId] = useState(custo?.categoria_id ?? (categorias[0]?.id ?? ''))
   const [valor, setValor] = useState(custo?.valor ? String(custo.valor) : '')
-  const [data, setData] = useState(custo?.data ?? new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(custo?.data ?? hojeLocal())
   const [recorrencia, setRecorrencia] = useState<Custo['recorrencia']>(custo?.recorrencia ?? 'mensal')
   const [ativo, setAtivo] = useState(custo?.ativo ?? true)
   const [observacao, setObservacao] = useState(custo?.observacao ?? '')
   const [saving, setSaving] = useState(false)
 
   async function salvar() {
+    const valorNum = parseNumeroBR(valor)
     if (!descricao.trim() || !valor) return
+    if (Number.isNaN(valorNum) || valorNum < 0) { alert('Informe um valor válido.'); return }
     setSaving(true)
     const sb = createClient()
     const payload = {
       descricao: descricao.trim(),
       categoria_id: categoriaId || null,
-      valor: parseFloat(valor),
+      valor: valorNum,
       data,
       recorrencia,
       ativo,
       observacao: observacao.trim() || null,
     }
-    if (custo) {
-      await sb.from('custos_administrativos').update(payload).eq('id', custo.id)
-    } else {
-      await sb.from('custos_administrativos').insert(payload)
-    }
+    const { error } = custo
+      ? await sb.from('custos_administrativos').update(payload).eq('id', custo.id)
+      : await sb.from('custos_administrativos').insert(payload)
     setSaving(false)
+    if (error) { alert(mensagemErro(error, 'Erro ao salvar o custo')); return }
     onSaved()
   }
 
@@ -542,7 +596,7 @@ function ModalCusto({ custo, categorias, onClose, onSaved }: {
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">{custo ? 'Editar custo' : 'Novo custo'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-4">
 
@@ -576,7 +630,7 @@ function ModalCusto({ custo, categorias, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Valor (R$) *</label>
-              <input type="number" step="0.01" min="0" className="field" value={valor}
+              <input type="number" step="0.01" min="0" inputMode="decimal" className="field" value={valor}
                 onChange={e => setValor(e.target.value)} placeholder="0,00" />
             </div>
             <div>

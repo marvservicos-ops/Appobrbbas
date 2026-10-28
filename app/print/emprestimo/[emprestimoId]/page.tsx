@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { PrintCarregando, PrintNaoEncontrado } from '../../Estados'
 import { FerramentaEmprestimo, FerramentaEmprestimoItem } from '@/lib/types'
 
 export default function EmprestimoPrintPage() {
@@ -19,35 +20,34 @@ export default function EmprestimoPrintPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const [{ data: emp }, { data: its }, { data: dadosEmpresa }] = await Promise.all([
-        supabase.from('ferramenta_emprestimos').select('*, funcionario:funcionarios(id, nome, cargo, funcao, cpf), obra:obras(id, titulo)').eq('id', emprestimoId).single(),
-        supabase.from('ferramenta_emprestimo_itens').select('*, ferramenta:ferramentas(*)').eq('emprestimo_id', emprestimoId),
-        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
-      ])
-      setEmprestimo(emp as unknown as FerramentaEmprestimo)
-      setItens((its ?? []) as unknown as FerramentaEmprestimoItem[])
-      if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
-      setLoading(false)
+      try {
+        const supabase = createClient()
+        const [{ data: emp }, { data: its }, { data: dadosEmpresa }] = await Promise.all([
+          supabase.from('ferramenta_emprestimos').select('*, funcionario:funcionarios(id, nome, cargo, funcao, cpf), obra:obras(id, titulo)').eq('id', emprestimoId).single(),
+          supabase.from('ferramenta_emprestimo_itens').select('*, ferramenta:ferramentas(*)').eq('emprestimo_id', emprestimoId),
+          supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
+        ])
+        setEmprestimo(emp as unknown as FerramentaEmprestimo)
+        setItens((its ?? []) as unknown as FerramentaEmprestimoItem[])
+        if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
+      } catch (err) {
+        console.error('Erro ao carregar dados para impressão', err)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [emprestimoId])
 
   useEffect(() => {
-    if (!loading && emprestimo) setTimeout(() => window.print(), 600)
+    // Só imprime com todos os dados carregados (loading cai depois de todas as consultas)
+    if (loading || !(emprestimo)) return
+    const t = setTimeout(() => window.print(), 600)
+    return () => clearTimeout(t)
   }, [loading, emprestimo])
 
-  if (loading || !emprestimo) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'white' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #4F7CFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <p style={{ color: '#64748B', fontSize: 13 }}>Preparando contrato...</p>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      </div>
-    )
-  }
+  if (loading) return <PrintCarregando texto="Preparando contrato..." />
+  if (!emprestimo) return <PrintNaoEncontrado texto="Empréstimo não encontrado." voltarHref="/estoque" voltarTexto="Voltar ao estoque" />
 
   const s: Record<string, React.CSSProperties> = {
     table: { borderCollapse: 'collapse', width: '100%', marginTop: 12 },

@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import PainelPendencias from '@/components/PainelPendencias'
 import { useAccess } from '@/lib/useAccess'
+import { dataLocal } from '@/lib/datas'
 import {
   Wrench, TrendingUp, AlertTriangle, Package,
   Calendar, ChevronRight, Loader2, Clock, Users,
@@ -63,7 +64,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { isAdmin } = useAccess()
+  const { isAdmin, loading: carregandoAcesso } = useAccess()
   const [kpis, setKpis] = useState<KPIs | null>(null)
   const [obras, setObras] = useState<ObraAndamento[]>([])
   const [medicoes, setMedicoes] = useState<MedicaoVencendo[]>([])
@@ -71,15 +72,18 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (isAdmin === undefined) return
+    // Espera saber se é admin: antes carregava duas vezes e a primeira resposta
+    // (sem os dados de admin) podia chegar por último e sobrescrever a segunda.
+    if (carregandoAcesso) return
+    let ativo = true
     async function load() {
       const sb = createClient()
       const hoje = new Date()
-      const hojeStr = hoje.toISOString().split('T')[0]
+      const hojeStr = dataLocal(hoje)
       const em7dias = new Date(hoje); em7dias.setDate(hoje.getDate() + 7)
-      const em7Str = em7dias.toISOString().split('T')[0]
+      const em7Str = dataLocal(em7dias)
       const mesInicio = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`
-      const mesFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0]
+      const mesFim = dataLocal(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0))
 
       const adminQueries = isAdmin ? [
         sb.from('obra_medicoes').select('obra_id, status, valor_previsto')
@@ -139,7 +143,8 @@ export default function DashboardPage() {
 
       // Estoque crítico
       const criticos: ProdutoCritico[] = (produtosData ?? [])
-        .filter((p: any) => (p.quantidade_atual ?? 0) < (p.quantidade_minima ?? 0))
+        // Critério único de crítico (igual ao sino e ao Telegram): atual <= mínimo
+        .filter((p: any) => (p.quantidade_atual ?? 0) <= (p.quantidade_minima ?? 0))
         .map((p: any) => ({
           id: p.id, nome: p.nome,
           estoque_nome: (p.estoques as any)?.nome ?? '—',
@@ -154,6 +159,7 @@ export default function DashboardPage() {
       const alocadosHoje = new Set((alocHojeData ?? []).map((a: any) => a.funcionario_id))
       const semAlocacao = isDiaUtil ? (funcsData ?? []).filter(f => !alocadosHoje.has(f.id)).length : 0
 
+      if (!ativo) return
       setKpis({
         obrasEmAndamento: (obrasData ?? []).filter(o => o.status === 'Em Andamento').length,
         obrasAprovadas: (obrasData ?? []).filter(o => o.status === 'Aprovada').length,
@@ -168,7 +174,8 @@ export default function DashboardPage() {
       setLoading(false)
     }
     load()
-  }, [isAdmin])
+    return () => { ativo = false }
+  }, [isAdmin, carregandoAcesso])
 
   if (loading) return (
     <div className="flex flex-col h-full">

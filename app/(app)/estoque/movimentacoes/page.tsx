@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { TrendingUp, TrendingDown, RefreshCw, Filter } from 'lucide-react'
+import { TrendingUp, TrendingDown, RefreshCw, Filter, SlidersHorizontal } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueMovimentacao } from '@/lib/types'
 import Topbar from '@/components/Topbar'
+
+const TIPO_LABEL: Record<string, string> = { entrada: 'Entrada', saida: 'Saída', devolucao: 'Devolução', ajuste: 'Ajuste' }
 import Link from 'next/link'
 
 function formatDate(d?: string | null) {
@@ -67,12 +69,12 @@ export default function MovimentacoesPage() {
         </div>
 
         {/* Filtros */}
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           <Filter size={14} className="text-[#64748B]" />
           {['', 'entrada', 'saida', 'devolucao', 'ajuste'].map(t => (
             <button key={t} onClick={() => setTipoFilter(t)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors capitalize ${tipoFilter === t ? 'bg-[#4F7CFF] text-white' : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'}`}>
-              {t || 'Todos'}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${tipoFilter === t ? 'bg-[#4F7CFF] text-white' : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'}`}>
+              {t ? TIPO_LABEL[t] : 'Todos'}
             </button>
           ))}
         </div>
@@ -119,16 +121,17 @@ export default function MovimentacoesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${mov.tipo === 'entrada' ? 'bg-emerald-100' : mov.tipo === 'devolucao' ? 'bg-blue-100' : 'bg-red-100'}`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${mov.tipo === 'entrada' ? 'bg-emerald-100' : mov.tipo === 'devolucao' ? 'bg-blue-100' : mov.tipo === 'ajuste' ? 'bg-purple-100' : 'bg-red-100'}`}>
                           {mov.tipo === 'entrada' ? <TrendingUp size={11} className="text-emerald-600" /> :
                            mov.tipo === 'devolucao' ? <RefreshCw size={11} className="text-blue-600" /> :
+                           mov.tipo === 'ajuste' ? <SlidersHorizontal size={11} className="text-purple-600" /> :
                            <TrendingDown size={11} className="text-red-600" />}
                         </div>
-                        <span className="text-xs font-medium capitalize text-[#374151]">{mov.tipo}</span>
+                        <span className="text-xs font-medium text-[#374151]">{TIPO_LABEL[mov.tipo] ?? mov.tipo}</span>
                       </div>
                     </td>
-                    <td className={`px-4 py-3 text-sm font-bold text-right ${mov.tipo === 'saida' ? 'text-red-500' : 'text-emerald-600'}`}>
-                      {mov.tipo === 'saida' ? '-' : '+'}{mov.quantidade} {item?.unidade}
+                    <td className={`px-4 py-3 text-sm font-bold text-right ${mov.tipo === 'saida' ? 'text-red-500' : mov.tipo === 'ajuste' ? 'text-purple-600' : 'text-emerald-600'}`}>
+                      {mov.tipo === 'saida' ? '-' : mov.tipo === 'ajuste' ? '= ' : '+'}{mov.quantidade} {item?.unidade}
                     </td>
                     <td className="px-4 py-3 text-sm text-[#374151]">{mov.responsavel}</td>
                     <td className="px-4 py-3 text-xs text-[#64748B]">{obra?.titulo || '—'}</td>

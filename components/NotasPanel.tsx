@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { mensagemErro } from '@/lib/erros'
 import { Pin, Trash2, Plus, Search, Check, ArrowLeft, StickyNote } from 'lucide-react'
 
 interface Nota {
@@ -80,12 +81,22 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
   const [saving, setSaving] = useState(false)
   const [titulo, setTitulo] = useState('')
   const [mobileView, setMobileView] = useState<'list' | 'editor'>('list')
+  const [erroCarga, setErroCarga] = useState<string | null>(null)
+  const [erroSalvar, setErroSalvar] = useState(false)
+  // Último salvamento que falhou — tentado de novo na próxima digitação ou ao trocar de nota
+  const pendente = useRef<{ id: string; titulo: string; conteudo: string; pinned: boolean } | null>(null)
   const editorRef = useRef<HTMLDivElement>(null)
 
   async function fetchNotas() {
     const sb = createClient()
-    const { data } = await sb.from('notas').select('id,titulo,conteudo,pinned,updated_at')
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) return
+    // "Minhas notas": só as do usuário (e as antigas, sem dono)
+    const { data, error } = await sb.from('notas').select('id,titulo,conteudo,pinned,updated_at')
+      .or(`user_id.eq.${user.id},user_id.is.null`)
       .order('pinned', { ascending: false }).order('updated_at', { ascending: false })
+    if (error) { setErroCarga(mensagemErro(error, 'Erro ao carregar as notas')); return }
+    setErroCarga(null)
     if (data) setNotas(data as Nota[])
   }
 
@@ -94,9 +105,26 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
   async function saveNota(id: string, tituloVal: string, conteudoVal: string, pinned: boolean) {
     setSaving(true)
     const sb = createClient()
-    await sb.from('notas').update({ titulo: tituloVal, conteudo: conteudoVal, pinned, updated_at: new Date().toISOString() }).eq('id', id)
+    const agora = new Date().toISOString()
+    const { error } = await sb.from('notas').update({ titulo: tituloVal, conteudo: conteudoVal, pinned, updated_at: agora }).eq('id', id)
     setSaving(false)
-    setNotas(prev => prev.map(n => n.id === id ? { ...n, titulo: tituloVal, conteudo: conteudoVal, updated_at: new Date().toISOString() } : n))
+    // Mantém o texto na lista local mesmo se falhar, para não perdê-lo ao trocar de nota
+    setNotas(prev => prev.map(n => n.id === id ? { ...n, titulo: tituloVal, conteudo: conteudoVal, ...(error ? {} : { updated_at: agora }) } : n))
+    if (error) {
+      mensagemErro(error, 'Erro ao salvar nota')
+      pendente.current = { id, titulo: tituloVal, conteudo: conteudoVal, pinned }
+      setErroSalvar(true)
+      return false
+    }
+    if (pendente.current?.id === id) pendente.current = null
+    setErroSalvar(pendente.current !== null)
+    return true
+  }
+
+  // Tenta de novo um salvamento que falhou (de qualquer nota)
+  function tentarPendente() {
+    const p = pendente.current
+    if (p) saveNota(p.id, p.titulo, p.conteudo, p.pinned)
   }
 
   const debouncedSave = useDebounce((id: string, t: string, c: string, p: boolean) => saveNota(id, t, c, p), 800)
@@ -115,7 +143,8 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
     const sb = createClient()
     const { data: { user } } = await sb.auth.getUser()
     if (!user) return null
-    const { data } = await sb.from('notas').insert({ titulo: 'Nova nota', conteudo: '', user_id: user.id }).select().single()
+    const { data, error } = await sb.from('notas').insert({ titulo: 'Nova nota', conteudo: '', user_id: user.id }).select().single()
+    if (error) { alert(mensagemErro(error, 'Erro ao criar nota')); return null }
     if (data) {
       setNotas(prev => [data as Nota, ...prev])
       openNota(data as Nota)
@@ -124,6 +153,11 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
   }
 
   function openNota(nota: Nota) {
+    // Ao trocar de nota, tenta de novo um salvamento que tinha falhado
+    if (pendente.current && pendente.current.id !== nota.id) tentarPendente()
+    // Se a nota aberta tem texto ainda não salvo, abre com ele
+    const p = pendente.current?.id === nota.id ? pendente.current : null
+    if (p) nota = { ...nota, titulo: p.titulo, conteudo: p.conteudo }
     setSelected(nota)
     setTitulo(nota.titulo)
     setTimeout(() => {
@@ -135,9 +169,12 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
   }
 
   async function deleteNota(id: string) {
-    if (!confirm('Apagar esta nota?')) return
+    const nota = notas.find(n => n.id === id)
+    if (!confirm(`Apagar a nota "${nota?.titulo ?? ''}"? Essa ação não pode ser desfeita.`)) return
     const sb = createClient()
-    await sb.from('notas').delete().eq('id', id)
+    const { error } = await sb.from('notas').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao apagar nota')); return }
+    if (pendente.current?.id === id) { pendente.current = null; setErroSalvar(false) }
     setNotas(prev => prev.filter(n => n.id !== id))
     if (selected?.id === id) { setSelected(null); setMobileView('list') }
   }
@@ -145,7 +182,8 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
   async function togglePin(nota: Nota) {
     const pinned = !nota.pinned
     const sb = createClient()
-    await sb.from('notas').update({ pinned }).eq('id', nota.id)
+    const { error } = await sb.from('notas').update({ pinned }).eq('id', nota.id)
+    if (error) { alert(mensagemErro(error, 'Erro ao fixar nota')); return }
     setNotas(prev => [...prev.map(n => n.id === nota.id ? { ...n, pinned } : n)]
       .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()))
     if (selected?.id === nota.id) setSelected(s => s ? { ...s, pinned } : s)
@@ -166,20 +204,29 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
     return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
   }
 
+  // compact (janela flutuante): sempre uma coisa por vez.
+  // Página /notas: lado a lado a partir de md; abaixo disso, lista OU editor.
   const showList = !compact || mobileView === 'list'
   const showEditor = !compact || mobileView === 'editor'
+  const listaCls = compact
+    ? 'w-full flex'
+    : `${mobileView === 'editor' ? 'hidden md:flex' : 'flex'} w-full md:w-[240px] shrink-0 md:border-r border-[#E2E8F0]`
+  const editorCls = compact
+    ? 'flex'
+    : mobileView === 'list' ? 'hidden md:flex' : 'flex'
 
   return (
     <div className={`flex h-full bg-white overflow-hidden ${compact ? 'flex-col' : 'flex-row'}`}>
 
       {/* ── Lista ── */}
       {showList && (
-        <div className={`${compact ? 'w-full' : 'w-[240px] shrink-0 border-r border-[#E2E8F0]'} flex flex-col bg-[#F8FAFC]`}>
+        <div className={`${listaCls} flex-col bg-[#F8FAFC]`}>
           <div className="px-3 py-3 border-b border-[#E2E8F0]">
             <div className="flex items-center justify-between mb-2">
               <span className="font-syne font-bold text-sm text-[#0F172A]">Notas</span>
-              <button onClick={async () => { const n = await newNota(); if (compact && n) setMobileView('editor') }}
-                className="w-7 h-7 rounded-full bg-[#4F7CFF] text-white flex items-center justify-center hover:bg-[#3d6ae0] transition-colors">
+              <button onClick={async () => { const n = await newNota(); if (n) setMobileView('editor') }}
+                aria-label="Nova nota" title="Nova nota"
+                className="w-9 h-9 rounded-full bg-[#4F7CFF] text-white flex items-center justify-center hover:bg-[#3d6ae0] transition-colors">
                 <Plus size={14} />
               </button>
             </div>
@@ -190,13 +237,19 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {filtradas.length === 0 && (
+            {erroCarga && (
+              <div className="p-4 text-xs text-center mt-4">
+                <p className="text-red-600">{erroCarga}</p>
+                <button onClick={fetchNotas} className="mt-2 font-medium text-[#4F7CFF] hover:underline">Tentar de novo</button>
+              </div>
+            )}
+            {!erroCarga && filtradas.length === 0 && (
               <div className="p-4 text-xs text-[#94A3B8] text-center mt-4">
                 {search ? 'Nenhuma nota encontrada' : 'Nenhuma nota ainda'}
               </div>
             )}
             {filtradas.map(nota => (
-              <button key={nota.id} onClick={() => { openNota(nota); if (compact) setMobileView('editor') }}
+              <button key={nota.id} onClick={() => { openNota(nota); setMobileView('editor') }}
                 className={`w-full text-left px-3 py-2.5 border-b border-[#F1F5F9] transition-colors border-l-2 ${selected?.id === nota.id ? 'bg-[#EEF2FF] border-l-[#4F7CFF]' : 'hover:bg-white border-l-transparent'}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
@@ -218,25 +271,31 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
 
       {/* ── Editor ── */}
       {showEditor && (
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className={`${editorCls} flex-1 flex-col overflow-hidden`}>
           {selected ? (
             <>
               <div className="flex items-center gap-2 px-4 py-3 border-b border-[#E2E8F0]">
-                {compact && (
-                  <button onClick={() => setMobileView('list')} className="text-[#4F7CFF] mr-1">
-                    <ArrowLeft size={18} />
-                  </button>
-                )}
+                <button onClick={() => setMobileView('list')} aria-label="Voltar para a lista" title="Voltar para a lista"
+                  className={`text-[#4F7CFF] p-2 -ml-2 ${compact ? '' : 'md:hidden'}`}>
+                  <ArrowLeft size={18} />
+                </button>
                 <input value={titulo} onChange={onTituloChange} placeholder="Título"
                   className="flex-1 text-base font-syne font-bold text-[#0F172A] bg-transparent border-none outline-none" />
                 <div className="flex items-center gap-1">
-                  {saving && <span className="text-[10px] text-[#94A3B8]">salvando...</span>}
-                  <button onClick={() => togglePin(selected)} title={selected.pinned ? 'Desafixar' : 'Fixar'}
-                    className={`p-1.5 rounded-lg border transition-colors ${selected.pinned ? 'bg-[#EEF2FF] border-[#4F7CFF] text-[#4F7CFF]' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#4F7CFF] hover:text-[#4F7CFF]'}`}>
+                  {saving
+                    ? <span className="text-[10px] text-[#94A3B8]">salvando...</span>
+                    : erroSalvar && (
+                      <button onClick={tentarPendente} title="Tentar salvar de novo"
+                        className="text-[10px] font-semibold text-red-600 bg-red-50 rounded px-1.5 py-0.5">
+                        Erro ao salvar · tentar de novo
+                      </button>
+                    )}
+                  <button onClick={() => togglePin(selected)} title={selected.pinned ? 'Desafixar' : 'Fixar'} aria-label={selected.pinned ? 'Desafixar' : 'Fixar'}
+                    className={`p-2 rounded-lg border transition-colors ${selected.pinned ? 'bg-[#EEF2FF] border-[#4F7CFF] text-[#4F7CFF]' : 'border-[#E2E8F0] text-[#94A3B8] hover:border-[#4F7CFF] hover:text-[#4F7CFF]'}`}>
                     <Pin size={13} />
                   </button>
-                  <button onClick={() => deleteNota(selected.id)}
-                    className="p-1.5 rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:border-red-300 hover:text-red-500 transition-colors">
+                  <button onClick={() => deleteNota(selected.id)} title="Apagar nota" aria-label="Apagar nota"
+                    className="p-2 rounded-lg border border-[#E2E8F0] text-[#94A3B8] hover:border-red-300 hover:text-red-500 transition-colors">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -246,11 +305,11 @@ export default function NotasPanel({ compact = false }: { compact?: boolean }) {
                 className="flex-1 p-4 outline-none text-sm text-[#374151] leading-relaxed overflow-y-auto" />
             </>
           ) : !compact ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-[#94A3B8]">
+            <div className="flex-1 hidden md:flex flex-col items-center justify-center gap-3 text-[#94A3B8]">
               <StickyNote size={36} className="text-[#CBD5E1]" />
               <p className="text-sm font-medium text-[#374151]">Selecione uma nota</p>
               <p className="text-xs">ou clique em + para criar</p>
-              <button onClick={newNota} className="mt-2 btn-primary text-sm flex items-center gap-1.5 px-4 py-2">
+              <button onClick={async () => { if (await newNota()) setMobileView('editor') }} className="mt-2 btn-primary text-sm flex items-center gap-1.5 px-4 py-2">
                 <Plus size={14} /> Nova nota
               </button>
             </div>

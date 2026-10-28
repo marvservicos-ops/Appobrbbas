@@ -1,21 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/service'
-import { limparDuplicadosDaObra } from '@/lib/diarioObra'
+import { limparDuplicadosDaObra, nomePastaDaObra } from '@/lib/diarioObra'
+import { exigirUsuarioAtivo } from '@/lib/apiAuth'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const auth = await exigirUsuarioAtivo()
+  if (!auth.ok) return auth.resposta
+
   const { obraId } = await req.json()
   if (!obraId) return NextResponse.json({ error: 'obraId é obrigatório' }, { status: 400 })
 
   try {
-    const supabase = createServiceClient()
-    const { data: obra, error } = await supabase.from('obras').select('titulo').eq('id', obraId).single()
-    if (error || !obra) throw new Error('Obra não encontrada')
-
-    const resultado = await limparDuplicadosDaObra(obra.titulo)
+    // Mesmo nome de pasta que a sincronização usa (nome da obra no Diário de Obra)
+    const nomePasta = await nomePastaDaObra(obraId)
+    const resultado = await limparDuplicadosDaObra(nomePasta)
     return NextResponse.json({ ok: true, ...resultado })
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 })
+    console.error('[diario-obra/limpar-duplicados]', e)
+    const msg = e instanceof Error ? e.message : ''
+    return NextResponse.json({ ok: false, error: msg === 'Obra não encontrada' ? msg : 'Não foi possível limpar os duplicados agora. Tente de novo.' }, { status: 500 })
   }
 }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Wrench, Settings, Plus, Pencil, Trash2, Check, Building2, Phone, Mail } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Cliente, Obra, TipoServico, StatusObra } from '@/lib/types'
+import { mensagemErro } from '@/lib/erros'
 
 interface Props {
   onClose: () => void
@@ -22,7 +23,8 @@ function PainelTipos({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false)
 
   async function load() {
-    const { data } = await createClient().from('tipos_servico').select('*').order('ordem')
+    const { data, error } = await createClient().from('tipos_servico').select('*').order('ordem')
+    if (error) alert(mensagemErro(error, 'Não foi possível carregar os tipos de serviço'))
     if (data) setTipos(data as TipoServico[])
   }
 
@@ -31,7 +33,8 @@ function PainelTipos({ onClose }: { onClose: () => void }) {
   async function adicionar() {
     if (!novoNome.trim()) return
     setLoading(true)
-    await createClient().from('tipos_servico').insert({ nome: novoNome.trim(), ordem: tipos.length + 1 })
+    const { error } = await createClient().from('tipos_servico').insert({ nome: novoNome.trim(), ordem: tipos.length + 1 })
+    if (error) { alert(mensagemErro(error, 'Não foi possível adicionar o tipo')); setLoading(false); return }
     setNovoNome('')
     await load()
     setLoading(false)
@@ -39,14 +42,16 @@ function PainelTipos({ onClose }: { onClose: () => void }) {
 
   async function salvarEdit(id: string) {
     if (!editNome.trim()) return
-    await createClient().from('tipos_servico').update({ nome: editNome.trim() }).eq('id', id)
+    const { error } = await createClient().from('tipos_servico').update({ nome: editNome.trim() }).eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Não foi possível renomear o tipo')); return }
     setEditId(null)
     await load()
   }
 
   async function excluir(id: string) {
     if (!confirm('Excluir este tipo de serviço?')) return
-    await createClient().from('tipos_servico').delete().eq('id', id)
+    const { error } = await createClient().from('tipos_servico').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Não foi possível excluir o tipo')); return }
     await load()
   }
 
@@ -71,20 +76,20 @@ function PainelTipos({ onClose }: { onClose: () => void }) {
                     onKeyDown={e => e.key === 'Enter' && salvarEdit(t.id)}
                     className="flex-1 field text-sm py-1.5"
                   />
-                  <button onClick={() => salvarEdit(t.id)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#4F7CFF] hover:bg-[#3D68F0]">
+                  <button onClick={() => salvarEdit(t.id)} aria-label="Salvar nome" title="Salvar nome" className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#4F7CFF] hover:bg-[#3D68F0]">
                     <Check size={13} className="text-white" />
                   </button>
-                  <button onClick={() => setEditId(null)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
+                  <button onClick={() => setEditId(null)} aria-label="Cancelar" title="Cancelar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
                     <X size={13} className="text-[#64748B]" />
                   </button>
                 </>
               ) : (
                 <>
                   <span className="flex-1 text-sm text-[#374151] py-1.5 px-2 rounded-lg group-hover:bg-[#F8FAFC]">{t.nome}</span>
-                  <button onClick={() => { setEditId(t.id); setEditNome(t.nome) }} className="w-7 h-7 hidden group-hover:flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
+                  <button onClick={() => { setEditId(t.id); setEditNome(t.nome) }} aria-label={`Renomear ${t.nome}`} title="Renomear" className="w-9 h-9 flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
                     <Pencil size={12} className="text-[#4F7CFF]" />
                   </button>
-                  <button onClick={() => excluir(t.id)} className="w-7 h-7 hidden group-hover:flex items-center justify-center rounded-lg hover:bg-red-50">
+                  <button onClick={() => excluir(t.id)} aria-label={`Excluir ${t.nome}`} title="Excluir" className="w-9 h-9 flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex items-center justify-center rounded-lg hover:bg-red-50">
                     <Trash2 size={12} className="text-red-400" />
                   </button>
                 </>
@@ -179,6 +184,8 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
       supabase.from('clientes').select('*').order('nome'),
       supabase.from('empresas').select('id, razao_social, apelido'),
     ])
+    const erroLeitura = tiposRes.error ?? clientesRes.error ?? empresasRes.error
+    if (erroLeitura) setError(mensagemErro(erroLeitura, 'Não foi possível carregar as listas do formulário'))
     if (tiposRes.data) {
       const ts = tiposRes.data as TipoServico[]
       setTiposServico(ts)
@@ -225,13 +232,13 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
       gestor_id: form.gestor_id || null,
       comprador_id: form.comprador_id || null,
       cliente_id: form.gestor_id || form.comprador_id || null,
-      valor_art: form.valor_art ? parseFloat(form.valor_art) : null,
+      valor_art: form.valor_art !== '' && !Number.isNaN(parseFloat(form.valor_art)) ? parseFloat(form.valor_art) : null,
       diario_obra_id: form.diario_obra_id || null,
     }
     const { error: err } = editing
       ? await supabase.from('obras').update(payload).eq('id', obra!.id)
       : await supabase.from('obras').insert(payload)
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) { setError(mensagemErro(err, 'Não foi possível salvar a obra')); setLoading(false); return }
     onCreated()
   }
 
@@ -247,7 +254,7 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
               </div>
               <h2 className="font-syne font-semibold text-[#0F172A]">{editing ? 'Editar Obra' : 'Nova Obra'}</h2>
             </div>
-            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
+            <button onClick={onClose} aria-label="Fechar" title="Fechar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9] transition-colors">
               <X size={16} className="text-[#64748B]" />
             </button>
           </div>
@@ -303,7 +310,7 @@ export default function ModalNovaObra({ onClose, onCreated, obra }: Props) {
                 {/* Valor RT */}
                 <div>
                   <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor da ART (R$)</label>
-                  <input type="number" step="0.01" min="0" placeholder="0,00"
+                  <input type="number" inputMode="decimal" step="0.01" min="0" placeholder="0,00"
                     value={form.valor_art} onChange={e => set('valor_art', e.target.value)} className="field" />
                 </div>
 

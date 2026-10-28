@@ -1,15 +1,26 @@
-import { createClient } from '@/lib/supabase/server'
+import { headers } from 'next/headers'
+import { createServiceClient } from '@/lib/supabase/service'
 import { notFound } from 'next/navigation'
 import EtiquetaPrintButton from '@/components/EtiquetaPrintButton'
+import { urlPublica, qrImagemUrl } from '@/app/pub/qr'
+
+// Página aberta sem login (só nome + QR): lê no servidor com o service client,
+// sem depender de policy anon nas tabelas.
+function origemRequisicao() {
+  const h = headers()
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'marv-gestao.vercel.app'
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https')
+  return `${proto}://${host}`
+}
 
 export default async function EtiquetaFerramentaPage({ params }: { params: { id: string } }) {
-  const sb = await createClient()
-  const { data: ferramenta } = await sb.from('ferramentas').select('*').eq('id', params.id).single()
+  const sb = createServiceClient()
+  const { data: ferramenta } = await sb.from('ferramentas').select('nome').eq('id', params.id).single()
   if (!ferramenta) notFound()
 
   const f = ferramenta as any
-  const pubUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://marv-gestao.vercel.app'}/pub/ferramenta/${params.id}`
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=6&data=${encodeURIComponent(pubUrl)}`
+  const pubUrl = urlPublica(`/pub/ferramenta/${params.id}`, origemRequisicao())
+  const qrUrl = qrImagemUrl(pubUrl)
 
   return (
     <>

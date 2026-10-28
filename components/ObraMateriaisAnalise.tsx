@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { BarChart3, Ruler, Target, Plus, Pencil, Trash2, X, Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueProdutoCategoria } from '@/lib/types'
+import { mensagemErro } from '@/lib/erros'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
@@ -197,6 +198,7 @@ function GrandezasEditor({ obraId, grandezas, onChange }: { obraId: string; gran
   const [nome, setNome] = useState('')
   const [unidade, setUnidade] = useState('')
   const [valor, setValor] = useState('')
+  const [salvando, setSalvando] = useState(false)
 
   function abrir(g: Grandeza | 'nova', sugestao?: { nome: string; unidade: string }) {
     setEditando(g)
@@ -205,18 +207,23 @@ function GrandezasEditor({ obraId, grandezas, onChange }: { obraId: string; gran
   }
 
   async function salvar() {
-    if (!nome.trim()) return
+    if (!nome.trim() || salvando) return
+    setSalvando(true)
     const supabase = createClient()
     const dados = { nome: nome.trim(), unidade: unidade.trim() || null, valor: parseFloat(valor) || 0 }
-    if (editando === 'nova') await supabase.from('obra_grandezas').insert({ obra_id: obraId, ...dados })
-    else if (editando) await supabase.from('obra_grandezas').update(dados).eq('id', editando.id)
+    const { error } = editando === 'nova'
+      ? await supabase.from('obra_grandezas').insert({ obra_id: obraId, ...dados })
+      : editando ? await supabase.from('obra_grandezas').update(dados).eq('id', editando.id) : { error: null }
+    setSalvando(false)
+    if (error) { alert(mensagemErro(error, 'Não foi possível salvar a grandeza')); return }
     setEditando(null)
     onChange()
   }
 
   async function excluir(g: Grandeza) {
     if (!confirm(`Excluir "${g.nome}"?`)) return
-    await createClient().from('obra_grandezas').delete().eq('id', g.id)
+    const { error } = await createClient().from('obra_grandezas').delete().eq('id', g.id)
+    if (error) { alert(mensagemErro(error, 'Não foi possível excluir a grandeza')); return }
     onChange()
   }
 
@@ -229,8 +236,8 @@ function GrandezasEditor({ obraId, grandezas, onChange }: { obraId: string; gran
         {grandezas.map(g => (
           <div key={g.id} className="group flex items-center gap-2 px-3 py-1.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg">
             <span className="text-sm text-[#374151]">{g.nome}: <strong>{num(g.valor)}</strong> {g.unidade ?? ''}</span>
-            <button onClick={() => abrir(g)} className="text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={12} /></button>
-            <button onClick={() => excluir(g)} className="text-[#94A3B8] hover:text-red-500"><Trash2 size={12} /></button>
+            <button onClick={() => abrir(g)} aria-label={`Editar ${g.nome}`} title="Editar" className="p-1.5 -my-1 text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={13} /></button>
+            <button onClick={() => excluir(g)} aria-label={`Excluir ${g.nome}`} title="Excluir" className="p-1.5 -my-1 text-[#94A3B8] hover:text-red-500"><Trash2 size={13} /></button>
           </div>
         ))}
         {sugestoes.map(s => (
@@ -256,10 +263,10 @@ function GrandezasEditor({ obraId, grandezas, onChange }: { obraId: string; gran
           </div>
           <div className="w-28">
             <label className="block text-xs text-[#64748B] mb-1">Quantidade</label>
-            <input type="number" step="any" className="field text-sm" autoFocus value={valor} onChange={e => setValor(e.target.value)} />
+            <input type="number" inputMode="decimal" step="any" className="field text-sm" autoFocus value={valor} onChange={e => setValor(e.target.value)} />
           </div>
-          <button onClick={salvar} className="btn-primary text-sm py-2"><Check size={14} /></button>
-          <button onClick={() => setEditando(null)} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
+          <button onClick={salvar} disabled={salvando} aria-label="Salvar" title="Salvar" className="btn-primary text-sm py-2">{salvando ? '…' : <Check size={14} />}</button>
+          <button onClick={() => setEditando(null)} aria-label="Cancelar" title="Cancelar" className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
         </div>
       )}
     </div>
@@ -282,6 +289,7 @@ function PrevisaoEditor({ obraId, previsoes, produtos, categorias, realizadoProd
   const [alvo, setAlvo] = useState('') // 'p:<id>' ou 'c:<id>'
   const [valor, setValor] = useState('')
   const [observacao, setObservacao] = useState('')
+  const [salvando, setSalvando] = useState(false)
 
   function abrir(p: Previsao | 'nova') {
     setEditando(p)
@@ -294,22 +302,27 @@ function PrevisaoEditor({ obraId, previsoes, produtos, categorias, realizadoProd
   }
 
   async function salvar() {
-    if (!alvo || !valor) return
+    if (!alvo || !valor || salvando) return
     const [tipo, id] = alvo.split(':')
     const v = parseFloat(valor) || 0
     const dados = tipo === 'p'
       ? { produto_id: id, categoria_id: null, quantidade: v, valor: null, observacao: observacao.trim() || null }
       : { produto_id: null, categoria_id: id, quantidade: null, valor: v, observacao: observacao.trim() || null }
     const supabase = createClient()
-    if (editando === 'nova') await supabase.from('obra_previsao_materiais').insert({ obra_id: obraId, ...dados })
-    else if (editando) await supabase.from('obra_previsao_materiais').update(dados).eq('id', editando.id)
+    setSalvando(true)
+    const { error } = editando === 'nova'
+      ? await supabase.from('obra_previsao_materiais').insert({ obra_id: obraId, ...dados })
+      : editando ? await supabase.from('obra_previsao_materiais').update(dados).eq('id', editando.id) : { error: null }
+    setSalvando(false)
+    if (error) { alert(mensagemErro(error, 'Não foi possível salvar a previsão')); return }
     setEditando(null)
     onChange()
   }
 
   async function excluir(p: Previsao) {
     if (!confirm('Excluir esta previsão?')) return
-    await createClient().from('obra_previsao_materiais').delete().eq('id', p.id)
+    const { error } = await createClient().from('obra_previsao_materiais').delete().eq('id', p.id)
+    if (error) { alert(mensagemErro(error, 'Não foi possível excluir a previsão')); return }
     onChange()
   }
 
@@ -338,7 +351,7 @@ function PrevisaoEditor({ obraId, previsoes, produtos, categorias, realizadoProd
                 <th className="text-right text-xs font-semibold text-[#64748B] px-2 py-2">Previsto</th>
                 <th className="text-right text-xs font-semibold text-[#64748B] px-2 py-2">Realizado</th>
                 <th className="text-left text-xs font-semibold text-[#64748B] px-2 py-2 w-40">Consumo</th>
-                <th className="w-14" />
+                <th className="w-20" />
               </tr>
             </thead>
             <tbody>
@@ -368,9 +381,9 @@ function PrevisaoEditor({ obraId, previsoes, produtos, categorias, realizadoProd
                       {pct > MARGEM_ALERTA && <span className="text-[10px] font-semibold text-red-600">Acima do previsto — verificar</span>}
                     </td>
                     <td className="px-2 py-2">
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => abrir(p)} className="text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={13} /></button>
-                        <button onClick={() => excluir(p)} className="text-[#94A3B8] hover:text-red-500"><Trash2 size={13} /></button>
+                      <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <button onClick={() => abrir(p)} aria-label="Editar previsão" title="Editar previsão" className="p-2 text-[#94A3B8] hover:text-[#4F7CFF]"><Pencil size={13} /></button>
+                        <button onClick={() => excluir(p)} aria-label="Excluir previsão" title="Excluir previsão" className="p-2 text-[#94A3B8] hover:text-red-500"><Trash2 size={13} /></button>
                       </div>
                     </td>
                   </tr>
@@ -396,14 +409,14 @@ function PrevisaoEditor({ obraId, previsoes, produtos, categorias, realizadoProd
           </div>
           <div className="w-32">
             <label className="block text-xs text-[#64748B] mb-1">{alvoTipo === 'c' ? 'Valor (R$)' : `Quantidade${alvoProduto ? ` (${alvoProduto.unidade})` : ''}`}</label>
-            <input type="number" step="any" min="0" className="field text-sm" value={valor} onChange={e => setValor(e.target.value)} />
+            <input type="number" inputMode="decimal" step="any" min="0" className="field text-sm" value={valor} onChange={e => setValor(e.target.value)} />
           </div>
           <div className="flex-1 min-w-[140px]">
             <label className="block text-xs text-[#64748B] mb-1">Observação</label>
             <input className="field text-sm" value={observacao} onChange={e => setObservacao(e.target.value)} placeholder="Opcional" />
           </div>
-          <button onClick={salvar} disabled={!alvo || !valor} className="btn-primary text-sm py-2"><Check size={14} /></button>
-          <button onClick={() => setEditando(null)} className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
+          <button onClick={salvar} disabled={!alvo || !valor || salvando} aria-label="Salvar" title="Salvar" className="btn-primary text-sm py-2">{salvando ? '…' : <Check size={14} />}</button>
+          <button onClick={() => setEditando(null)} aria-label="Cancelar" title="Cancelar" className="px-3 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg"><X size={14} /></button>
         </div>
       )}
     </div>

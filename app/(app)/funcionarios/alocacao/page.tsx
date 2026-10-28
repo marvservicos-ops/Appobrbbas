@@ -10,6 +10,7 @@ import {
   Loader2, CheckCircle2, X, Car, Bus, Home, Plus, Trash2, Download, Thermometer, GripVertical, ListOrdered, Palmtree, CalendarRange, AlertTriangle,
 } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
+import { mensagemErro } from '@/lib/erros'
 
 type TipoAlocacao = 'obra' | 'manutencao' | 'escritorio' | 'folga' | 'atestado' | 'falta' | 'ferias'
 
@@ -125,8 +126,13 @@ function labelData(ano: number, mes: number, dia: number) {
   return new Date(ano, mes, dia).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
+// Escapa texto interpolado no HTML do relatório (nomes vêm do banco)
+function esc(v: unknown) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
 function exportarRelatorio(
-  funcionarios: Funcionario[], obras: Obra[], alocacoes: Alocacao[], mes: number, ano: number
+  funcionarios: Funcionario[], obras: Obra[], manutencoes: Manutencao[], alocacoes: Alocacao[], mes: number, ano: number
 ) {
   const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
   const diasNoMes = new Date(ano, mes + 1, 0).getDate()
@@ -142,6 +148,8 @@ function exportarRelatorio(
 
   const rows = funcionarios.map(f => {
     const obraMap: Record<string, number> = {}
+    const manutMap: Record<string, number> = {}
+    let diasManutencao = 0
     let diasEscritorio = 0, diasFolga = 0, diasFalta = 0, diasAtestado = 0, diasFerias = 0
 
     dias.forEach(dia => {
@@ -150,6 +158,10 @@ function exportarRelatorio(
         const frac = (a.percentual || 100) / 100
         if (a.tipo === 'obra' && a.obra_id) {
           obraMap[a.obra_id] = (obraMap[a.obra_id] || 0) + frac
+        } else if (a.tipo === 'manutencao') {
+          diasManutencao += frac
+          const k = a.manutencao_id ?? ''
+          manutMap[k] = (manutMap[k] || 0) + frac
         } else if (a.tipo === 'escritorio') diasEscritorio += frac
         else if (a.tipo === 'folga') diasFolga += frac
         else if (a.tipo === 'falta') diasFalta += frac
@@ -158,18 +170,25 @@ function exportarRelatorio(
       })
     })
 
-    const obrasDetalhes = Object.entries(obraMap).map(([oid, dias]) => {
-      const o = obras.find(x => x.id === oid)
-      return `${o?.titulo ?? oid}: ${Number.isInteger(dias) ? dias : dias.toFixed(1)}d`
-    }).join(' | ')
+    const fmtDias = (d: number) => Number.isInteger(d) ? d : d.toFixed(1)
+    const obrasDetalhes = [
+      ...Object.entries(obraMap).map(([oid, dias]) => {
+        const o = obras.find(x => x.id === oid)
+        return `${o?.titulo ?? oid}: ${fmtDias(dias)}d`
+      }),
+      ...Object.entries(manutMap).map(([mid, dias]) => {
+        const m = manutencoes.find(x => x.id === mid)
+        return `Manutenção ${m?.nome ?? ''}: ${fmtDias(dias)}d`.replace('  ', ' ')
+      }),
+    ].join(' | ')
 
     const totalObra = Object.values(obraMap).reduce((s, v) => s + v, 0)
 
-    return { nome: f.nome, cargo: f.cargo ?? '', obrasDetalhes, totalObra, diasEscritorio, diasFolga, diasFalta, diasAtestado, diasFerias }
+    return { nome: f.nome, cargo: f.cargo ?? '', obrasDetalhes, totalObra, diasManutencao, diasEscritorio, diasFolga, diasFalta, diasAtestado, diasFerias }
   })
 
   const html = `<!DOCTYPE html><html lang="pt-BR"><head>
-  <meta charset="UTF-8"><title>Alocação — ${MESES[mes]} ${ano}</title>
+  <meta charset="UTF-8"><title>Alocação — ${esc(MESES[mes])} ${esc(ano)}</title>
   <style>
     body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; padding: 24px; }
     h1 { font-size: 16px; margin: 0 0 4px; }
@@ -186,15 +205,16 @@ function exportarRelatorio(
   <table>
     <thead><tr>
       <th>Funcionário</th><th>Cargo</th><th>Obras e dias</th>
-      <th class="num">Dias obra</th><th class="num">Escrit.</th>
+      <th class="num">Dias obra</th><th class="num">Manut.</th><th class="num">Galpão</th>
       <th class="num">Folga</th><th class="num">Falta</th><th class="num">Atest.</th><th class="num">Férias</th>
     </tr></thead>
     <tbody>
     ${rows.map(r => `<tr>
-      <td><strong>${r.nome}</strong></td>
-      <td>${r.cargo}</td>
-      <td style="font-size:10px">${r.obrasDetalhes || '—'}</td>
+      <td><strong>${esc(r.nome)}</strong></td>
+      <td>${esc(r.cargo)}</td>
+      <td style="font-size:10px">${esc(r.obrasDetalhes || '—')}</td>
       <td class="num">${r.totalObra > 0 ? (Number.isInteger(r.totalObra) ? r.totalObra : r.totalObra.toFixed(1)) : '—'}</td>
+      <td class="num">${r.diasManutencao > 0 ? r.diasManutencao.toFixed(r.diasManutencao % 1 === 0 ? 0 : 1) : '—'}</td>
       <td class="num">${r.diasEscritorio > 0 ? r.diasEscritorio.toFixed(r.diasEscritorio % 1 === 0 ? 0 : 1) : '—'}</td>
       <td class="num">${r.diasFolga > 0 ? r.diasFolga.toFixed(r.diasFolga % 1 === 0 ? 0 : 1) : '—'}</td>
       <td class="num">${r.diasFalta > 0 ? r.diasFalta.toFixed(r.diasFalta % 1 === 0 ? 0 : 1) : '—'}</td>
@@ -227,6 +247,9 @@ export default function AlocacaoPage() {
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [alocacoes, setAlocacoes] = useState<Alocacao[]>([])
   const [loading, setLoading] = useState(true)
+  const [erroLoad, setErroLoad] = useState('')
+  // Descarta respostas de navegações antigas (mês/semana trocados rápido)
+  const reqIdRef = useRef(0)
   const [modalDia, setModalDia] = useState<number | null>(null)
   const [modalCell, setModalCell] = useState<{ fid: string; dia: number } | null>(null)
   const [modalOrdem, setModalOrdem] = useState(false)
@@ -272,7 +295,9 @@ export default function AlocacaoPage() {
   }
 
   const load = useCallback(async () => {
+    const reqId = ++reqIdRef.current
     setLoading(true)
+    setErroLoad('')
     const sb = createClient()
     const inicio = view === 'mensal' ? toDate(ano, mes, 1) : dateKey(semanaBase)
     // Busca também a véspera, para desenhar o fim de um turno noturno no primeiro dia
@@ -280,7 +305,7 @@ export default function AlocacaoPage() {
     const vespera = dateKey(vesperaD)
     const fimDate = view === 'mensal' ? new Date(ano, mes + 1, 0) : (() => { const d = new Date(semanaBase); d.setDate(d.getDate() + 6); return d })()
     const fim = view === 'mensal' ? toDate(ano, mes, fimDate.getDate()) : dateKey(fimDate)
-    const [{ data: funcs }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }, { data: manuts }] = await Promise.all([
+    const [{ data: funcs, error: funcsErr }, { data: obs, error: obrasErr }, { data: aloc, error: alocErr }, { data: veics }, { data: manuts }] = await Promise.all([
       sb.from('funcionarios').select('id, nome, cargo, ordem').eq('ativo', true).order('ordem', { ascending: true, nullsFirst: false }).order('nome'),
       sb.from('obras').select('id, titulo').in('status', ['Em Orçamento', 'Aprovada', 'Em Andamento']).order('titulo'),
       (async () => {
@@ -293,8 +318,14 @@ export default function AlocacaoPage() {
       sb.from('veiculos').select('id, nome, placa, cor').eq('ativo', true).order('nome'),
       sb.from('contratos_manutencao').select('id, empresa:empresas(apelido, razao_social)').eq('ativo', true).order('created_at'),
     ])
+    if (reqId !== reqIdRef.current) return
     if (obrasErr) console.error('Obras error:', obrasErr)
-    if (alocErr) console.error('Alocacoes error:', alocErr)
+    if (funcsErr || alocErr) {
+      // Não mostra grade vazia como se não houvesse alocações
+      setErroLoad(mensagemErro(funcsErr || alocErr, 'Falha ao carregar o quadro'))
+      setLoading(false)
+      return
+    }
     setFuncionarios(funcs ?? [])
     setManutencoes(((manuts ?? []) as any[]).map((m: any) => ({ id: m.id, nome: m.empresa?.apelido ?? m.empresa?.razao_social ?? m.id })))
     setObras(obs ?? [])
@@ -336,29 +367,29 @@ export default function AlocacaoPage() {
       <Topbar />
 
       {/* Barra superior */}
-      <div className="flex items-center gap-3 px-4 md:px-6 py-3 border-b border-[#E2E8F0] bg-white shrink-0">
-        <button onClick={() => router.push(isAdmin ? '/funcionarios' : '/obras')}
-          className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-4 md:px-6 py-3 border-b border-[#E2E8F0] bg-white shrink-0">
+        <button onClick={() => router.push(isAdmin ? '/funcionarios' : '/obras')} aria-label="Voltar" title="Voltar"
+          className="w-9 h-9 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors">
           <ArrowLeft size={15} className="text-[#64748B]" />
         </button>
-        <h1 className="font-syne font-bold text-lg text-[#0F172A] flex-1">Quadro de Alocação</h1>
+        <h1 className="font-syne font-bold text-lg text-[#0F172A] flex-1 min-w-[140px]">Quadro de Alocação</h1>
         {!loading && funcionarios.length > 0 && (
           <>
             <button onClick={() => setModalFerias({ fid: selectedFids.size === 1 ? Array.from(selectedFids)[0] : '', inicio: '' })}
-              className="h-8 px-2.5 rounded-lg border border-[#E2E8F0] flex items-center gap-1.5 hover:bg-[#F1F5F9] transition-colors text-xs font-semibold text-[#14B8A6]" title="Lançar período de férias">
+              className="h-9 px-2.5 rounded-lg border border-[#E2E8F0] flex items-center gap-1.5 hover:bg-[#F1F5F9] transition-colors text-xs font-semibold text-[#14B8A6]" title="Lançar período de férias" aria-label="Lançar período de férias">
               <Palmtree size={14} /> <span className="hidden sm:inline">Férias</span>
             </button>
             <button onClick={() => setModalPeriodo({ fids: Array.from(selectedFids), inicio: '' })}
-              className="h-8 px-2.5 rounded-lg border border-[#E2E8F0] flex items-center gap-1.5 hover:bg-[#F1F5F9] transition-colors text-xs font-semibold text-[#4F7CFF]" title="Alocar funcionários por período">
+              className="h-9 px-2.5 rounded-lg border border-[#E2E8F0] flex items-center gap-1.5 hover:bg-[#F1F5F9] transition-colors text-xs font-semibold text-[#4F7CFF]" title="Alocar funcionários por período" aria-label="Alocar funcionários por período">
               <CalendarRange size={14} /> <span className="hidden sm:inline">Período</span>
             </button>
-            <button onClick={() => setModalOrdem(true)}
-              className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Reordenar funcionários">
+            <button onClick={() => setModalOrdem(true)} aria-label="Reordenar funcionários"
+              className="w-9 h-9 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Reordenar funcionários">
               <ListOrdered size={15} className="text-[#64748B]" />
             </button>
             {view === 'mensal' && (
-              <button onClick={() => exportarRelatorio(funcionarios, obras, alocacoes.filter(a => a.data.startsWith(`${ano}-${pad2(mes + 1)}-`)), mes, ano)}
-                className="w-8 h-8 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Exportar relatório mensal">
+              <button onClick={() => exportarRelatorio(funcionarios, obras, manutencoes, alocacoes.filter(a => a.data.startsWith(`${ano}-${pad2(mes + 1)}-`)), mes, ano)} aria-label="Exportar relatório mensal"
+                className="w-9 h-9 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors" title="Exportar relatório mensal">
                 <Download size={15} className="text-[#64748B]" />
               </button>
             )}
@@ -374,15 +405,15 @@ export default function AlocacaoPage() {
           ))}
         </div>
         <div className="flex items-center gap-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-1 py-1">
-          <button onClick={() => view === 'mensal' ? navMes(-1) : navSemana(-1)}
-            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
+          <button onClick={() => view === 'mensal' ? navMes(-1) : navSemana(-1)} aria-label="Anterior" title="Anterior"
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
             <ChevronLeft size={15} className="text-[#64748B]" />
           </button>
-          <span className="text-sm font-semibold text-[#0F172A] px-2 text-center" style={{ minWidth: view === 'mensal' ? 130 : 200 }}>
+          <span className="text-sm font-semibold text-[#0F172A] px-1 sm:px-2 text-center" style={{ minWidth: view === 'mensal' ? 120 : 170 }}>
             {view === 'mensal' ? `${MESES[mes]} ${ano}` : semanaLabel()}
           </span>
-          <button onClick={() => view === 'mensal' ? navMes(1) : navSemana(1)}
-            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
+          <button onClick={() => view === 'mensal' ? navMes(1) : navSemana(1)} aria-label="Próximo" title="Próximo"
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white hover:shadow-sm transition-all">
             <ChevronRight size={15} className="text-[#64748B]" />
           </button>
         </div>
@@ -407,6 +438,14 @@ export default function AlocacaoPage() {
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 size={28} className="animate-spin text-[#4F7CFF]" />
+        </div>
+      ) : erroLoad ? (
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-3 text-center bg-red-50 border border-red-200 rounded-xl px-6 py-5 max-w-sm">
+            <AlertTriangle size={22} className="text-red-500" />
+            <p className="text-sm text-red-700">{erroLoad}</p>
+            <button onClick={() => load()} className="btn-primary text-sm">Tentar de novo</button>
+          </div>
         </div>
       ) : funcionarios.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
@@ -654,21 +693,61 @@ export default function AlocacaoPage() {
 
       {/* Barra flutuante seleção */}
       {selectedFids.size > 0 && modalBulk === null && modalPeriodo === null && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-[#0F172A] text-white px-5 py-3 rounded-2xl shadow-xl">
+        <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-40 flex flex-wrap items-center gap-x-3 gap-y-2 bg-[#0F172A] text-white px-4 sm:px-5 py-3 rounded-2xl shadow-xl">
           <span className="text-sm font-medium">{selectedFids.size} funcionário{selectedFids.size > 1 ? 's' : ''} selecionado{selectedFids.size > 1 ? 's' : ''}</span>
-          <span className="text-[#475569] text-sm">—</span>
+          <span className="text-[#475569] text-sm hidden sm:inline">—</span>
           <span className="text-xs text-[#94A3B8]">Clique num dia para alocar</span>
           <button onClick={() => setModalPeriodo({ fids: Array.from(selectedFids), inicio: '' })}
             className="flex items-center gap-1.5 text-xs font-semibold bg-[#4F7CFF] hover:bg-[#3d6ae0] px-3 py-1.5 rounded-lg transition-colors">
             <CalendarRange size={13} /> Alocar por período
           </button>
-          <button onClick={() => setSelectedFids(new Set())} className="ml-2 text-[#64748B] hover:text-white transition-colors">
+          <button onClick={() => setSelectedFids(new Set())} aria-label="Limpar seleção" title="Limpar seleção" className="ml-auto sm:ml-2 p-2 -mr-2 text-[#64748B] hover:text-white transition-colors">
             <X size={15} />
           </button>
         </div>
       )}
     </div>
   )
+}
+
+// ── Troca segura de alocações ──────────────────────────────────────────────────
+// Insere as novas e só depois apaga as antigas pelos ids: se a rede cair no meio,
+// o dia nunca fica vazio (no pior caso fica com as antigas, ou com as duas).
+
+type SB = ReturnType<typeof createClient>
+
+async function idsAlocacoes(sb: SB, fids: string[], datas: string[], opts: { semFerias?: boolean } = {}) {
+  const ids: string[] = []
+  for (let i = 0; i < datas.length; i += 200) {
+    let q = sb.from('funcionario_alocacoes').select('id').in('funcionario_id', fids).in('data', datas.slice(i, i + 200))
+    if (opts.semFerias) q = q.neq('tipo', 'ferias')
+    const { data, error } = await q
+    if (error) return { ids, error }
+    ids.push(...(data ?? []).map((r: { id: string }) => r.id))
+  }
+  return { ids, error: null }
+}
+
+async function trocarAlocacoes(sb: SB, idsAntigos: string[], novas: Record<string, unknown>[]): Promise<string | null> {
+  if (novas.length > 0) {
+    const { error } = await sb.from('funcionario_alocacoes').insert(novas)
+    if (error) return mensagemErro(error, 'Erro ao salvar')
+  }
+  for (let i = 0; i < idsAntigos.length; i += 200) {
+    const { error } = await sb.from('funcionario_alocacoes').delete().in('id', idsAntigos.slice(i, i + 200))
+    if (error) return mensagemErro(error, 'As novas alocações foram gravadas, mas não deu para remover as anteriores (confira o dia)')
+  }
+  return null
+}
+
+// Validação comum (ModalCell / ModalDia / ModalBulk): obra/manutenção escolhidas e % somando 100
+function problemaAlocs(alocs: { tipo: TipoAlocacao | ''; obra_id: string; manutencao_id: string; percentual: number }[]): string | null {
+  const ativas = alocs.filter(a => a.tipo)
+  if (ativas.some(a => a.tipo === 'obra' && !a.obra_id)) return 'escolha a obra'
+  if (ativas.some(a => a.tipo === 'manutencao' && !a.manutencao_id)) return 'escolha a manutenção'
+  const total = ativas.reduce((s, a) => s + a.percentual, 0)
+  if (ativas.length > 0 && total !== 100) return `percentuais somam ${total}% (precisa 100%)`
+  return null
 }
 
 // ── Modal preencher dia inteiro ────────────────────────────────────────────────
@@ -681,6 +760,11 @@ interface DiaFuncRow {
 }
 
 let _diaKey = 0
+// Representação do que será gravado (sem _key), para saber se o funcionário mudou
+function assinaturaDia(r: DiaFuncRow) {
+  const alocs = r.alocs.filter(a => a.tipo).map(a => [a.tipo, a.obra_id, a.manutencao_id, a.percentual, a.noturno, a.motivo.trim()])
+  return JSON.stringify(alocs.length ? [alocs, r.transporte_tipo, r.veiculo_id, r.observacao] : [])
+}
 function newDiaAloc(tipo: TipoAlocacao | '' = '', obra_id = '', manutencao_id = '', percentual = 100, noturno = false, motivo = '') {
   return { _key: ++_diaKey, tipo, obra_id, manutencao_id, percentual, noturno, motivo }
 }
@@ -710,6 +794,16 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
   })
   const [saving, setSaving] = useState(false)
   const [quickObra, setQuickObra] = useState('')
+  // Estado inicial de cada funcionário, para gravar só quem foi alterado
+  const [inicial] = useState(() => {
+    const m: Record<string, string> = {}
+    Object.entries(rows).forEach(([fid, r]) => { m[fid] = assinaturaDia(r) })
+    return m
+  })
+  const alterados = funcionarios.filter(f => rows[f.id] && assinaturaDia(rows[f.id]) !== inicial[f.id])
+  const invalidos = alterados
+    .map(f => ({ f, prob: problemaAlocs(rows[f.id].alocs) }))
+    .filter((x): x is { f: Funcionario; prob: string } => !!x.prob)
 
   function updateAloc(fid: string, key: number, patch: Partial<DiaFuncRow['alocs'][number]>) {
     setRows(p => ({ ...p, [fid]: { ...p[fid], alocs: p[fid].alocs.map(a => a._key === key ? { ...a, ...patch } : a) } }))
@@ -746,13 +840,13 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
   }
 
   async function salvar() {
+    if (invalidos.length > 0) return
+    if (alterados.length === 0) { onClose(); return }
     setSaving(true)
     const sb = createClient()
-    await Promise.all(
-      funcionarios.map(async f => {
+    const novas = alterados.flatMap(f => {
         const row = rows[f.id]
-        await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
-        const toInsert = row.alocs.filter(a => a.tipo).map(a => ({
+        return row.alocs.filter(a => a.tipo).map(a => ({
           funcionario_id: f.id, data,
           tipo: a.tipo as TipoAlocacao,
           obra_id: (a.tipo === 'obra' || a.tipo === 'folga' || a.tipo === 'escritorio') && a.obra_id ? a.obra_id : null,
@@ -764,12 +858,12 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
           veiculo_id: row.transporte_tipo === 'veiculo' && row.veiculo_id ? row.veiculo_id : null,
           observacao: row.observacao || null,
         }))
-        if (toInsert.length > 0) {
-          await sb.from('funcionario_alocacoes').insert(toInsert)
-        }
-      })
-    )
+    })
+    const { ids, error: idsErr } = await idsAlocacoes(sb, alterados.map(f => f.id), [data])
+    if (idsErr) { setSaving(false); alert(mensagemErro(idsErr, 'Erro ao salvar')); return }
+    const erro = await trocarAlocacoes(sb, ids, novas)
     setSaving(false)
+    if (erro) { alert(erro); return }
     onSaved()
   }
 
@@ -781,7 +875,7 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
             <h2 className="font-syne font-semibold text-[#0F172A]">Alocação — {dia} de {MESES[mes]}</h2>
             <p className="text-xs text-[#94A3B8] mt-0.5 capitalize">{labelData(ano, mes, dia)}</p>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         {obras.length > 0 && (
@@ -871,14 +965,14 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
                           </label>
                         )}
                         {multiAloc && aloc.tipo && (
-                          <input type="number" min={1} max={100}
+                          <input type="number" inputMode="numeric" min={1} max={100}
                             value={aloc.percentual}
                             onChange={e => updateAloc(f.id, aloc._key, { percentual: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
                             className="w-12 text-center text-xs font-semibold border border-[#E2E8F0] rounded-lg py-1 focus:outline-none focus:border-[#4F7CFF]"
                           />
                         )}
                         {(alocs.length > 1 || idx > 0) && (
-                          <button onClick={() => removeAloc(f.id, aloc._key)} className="text-[#CBD5E1] hover:text-[#EF4444] transition-colors shrink-0">
+                          <button onClick={() => removeAloc(f.id, aloc._key)} aria-label="Remover alocação" title="Remover alocação" className="p-2 text-[#CBD5E1] hover:text-[#EF4444] transition-colors shrink-0">
                             <Trash2 size={13} />
                           </button>
                         )}
@@ -929,15 +1023,20 @@ function ModalDia({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, a
           })}
         </div>
 
+        {invalidos.length > 0 && (
+          <div className="px-6 pt-3 text-xs text-[#EF4444] shrink-0">
+            {invalidos.map(({ f, prob }) => <p key={f.id}><strong>{f.nome}:</strong> {prob}</p>)}
+          </div>
+        )}
         <div className="px-6 py-4 border-t border-[#E2E8F0] flex gap-3 shrink-0">
           <button onClick={onClose}
             className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
             Cancelar
           </button>
-          <button onClick={salvar} disabled={saving}
-            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
+          <button onClick={salvar} disabled={saving || invalidos.length > 0}
+            className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-            {saving ? 'Salvando...' : 'Salvar'}
+            {saving ? 'Salvando…' : alterados.length > 0 ? `Salvar (${alterados.length})` : 'Salvar'}
           </button>
         </div>
       </div>
@@ -998,8 +1097,6 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
   async function salvar() {
     setSaving(true)
     const sb = createClient()
-    // Delete all existing for this funcionario+day
-    await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', fid).eq('data', data)
     const toInsert = rows.filter(r => r.tipo).map(r => ({
       funcionario_id: fid,
       data,
@@ -1013,11 +1110,11 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       observacao: observacao || null,
     }))
-    if (toInsert.length > 0) {
-      const { error } = await sb.from('funcionario_alocacoes').insert(toInsert)
-      if (error) { console.error('Insert error:', error); alert('Erro ao salvar: ' + error.message); setSaving(false); return }
-    }
+    const { ids, error: idsErr } = await idsAlocacoes(sb, [fid], [data])
+    if (idsErr) { setSaving(false); alert(mensagemErro(idsErr, 'Erro ao salvar')); return }
+    const erro = await trocarAlocacoes(sb, ids, toInsert)
     setSaving(false)
+    if (erro) { alert(erro); return }
     onSaved()
   }
 
@@ -1040,7 +1137,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
               className="flex items-center gap-1 text-[11px] font-semibold text-[#4F7CFF] hover:text-[#3d6ae0] transition-colors">
               <CalendarRange size={12} /> Por período
             </button>
-            <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+            <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
           </div>
         </div>
 
@@ -1065,14 +1162,14 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
                 {/* Percentual */}
                 <div className="flex items-center gap-1 shrink-0">
                   <input
-                    type="number" min={1} max={100}
+                    type="number" inputMode="numeric" min={1} max={100}
                     value={row.percentual}
                     onChange={e => updateRow(row._key, { percentual: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
                     className="w-14 text-center text-sm font-semibold border border-[#E2E8F0] rounded-lg py-1 focus:outline-none focus:border-[#4F7CFF]"
                   />
                   <span className="text-xs text-[#94A3B8]">%</span>
                 </div>
-                <button onClick={() => removeRow(row._key)} className="shrink-0 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
+                <button onClick={() => removeRow(row._key)} aria-label="Remover alocação" title="Remover alocação" className="p-2 shrink-0 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -1187,7 +1284,7 @@ function ModalCell({ fid, fNome, dia, mes, ano, obras, manutencoes, veiculos, al
           <button onClick={salvar} disabled={saving || (hasTipo && !pctOk) || rows.some(r => r.tipo === 'obra' && !r.obra_id) || rows.some(r => r.tipo === 'manutencao' && !r.manutencao_id)}
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-            {saving ? 'Salvando...' : 'Salvar'}
+            {saving ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
       </div>
@@ -1219,14 +1316,29 @@ function ModalOrdem({ funcionarios, onClose, onSaved }: {
     })
   }
   function onDragEnd() { dragIdx.current = null }
+  // Botões ↑/↓ (arrastar não funciona no toque)
+  function mover(idx: number, delta: number) {
+    setLista(prev => {
+      const j = idx + delta
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      ;[next[idx], next[j]] = [next[j], next[idx]]
+      return next
+    })
+  }
 
   async function salvar() {
     setSaving(true)
     const sb = createClient()
-    await Promise.all(lista.map((f, i) =>
+    const res = await Promise.all(lista.map((f, i) =>
       sb.from('funcionarios').update({ ordem: i }).eq('id', f.id)
     ))
     setSaving(false)
+    const falhas = res.filter(r => r.error)
+    if (falhas.length > 0) {
+      alert(mensagemErro(falhas[0].error, `Não deu para salvar a posição de ${falhas.length} funcionário${falhas.length > 1 ? 's' : ''}`))
+      return
+    }
     onSaved()
   }
 
@@ -1236,9 +1348,9 @@ function ModalOrdem({ funcionarios, onClose, onSaved }: {
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] shrink-0">
           <div>
             <h2 className="font-syne font-semibold text-[#0F172A]">Ordem dos funcionários</h2>
-            <p className="text-xs text-[#94A3B8] mt-0.5">Arraste para reorganizar</p>
+            <p className="text-xs text-[#94A3B8] mt-0.5">Arraste ou use as setas para reorganizar</p>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
@@ -1249,7 +1361,7 @@ function ModalOrdem({ funcionarios, onClose, onSaved }: {
               onDragStart={() => onDragStart(idx)}
               onDragOver={e => onDragOver(e, idx)}
               onDragEnd={onDragEnd}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] cursor-grab active:cursor-grabbing select-none"
+              className="flex items-center gap-3 pl-3 pr-1 py-1.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] cursor-grab active:cursor-grabbing select-none"
             >
               <GripVertical size={15} className="text-[#CBD5E1] shrink-0" />
               <div className="flex-1 min-w-0">
@@ -1257,6 +1369,14 @@ function ModalOrdem({ funcionarios, onClose, onSaved }: {
                 {f.cargo && <p className="text-[11px] text-[#94A3B8] truncate">{f.cargo}</p>}
               </div>
               <span className="text-xs text-[#CBD5E1] font-mono shrink-0">{idx + 1}</span>
+              <div className="flex shrink-0">
+                <button type="button" onClick={() => mover(idx, -1)} disabled={idx === 0}
+                  aria-label={`Subir ${f.nome}`} title="Subir"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#EEF2FF] disabled:opacity-30">↑</button>
+                <button type="button" onClick={() => mover(idx, 1)} disabled={idx === lista.length - 1}
+                  aria-label={`Descer ${f.nome}`} title="Descer"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#EEF2FF] disabled:opacity-30">↓</button>
+              </div>
             </div>
           ))}
         </div>
@@ -1269,7 +1389,7 @@ function ModalOrdem({ funcionarios, onClose, onSaved }: {
           <button onClick={salvar} disabled={saving}
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-            {saving ? 'Salvando...' : 'Salvar ordem'}
+            {saving ? 'Salvando…' : 'Salvar ordem'}
           </button>
         </div>
       </div>
@@ -1290,6 +1410,27 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
   const [veiculoId, setVeiculoId] = useState('')
   const [observacao, setObservacao] = useState('')
   const [saving, setSaving] = useState(false)
+  // Quem já tem alocação neste dia (será substituída) — mostrado antes de confirmar
+  const [existentes, setExistentes] = useState<{ funcionario_id: string; tipo: TipoAlocacao }[] | null>(null)
+  const [erroExist, setErroExist] = useState('')
+  const fidsKey = funcionarios.map(f => f.id).join(',')
+
+  useEffect(() => {
+    let cancel = false
+    setExistentes(null)
+    createClient().from('funcionario_alocacoes').select('funcionario_id, tipo')
+      .in('funcionario_id', fidsKey.split(',')).eq('data', data)
+      .then(({ data: ex, error }) => {
+        if (cancel) return
+        if (error) { setErroExist(mensagemErro(error, 'Não deu para verificar as alocações do dia')); setExistentes([]); return }
+        setExistentes((ex ?? []) as { funcionario_id: string; tipo: TipoAlocacao }[])
+      })
+    return () => { cancel = true }
+  }, [fidsKey, data])
+
+  const conflitos = funcionarios
+    .map(f => ({ f, tipos: Array.from(new Set((existentes ?? []).filter(e => e.funcionario_id === f.id).map(e => e.tipo))) }))
+    .filter(c => c.tipos.length > 0)
 
   const totalPct = rows.reduce((s, r) => s + (r.tipo ? r.percentual : 0), 0)
   const pctOk = totalPct === 100 || totalPct === 0
@@ -1320,20 +1461,17 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       observacao: observacao || null,
     }))
-    let err: any = null
-    await Promise.all(funcionarios.map(async f => {
-      await sb.from('funcionario_alocacoes').delete().eq('funcionario_id', f.id).eq('data', data)
-      if (toInsert.length > 0) {
-        const { error } = await sb.from('funcionario_alocacoes').insert(toInsert.map(r => ({ ...r, funcionario_id: f.id, data })))
-        if (error) err = error
-      }
-    }))
+    const fids = funcionarios.map(f => f.id)
+    const { ids, error: idsErr } = await idsAlocacoes(sb, fids, [data])
+    if (idsErr) { setSaving(false); alert(mensagemErro(idsErr, 'Erro ao salvar')); return }
+    const novas = funcionarios.flatMap(f => toInsert.map(r => ({ ...r, funcionario_id: f.id, data })))
+    const erro = await trocarAlocacoes(sb, ids, novas)
     setSaving(false)
-    if (err) { alert('Erro ao salvar: ' + err.message); return }
+    if (erro) { alert(erro); return }
     onSaved()
   }
 
-  const canSave = hasTipo && pctOk && !rows.some(r => r.tipo === 'obra' && !r.obra_id) && !rows.some(r => r.tipo === 'manutencao' && !r.manutencao_id)
+  const canSave = hasTipo && pctOk && existentes !== null && !rows.some(r => r.tipo === 'obra' && !r.obra_id) && !rows.some(r => r.tipo === 'manutencao' && !r.manutencao_id)
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
@@ -1343,7 +1481,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
             <h2 className="font-syne font-semibold text-[#0F172A]">Alocar {funcionarios.length} funcionário{funcionarios.length > 1 ? 's' : ''}</h2>
             <p className="text-xs text-[#94A3B8] capitalize mt-0.5">{labelData(ano, mes, dia)}</p>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -1353,6 +1491,22 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
               <span key={f.id} className="text-xs bg-[#EEF2FF] text-[#4F7CFF] font-medium px-2.5 py-1 rounded-full">{f.nome.split(' ')[0]}</span>
             ))}
           </div>
+
+          {/* Conflitos: quem já tem alocação neste dia */}
+          {existentes === null ? (
+            <div className="flex items-center gap-2 text-xs text-[#94A3B8]">
+              <Loader2 size={13} className="animate-spin" /> Verificando alocações já lançadas...
+            </div>
+          ) : erroExist ? (
+            <p className="text-xs text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A] rounded-xl px-3 py-2.5">{erroExist}. O que já estiver lançado neste dia será substituído.</p>
+          ) : conflitos.length > 0 && (
+            <div className="rounded-xl bg-[#FFFBEB] border border-[#FDE68A] px-3 py-2.5 text-xs text-[#92400E] space-y-1">
+              <p className="flex items-center gap-1.5 font-semibold"><AlertTriangle size={13} /> Já têm alocação neste dia (será substituída)</p>
+              {conflitos.map(c => (
+                <p key={c.f.id}><strong>{c.f.nome}:</strong> {c.tipos.map(t => TIPO_MAP[t].label).join(' / ')}</p>
+              ))}
+            </div>
+          )}
 
           {/* Linhas de alocação */}
           {rows.map((row, idx) => (
@@ -1371,12 +1525,12 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
                   ))}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <input type="number" min={1} max={100} value={row.percentual}
+                  <input type="number" inputMode="numeric" min={1} max={100} value={row.percentual}
                     onChange={e => updateRow(row._key, { percentual: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
                     className="w-14 text-center text-sm font-semibold border border-[#E2E8F0] rounded-lg py-1 focus:outline-none focus:border-[#4F7CFF]" />
                   <span className="text-xs text-[#94A3B8]">%</span>
                 </div>
-                <button onClick={() => removeRow(row._key)} className="shrink-0 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
+                <button onClick={() => removeRow(row._key)} aria-label="Remover alocação" title="Remover alocação" className="p-2 shrink-0 text-[#CBD5E1] hover:text-[#EF4444] transition-colors">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -1481,7 +1635,7 @@ function ModalBulk({ dia, mes, ano, funcionarios, obras, manutencoes, veiculos, 
           <button onClick={salvar} disabled={saving || !canSave}
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-            {saving ? 'Salvando...' : `Alocar ${funcionarios.length}`}
+            {saving ? 'Salvando…' : `Alocar ${funcionarios.length}`}
           </button>
         </div>
       </div>
@@ -1536,16 +1690,16 @@ function ModalFerias({ funcionarios, fidInicial, inicioInicial, onClose, onSaved
     if (!fid || !periodoOk) return
     setSaving(true)
     const sb = createClient()
-    const { error: delErr } = await sb.from('funcionario_alocacoes').delete()
+    const { data: antigas, error: selErr } = await sb.from('funcionario_alocacoes').select('id')
       .eq('funcionario_id', fid).gte('data', inicio).lte('data', fim)
-    if (delErr) { alert('Erro ao salvar: ' + delErr.message); setSaving(false); return }
-    const { error } = await sb.from('funcionario_alocacoes').insert(dias.map(data => ({
+    if (selErr) { alert(mensagemErro(selErr, 'Erro ao salvar')); setSaving(false); return }
+    const erro = await trocarAlocacoes(sb, (antigas ?? []).map((a: { id: string }) => a.id), dias.map(data => ({
       funcionario_id: fid, data, tipo: 'ferias' as TipoAlocacao,
       obra_id: null, manutencao_id: null, percentual: 100, noturno: false,
       transporte_tipo: null, veiculo_id: null, observacao: observacao || null,
     })))
     setSaving(false)
-    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    if (erro) { alert(erro); return }
     onSaved()
   }
 
@@ -1556,7 +1710,7 @@ function ModalFerias({ funcionarios, fidInicial, inicioInicial, onClose, onSaved
     const { error } = await createClient().from('funcionario_alocacoes').delete()
       .eq('funcionario_id', fid).eq('tipo', 'ferias').gte('data', inicio).lte('data', fim)
     setSaving(false)
-    if (error) { alert('Erro ao remover: ' + error.message); return }
+    if (error) { alert(mensagemErro(error, 'Erro ao remover')); return }
     onSaved()
   }
 
@@ -1573,7 +1727,7 @@ function ModalFerias({ funcionarios, fidInicial, inicioInicial, onClose, onSaved
               <p className="text-xs text-[#94A3B8] mt-0.5">Preenche todos os dias do período como Férias</p>
             </div>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -1637,7 +1791,7 @@ function ModalFerias({ funcionarios, fidInicial, inicioInicial, onClose, onSaved
           <button onClick={salvar} disabled={saving || !fid || !periodoOk}
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-            {saving ? 'Salvando...' : 'Lançar férias'}
+            {saving ? 'Salvando…' : 'Lançar férias'}
           </button>
         </div>
       </div>
@@ -1740,13 +1894,22 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
     if (aCriar.length === 0 || !destinoOk) return
     setSaving(true)
     const sb = createClient()
+    // Ids das alocações a substituir (por funcionário+dia), buscados agora
+    const antigasPorChave = new Map<string, string[]>()
     if (aSubstituir.length > 0) {
       const porFunc = new Map<string, string[]>()
       aSubstituir.forEach(s => { if (!porFunc.has(s.fid)) porFunc.set(s.fid, []); porFunc.get(s.fid)!.push(s.data) })
-      const dels = await Promise.all(Array.from(porFunc.entries()).map(([fid, datas]) =>
-        sb.from('funcionario_alocacoes').delete().eq('funcionario_id', fid).in('data', datas).neq('tipo', 'ferias')))
-      const delErr = dels.find(r => r.error)?.error
-      if (delErr) { alert('Erro ao salvar: ' + delErr.message); setSaving(false); return }
+      for (const [fid, datas] of Array.from(porFunc.entries())) {
+        for (let i = 0; i < datas.length; i += 200) {
+          const { data: ex, error } = await sb.from('funcionario_alocacoes').select('id, data')
+            .eq('funcionario_id', fid).in('data', datas.slice(i, i + 200)).neq('tipo', 'ferias')
+          if (error) { alert(mensagemErro(error, 'Erro ao salvar')); setSaving(false); return }
+          for (const r of (ex ?? []) as { id: string; data: string }[]) {
+            const k = `${fid}_${r.data}`
+            antigasPorChave.set(k, [...(antigasPorChave.get(k) ?? []), r.id])
+          }
+        }
+      }
     }
     const linhas = aCriar.map(({ fid, data }) => ({
       funcionario_id: fid, data, tipo,
@@ -1759,9 +1922,19 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
       veiculo_id: transporteTipo === 'veiculo' && veiculoId ? veiculoId : null,
       observacao: observacao || null,
     }))
+    // Lotes de 500: insere o lote e só então apaga as antigas daqueles mesmos dias
     for (let i = 0; i < linhas.length; i += 500) {
-      const { error } = await sb.from('funcionario_alocacoes').insert(linhas.slice(i, i + 500))
-      if (error) { alert('Erro ao salvar: ' + error.message); setSaving(false); return }
+      const lote = linhas.slice(i, i + 500)
+      const idsLote = lote.flatMap(l => antigasPorChave.get(`${l.funcionario_id}_${l.data}`) ?? [])
+      const erro = await trocarAlocacoes(sb, idsLote, lote)
+      if (erro) {
+        setSaving(false)
+        alert(i > 0
+          ? `${erro}\n\n${i} de ${linhas.length} lançamentos (dia × funcionário) já foram gravados; os demais não.`
+          : erro)
+        if (i > 0) onSaved()
+        return
+      }
     }
     setSaving(false)
     onSaved()
@@ -1784,7 +1957,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
     }))
     setSaving(false)
     const err = res.find(r => r.error)?.error
-    if (err) { alert('Erro ao remover: ' + err.message); return }
+    if (err) { alert(mensagemErro(err, 'Erro ao remover')); return }
     onSaved()
   }
 
@@ -1804,7 +1977,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
               <p className="text-xs text-[#94A3B8] mt-0.5">Cria a mesma alocação em cada dia escolhido</p>
             </div>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -1998,7 +2171,7 @@ function ModalPeriodo({ funcionarios, fidsIniciais, inicioInicial, obras, manute
           <button onClick={salvar} disabled={saving || existentes === null || aCriar.length === 0 || !destinoOk}
             className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-            {saving ? 'Salvando...' : `Criar ${aCriar.length || ''} alocaç${aCriar.length === 1 ? 'ão' : 'ões'}`}
+            {saving ? 'Salvando…' : `Criar ${aCriar.length || ''} alocaç${aCriar.length === 1 ? 'ão' : 'ões'}`}
           </button>
         </div>
       </div>

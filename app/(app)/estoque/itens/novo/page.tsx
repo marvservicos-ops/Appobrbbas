@@ -6,6 +6,8 @@ import { ArrowLeft, Upload, Package, Scan } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
+import { numeroOuPadrao } from '@/lib/numero'
+import { mensagemErro } from '@/lib/erros'
 import { EstoqueCategoria } from '@/lib/types'
 
 const unidades = ['un', 'm', 'kg', 'L', 'm²', 'par', 'cx', 'rolo', 'peça', 'conjunto']
@@ -61,7 +63,7 @@ export default function NovoItemPage() {
     if (foto) {
       const path = `itens/${Date.now()}_${sanitizarNomeArquivo(foto.name)}`
       const { error: uploadError } = await supabase.storage.from('estoque').upload(path, foto)
-      if (uploadError) { setError(uploadError.message); setLoading(false); return }
+      if (uploadError) { setError(mensagemErro(uploadError, 'Erro ao enviar foto')); setLoading(false); return }
       foto_path = path
       const { data: urlData } = supabase.storage.from('estoque').getPublicUrl(path)
       foto_url = urlData.publicUrl
@@ -72,18 +74,18 @@ export default function NovoItemPage() {
       descricao: form.descricao || null,
       categoria_id: form.categoria_id || null,
       unidade: form.unidade,
-      quantidade_atual: parseFloat(form.quantidade_atual) || 0,
-      quantidade_minima: parseFloat(form.quantidade_minima) || 5,
-      quantidade_maxima: form.quantidade_maxima ? parseFloat(form.quantidade_maxima) : null,
+      quantidade_atual: numeroOuPadrao(form.quantidade_atual, 0),
+      quantidade_minima: numeroOuPadrao(form.quantidade_minima, 5),
+      quantidade_maxima: form.quantidade_maxima ? numeroOuPadrao(form.quantidade_maxima, 0) : null,
       codigo_barras: form.codigo_barras || null,
       codigo_interno: form.codigo_interno || null,
       localizacao: form.localizacao || null,
-      preco_unitario: form.preco_unitario ? parseFloat(form.preco_unitario) : null,
+      preco_unitario: form.preco_unitario ? numeroOuPadrao(form.preco_unitario, 0) : null,
       foto_url,
       foto_path,
     })
 
-    if (insertError) { setError(insertError.message); setLoading(false); return }
+    if (insertError) { setError(mensagemErro(insertError, 'Erro ao salvar item')); setLoading(false); return }
     router.push('/estoque/itens')
   }
 
@@ -151,7 +153,7 @@ export default function NovoItemPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$)</label>
-                <input type="number" step="0.01" className="field" value={form.preco_unitario} onChange={e => set('preco_unitario', e.target.value)} placeholder="0,00" />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.preco_unitario} onChange={e => set('preco_unitario', e.target.value)} placeholder="0,00" />
               </div>
             </div>
           </div>
@@ -162,16 +164,16 @@ export default function NovoItemPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd. Atual</label>
-                <input type="number" step="0.01" className="field" value={form.quantidade_atual} onChange={e => set('quantidade_atual', e.target.value)} />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.quantidade_atual} onChange={e => set('quantidade_atual', e.target.value)} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd. Mínima ⚠️</label>
-                <input type="number" step="0.01" className="field" value={form.quantidade_minima} onChange={e => set('quantidade_minima', e.target.value)} />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.quantidade_minima} onChange={e => set('quantidade_minima', e.target.value)} />
                 <p className="text-xs text-[#94A3B8] mt-1">Alerta quando atingir</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Qtd. Máxima</label>
-                <input type="number" step="0.01" className="field" value={form.quantidade_maxima} onChange={e => set('quantidade_maxima', e.target.value)} placeholder="Opcional" />
+                <input type="text" inputMode="decimal" step="0.01" className="field" value={form.quantidade_maxima} onChange={e => set('quantidade_maxima', e.target.value)} placeholder="Opcional" />
               </div>
             </div>
           </div>

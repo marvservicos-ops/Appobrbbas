@@ -6,6 +6,8 @@ import { ReceiptText, TrendingDown, ArrowLeft, TrendingUp, Loader2 } from 'lucid
 import ObraPagamentos from '@/components/ObraPagamentos'
 import ObraCentroCustos from '@/components/ObraCentroCustos'
 import { createClient } from '@/lib/supabase/client'
+import { carregarTotaisObra } from '@/lib/financeiroObra'
+import { mensagemErro } from '@/lib/erros'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const pctFmt = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%'
@@ -24,50 +26,43 @@ interface DRE {
 function DreSummary({ obraId }: { obraId: string }) {
   const [dre, setDre] = useState<DRE | null>(null)
   const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
+  const [tentativa, setTentativa] = useState(0)
 
   useEffect(() => {
     async function load() {
-      const sb = createClient()
-      const [{ data: meds }, { data: estReg }, { data: mats }, { data: alocs }] = await Promise.all([
-        sb.from('obra_medicoes').select('status, valor_previsto').eq('obra_id', obraId),
-        sb.from('estoque_registros').select('tipo, valor_total').eq('obra_id', obraId),
-        sb.from('obra_materiais').select('valor_total').eq('obra_id', obraId).eq('tipo_compra', 'interna'),
-        sb.from('funcionario_alocacoes')
-          .select('percentual, funcionarios:funcionario_id(custo_diario, salario_bruto, dias_mes)')
-          .eq('obra_id', obraId).in('tipo', ['obra', 'folga', 'escritorio']),
-      ])
-
-      const totalContrato = (meds ?? []).reduce((s: number, m: any) => s + (m.valor_previsto || 0), 0)
-      const totalFaturado = (meds ?? []).filter((m: any) => ['faturada', 'recebida'].includes(m.status))
-        .reduce((s: number, m: any) => s + (m.valor_previsto || 0), 0)
-      const totalRecebido = (meds ?? []).filter((m: any) => m.status === 'recebida')
-        .reduce((s: number, m: any) => s + (m.valor_previsto || 0), 0)
-
-      const custoEstoque = (estReg ?? []).reduce((s: number, r: any) => s + (r.tipo === 'saida' ? 1 : -1) * (r.valor_total || 0), 0)
-      const custoMateriais = (mats ?? []).reduce((s: number, m: any) => s + (m.valor_total || 0), 0)
-      const custoMaoObra = (alocs ?? []).reduce((s: number, a: any) => {
-        const f = a.funcionarios as any
-        if (!f) return s
-        const custoDia = f.custo_diario ?? (f.salario_bruto && f.dias_mes ? f.salario_bruto / f.dias_mes : 0)
-        return s + ((a.percentual || 100) / 100) * custoDia
-      }, 0)
-      const totalCusto = custoEstoque + custoMateriais + custoMaoObra
-
-      const margem = totalFaturado - totalCusto
-      const margemPct = totalFaturado > 0 ? (margem / totalFaturado) * 100 : 0
-
-      setDre({ totalContrato, totalFaturado, totalRecebido, totalCusto, margem, margemPct })
+      setLoading(true); setErro('')
+      // Mesma regra de totais do Centro de Custos e das Medições
+      const { totais, error } = await carregarTotaisObra(createClient(), obraId)
+      if (error || !totais) {
+        setErro(mensagemErro(error, 'Não foi possível carregar o resumo financeiro'))
+        setDre(null)
+        setLoading(false)
+        return
+      }
+      const margem = totais.faturado - totais.custoTotal
+      const margemPct = totais.faturado > 0 ? (margem / totais.faturado) * 100 : 0
+      setDre({
+        totalContrato: totais.contrato, totalFaturado: totais.faturado, totalRecebido: totais.recebido,
+        totalCusto: totais.custoTotal, margem, margemPct,
+      })
       setLoading(false)
     }
     load()
-  }, [obraId])
+  }, [obraId, tentativa])
 
   if (loading) return (
     <div className="px-4 md:px-6 py-3 border-b border-[#F1F5F9] flex justify-center">
       <Loader2 size={16} className="animate-spin text-[#94A3B8]" />
     </div>
   )
-  if (!dre || dre.totalContrato === 0) return null
+  if (erro) return (
+    <div className="px-4 md:px-6 py-2.5 border-b border-[#F1F5F9] bg-red-50 flex items-center justify-between gap-3">
+      <p className="text-xs text-red-700">{erro}</p>
+      <button onClick={() => setTentativa(t => t + 1)} className="text-xs font-semibold text-red-700 underline shrink-0">Tentar de novo</button>
+    </div>
+  )
+  if (!dre || (dre.totalContrato === 0 && dre.totalFaturado === 0 && dre.totalCusto === 0)) return null
 
   const margemOk = dre.margemPct >= 20
   const margemWarn = dre.margemPct >= 0 && dre.margemPct < 20
@@ -119,8 +114,8 @@ function FinanceiroContent() {
     <div className="flex flex-col h-full">
       {/* Sub-navegação */}
       <div className="flex items-center gap-1 px-4 md:px-6 pt-4 pb-0 border-b border-[#E2E8F0] bg-white">
-        <button onClick={() => router.push(`/obras/${id}`)}
-          className="w-7 h-7 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors mr-2 shrink-0 -mb-px">
+        <button onClick={() => router.push(`/obras/${id}`)} aria-label="Voltar para a obra" title="Voltar para a obra"
+          className="w-9 h-9 rounded-lg border border-[#E2E8F0] flex items-center justify-center hover:bg-[#F1F5F9] transition-colors mr-2 shrink-0 -mb-px">
           <ArrowLeft size={14} className="text-[#64748B]" />
         </button>
         {([

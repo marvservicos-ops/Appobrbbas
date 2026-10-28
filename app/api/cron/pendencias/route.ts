@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase/service'
 import { calcularPendencias, agoraBrasilia, type Pendencia } from '@/lib/pendencias'
+import { cronAutorizado } from '@/lib/apiAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,12 +30,8 @@ function secao(titulo: string, itens: Pendencia[]) {
 }
 
 export async function GET(req: NextRequest) {
-  if (process.env.CRON_SECRET) {
-    const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-    }
-  }
+  const negado = cronAutorizado(req, 'cron/pendencias')
+  if (negado) return negado
 
   const agora = agoraBrasilia()
   const pendencias = (await calcularPendencias(createServiceClient(), agora)).filter(p => !p.dispensada)
@@ -61,7 +58,10 @@ export async function GET(req: NextRequest) {
     html,
   })
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[cron/pendencias] falha ao enviar e-mail', error)
+    return NextResponse.json({ ok: false, error: 'Falha ao enviar o e-mail de pendências' }, { status: 500 })
+  }
   return NextResponse.json({ ok: true, enviado: true, id: data?.id, total: pendencias.length },
     { headers: { 'Cache-Control': 'no-store' } })
 }

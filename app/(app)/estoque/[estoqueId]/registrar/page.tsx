@@ -5,8 +5,12 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Eraser, Check, Loader2, Camera, ScanLine, AlertTriangle, FileText, Upload, Plus, Trash2, X, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto, EstoqueProdutoCategoria } from '@/lib/types'
-import { controlaSaldo, saldoAposSaida } from '@/lib/estoque/saldo'
+import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
+import { hojeLocal, parseData } from '@/lib/datas'
+import { arred, numeroOuPadrao, parseNumeroBR } from '@/lib/numero'
+import { mensagemErro } from '@/lib/erros'
 import Link from 'next/link'
+import { lancarCustoAdministrativo, reporEstoqueManutencao } from '../registroVinculos'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
 import FormSaidaEpiLote from './FormSaidaEpiLote'
 import FormSaidaLoteLimpeza from './FormSaidaLoteLimpeza'
@@ -47,7 +51,7 @@ export default function RegistrarPage() {
   const [quantidade, setQuantidade] = useState('')
   const [unidade, setUnidade] = useState('un')
   const [responsavel, setResponsavel] = useState('')
-  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(hojeLocal())
   const [observacoes, setObservacoes] = useState('')
   const [valoresCampos, setValoresCampos] = useState<Record<string, string>>({})
   const [temAssinatura, setTemAssinatura] = useState(false)
@@ -66,6 +70,10 @@ export default function RegistrarPage() {
   const [novoCadastrar, setNovoCadastrar] = useState(true)
   const [novoPreco, setNovoPreco] = useState('')
   const [novoCategoriaId, setNovoCategoriaId] = useState('')
+
+  // Produto cadastrado na hora numa tentativa anterior (não recria se o registro falhar e for reenviado)
+  const produtoCriado = useRef<{ nome: string; prod: EstoqueProduto } | null>(null)
+  const [termoUrl, setTermoUrl] = useState('')
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawing = useRef(false)
@@ -159,11 +167,11 @@ export default function RegistrarPage() {
     const isCopa = estoque?.nome === 'Copa/Escritório'
     const isDestinoMultiplo = !needsFuncionario && !isLimpeza && !isCopa
     if (!produtoNome.trim()) { setError('Informe o produto.'); return }
-    if (!quantidade || parseFloat(quantidade) <= 0) { setError('Informe a quantidade.'); return }
+    if (!(numeroOuPadrao(quantidade, 0) > 0)) { setError('Informe a quantidade.'); return }
     if (!responsavel.trim()) { setError('Informe o responsável.'); return }
     if (tipo === 'saida' && produtoId && produtoId !== '__outro__') {
       const prod = produtos.find(p => p.id === produtoId)
-      if (prod && controlaSaldo(prod) && prod.quantidade_atual - parseFloat(quantidade) < 0) {
+      if (prod && controlaSaldo(prod) && prod.quantidade_atual - numeroOuPadrao(quantidade, 0) < 0) {
         setError(`Saldo insuficiente! Estoque atual: ${prod.quantidade_atual} ${prod.unidade}.`); return
       }
     }
@@ -181,6 +189,8 @@ export default function RegistrarPage() {
 
     setSaving(true); setError('')
     const supabase = createClient()
+    // Termo de EPI: a aba precisa abrir no clique (depois de await o iPhone bloqueia o pop-up)
+    const abaTermo = tipo === 'saida' && needsFuncionario ? window.open('', '_blank') : null
 
     let assinatura_url: string | null = null
     if (temAssinatura && canvasRef.current) {
@@ -188,14 +198,13 @@ export default function RegistrarPage() {
       if (blob) {
         const path = `${estoqueId}/${Date.now()}.png`
         const { error: upErr } = await supabase.storage.from('assinaturas').upload(path, blob)
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('assinaturas').getPublicUrl(path)
-          assinatura_url = urlData.publicUrl
-        }
+        if (upErr) { abaTermo?.close(); setError(mensagemErro(upErr, 'Não foi possível enviar a assinatura')); setSaving(false); return }
+        const { data: urlData } = supabase.storage.from('assinaturas').getPublicUrl(path)
+        assinatura_url = urlData.publicUrl
       }
     }
 
-    const qtd = parseFloat(quantidade)
+    const qtd = numeroOuPadrao(quantidade, 0)
     let prod = produtos.find(p => p.id === produtoId)
     let produtoIdFinal = produtoId && produtoId !== '__outro__' ? produtoId : ''
     const produtoNovo = !produtoIdFinal
@@ -203,19 +212,24 @@ export default function RegistrarPage() {
 
     // Saída de item fora do catálogo: cadastra na hora, sem controle de saldo, com o preço informado
     if (tipo === 'saida' && produtoNovo && novoCadastrar && !isEpiSaida) {
-      const { data: novo, error: novoErr } = await supabase.from('estoque_produtos').insert({
-        estoque_id: estoqueId, nome: produtoNome.trim(), unidade: unidade || 'un',
-        quantidade_atual: 0, quantidade_minima: 0,
-        preco_unitario: parseFloat(novoPreco) || null,
-        categoria_id: novoCategoriaId || null,
-        controla_saldo: false,
-      }).select().single()
-      if (novoErr) { setError(novoErr.message); setSaving(false); return }
-      prod = novo as EstoqueProduto
-      produtoIdFinal = novo.id
+      if (produtoCriado.current && produtoCriado.current.nome === produtoNome.trim()) {
+        prod = produtoCriado.current.prod
+      } else {
+        const { data: novo, error: novoErr } = await supabase.from('estoque_produtos').insert({
+          estoque_id: estoqueId, nome: produtoNome.trim(), unidade: unidade || 'un',
+          quantidade_atual: 0, quantidade_minima: 0,
+          preco_unitario: numeroOuPadrao(novoPreco, 0) || null,
+          categoria_id: novoCategoriaId || null,
+          controla_saldo: false,
+        }).select().single()
+        if (novoErr) { abaTermo?.close(); setError(mensagemErro(novoErr, 'Não foi possível cadastrar o produto')); setSaving(false); return }
+        prod = novo as EstoqueProduto
+        produtoCriado.current = { nome: produtoNome.trim(), prod }
+      }
+      produtoIdFinal = prod.id
     }
-    const cmpAtual = prod?.preco_unitario || (tipo === 'saida' && produtoNovo ? parseFloat(novoPreco) || 0 : 0)
-    const precoEntradaNum = parseFloat(precoEntrada) || 0
+    const cmpAtual = prod?.preco_unitario || (tipo === 'saida' && produtoNovo ? numeroOuPadrao(novoPreco, 0) : 0)
+    const precoEntradaNum = numeroOuPadrao(precoEntrada, 0)
     const preco_unitario_custo = tipo === 'entrada' ? precoEntradaNum : cmpAtual
     const valor_total = qtd * preco_unitario_custo
     const destinoFinal = isCopa ? 'uso_interno' : destinoTipo
@@ -236,8 +250,10 @@ export default function RegistrarPage() {
       preco_unitario_custo: preco_unitario_custo || null, valor_total: valor_total || null,
     }).select().single()
 
-    if (regErr) { setError(regErr.message); setSaving(false); return }
+    if (regErr) { abaTermo?.close(); setError(mensagemErro(regErr, 'Erro ao salvar o registro')); setSaving(false); return }
 
+    // Daqui em diante o registro já existe: falhas viram aviso (reenviar duplicaria o registro)
+    const avisos: string[] = []
     const isCAField = (c: EstoqueCampo) => { const n = c.nome.toLowerCase().replace(/\s/g, ''); return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca') }
     const valores = campos
       .map(c => {
@@ -245,93 +261,76 @@ export default function RegistrarPage() {
         return v ? { registro_id: reg.id, campo_id: c.id, valor: v } : null
       })
       .filter(Boolean) as { registro_id: string; campo_id: string; valor: string }[]
-    if (valores.length > 0) await supabase.from('estoque_registro_valores').insert(valores)
+    if (valores.length > 0) {
+      const { error: errVal } = await supabase.from('estoque_registro_valores').insert(valores)
+      if (errVal) avisos.push(`campos extras (${mensagemErro(errVal)})`)
+    }
 
     if (produtoIdFinal && prod) {
-      const novaQtd = tipo === 'entrada' ? prod.quantidade_atual + qtd : saldoAposSaida(prod, qtd)
-      const prodUpdate: Record<string, unknown> = { quantidade_atual: novaQtd }
-      if (tipo === 'entrada' && precoEntradaNum > 0) {
-        const novoCMP = prod.quantidade_atual > 0
-          ? (prod.quantidade_atual * cmpAtual + qtd * precoEntradaNum) / novaQtd
-          : precoEntradaNum
-        prodUpdate.preco_unitario = novoCMP
-      }
-      await supabase.from('estoque_produtos').update(prodUpdate).eq('id', produtoIdFinal)
+      const delta = tipo === 'entrada' ? qtd : -qtd
+      const { saldo, error: errSaldo } = await ajustarSaldo(supabase, produtoIdFinal, delta, { pisoZero: !controlaSaldo(prod) })
+      if (errSaldo) avisos.push(`saldo do produto (${mensagemErro(errSaldo)})`)
+      else if (saldo !== null) {
+        const anterior = arred(saldo - delta)
+        if (tipo === 'entrada' && precoEntradaNum > 0) {
+          const novoCMP = anterior > 0 && saldo > 0
+            ? (anterior * cmpAtual + qtd * precoEntradaNum) / saldo
+            : precoEntradaNum
+          const { error: errCmp } = await supabase.from('estoque_produtos').update({ preco_unitario: novoCMP }).eq('id', produtoIdFinal)
+          if (errCmp) avisos.push(`custo médio do produto (${mensagemErro(errCmp)})`)
+        }
 
-      if (tipo === 'saida' && controlaSaldo(prod) && prod.quantidade_minima > 0) {
-        fetch('/api/estoque/alerta-critico', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            produtoNome: prod.nome, estoqueNome: estoque?.nome ?? '',
-            quantidadeAnterior: prod.quantidade_atual, quantidadeNova: novaQtd,
-            quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
-          }),
-        }).catch(() => {})
+        if (tipo === 'saida' && controlaSaldo(prod) && prod.quantidade_minima > 0) {
+          fetch('/api/estoque/alerta-critico', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              produtoNome: prod.nome, estoqueNome: estoque?.nome ?? '',
+              quantidadeAnterior: anterior, quantidadeNova: saldo,
+              quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
+            }),
+          }).catch(() => {})
+        }
       }
     }
 
     // Saída com destino Manutenção repõe o estoque local do contrato
     if (hasMultiDestino && destinoFinal === 'manutencao' && manutencaoId && produtoIdFinal) {
-      const { data: existente } = await supabase.from('manutencao_estoque_produtos')
-        .select('id, quantidade_atual').eq('contrato_id', manutencaoId).eq('produto_id', produtoId).maybeSingle()
-      if (existente) {
-        await supabase.from('manutencao_estoque_produtos').update({ quantidade_atual: existente.quantidade_atual + qtd }).eq('id', existente.id)
-      } else {
-        await supabase.from('manutencao_estoque_produtos').insert({ contrato_id: manutencaoId, produto_id: produtoId, quantidade_atual: qtd })
-      }
-      await supabase.from('manutencao_estoque_registros').insert({
-        contrato_id: manutencaoId, produto_id: produtoId, tipo: 'entrada', quantidade: qtd,
-        responsavel: responsavel.trim(), data, origem_estoque_registro_id: reg.id,
+      const errMan = await reporEstoqueManutencao(supabase, {
+        contratoId: manutencaoId, produtoId: produtoIdFinal, qtd, responsavel: responsavel.trim(), data, registroId: reg.id,
       })
+      if (errMan) avisos.push(`estoque do contrato de manutenção (${mensagemErro(errMan)})`)
     }
 
     // Saída de material de limpeza para uso interno vira gasto administrativo do mês
     if (tipo === 'saida' && estoque?.icone === 'sparkles' && destinoTipo === 'uso_interno' && valor_total > 0) {
-      let { data: categoria } = await supabase.from('categorias_administrativas').select('id').eq('nome', 'Material de Limpeza').maybeSingle()
-      if (!categoria) {
-        const { data: novaCategoria } = await supabase.from('categorias_administrativas')
-          .insert({ nome: 'Material de Limpeza', icone: 'Sparkles', cor: '#2DD4BF' })
-          .select('id').single()
-        categoria = novaCategoria
-      }
-      if (categoria) {
-        await supabase.from('custos_administrativos').insert({
-          descricao: `${produtoNome.trim()} (${qtd} ${unidade})`,
-          categoria_id: categoria.id,
-          valor: valor_total,
-          data,
-          recorrencia: 'unico',
-          ativo: true,
-          observacao: 'Gerado automaticamente a partir de saída de estoque (uso interno).',
-        })
-      }
+      const { error: errCusto } = await lancarCustoAdministrativo(supabase, {
+        categoria: { nome: 'Material de Limpeza', icone: 'Sparkles', cor: '#2DD4BF' },
+        descricao: `${produtoNome.trim()} (${qtd} ${unidade})`, valor: valor_total, data,
+        observacao: 'Gerado automaticamente a partir de saída de estoque (uso interno).', registroId: reg.id,
+      })
+      if (errCusto) avisos.push(`custo administrativo (${mensagemErro(errCusto)})`)
     }
 
     // Saída de item da Copa/Escritório vira gasto administrativo do mês, na categoria Café ou Escritório
     if (tipo === 'saida' && isCopa && valor_total > 0) {
       const nomeCategoria = /caf[eé]/i.test(produtoNome) ? 'Café' : 'Escritório'
-      let { data: categoria } = await supabase.from('categorias_administrativas').select('id').eq('nome', nomeCategoria).maybeSingle()
-      if (!categoria) {
-        const { data: novaCategoria } = await supabase.from('categorias_administrativas')
-          .insert({ nome: nomeCategoria, icone: nomeCategoria === 'Café' ? 'Coffee' : 'Building2', cor: nomeCategoria === 'Café' ? '#92400E' : '#64748B' })
-          .select('id').single()
-        categoria = novaCategoria
-      }
-      if (categoria) {
-        await supabase.from('custos_administrativos').insert({
-          descricao: `${produtoNome.trim()} (${qtd} ${unidade})`,
-          categoria_id: categoria.id,
-          valor: valor_total,
-          data,
-          recorrencia: 'unico',
-          ativo: true,
-          observacao: 'Gerado automaticamente a partir de saída de estoque (Copa/Escritório).',
-        })
-      }
+      const { error: errCusto } = await lancarCustoAdministrativo(supabase, {
+        categoria: { nome: nomeCategoria, icone: nomeCategoria === 'Café' ? 'Coffee' : 'Building2', cor: nomeCategoria === 'Café' ? '#92400E' : '#64748B' },
+        descricao: `${produtoNome.trim()} (${qtd} ${unidade})`, valor: valor_total, data,
+        observacao: 'Gerado automaticamente a partir de saída de estoque (Copa/Escritório).', registroId: reg.id,
+      })
+      if (errCusto) avisos.push(`custo administrativo (${mensagemErro(errCusto)})`)
     }
 
+    produtoCriado.current = null
+    if (avisos.length > 0) alert(`Registro salvo, mas não foi possível atualizar:\n• ${avisos.join('\n• ')}\n\nConfira e ajuste manualmente.`)
+
     // Saída de EPI/uniforme gera termo de responsabilidade pra imprimir e o funcionário assinar
-    if (tipo === 'saida' && needsFuncionario) window.open(`/print/epi/${reg.id}`, '_blank')
+    if (tipo === 'saida' && needsFuncionario) {
+      const url = `/print/epi/${reg.id}`
+      if (abaTermo) abaTermo.location.href = url
+      else { setSaving(false); setTermoUrl(url); return } // pop-up bloqueado: mostra o link
+    }
 
     router.push(`/estoque/${estoqueId}`)
   }
@@ -377,6 +376,16 @@ export default function RegistrarPage() {
           <p className="text-xs text-[#64748B]">{estoque?.nome}</p>
         </div>
       </div>
+
+      {termoUrl && (
+        <div className="mb-6 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800 space-y-2">
+          <p className="font-medium">Saída registrada.</p>
+          <div className="flex flex-wrap gap-2">
+            <a href={termoUrl} target="_blank" rel="noreferrer" className="btn-primary text-sm">Abrir termo</a>
+            <Link href={`/estoque/${estoqueId}`} className="px-4 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg bg-white">Voltar ao estoque</Link>
+          </div>
+        </div>
+      )}
 
       {/* Toggle Entrada/Saída */}
       <div className="grid grid-cols-2 gap-3 mb-6">
@@ -574,7 +583,7 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium text-[#64748B] mb-1">Preço unitário (R$)</label>
-                <input type="number" step="0.0001" min="0" className="field text-sm" value={novoPreco} onChange={e => setNovoPreco(e.target.value)} placeholder="0,00" />
+                <input type="number" step="0.0001" min="0" inputMode="decimal" className="field text-sm" value={novoPreco} onChange={e => setNovoPreco(e.target.value)} placeholder="0,00" />
               </div>
               {novoCadastrar && categorias?.length > 0 && (
                 <div>
@@ -623,7 +632,7 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade *</label>
-          <input type="number" min="0" step="any" required className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
+          <input type="number" min="0" step="any" inputMode="decimal" required className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
         </div>
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Unidade</label>
@@ -833,7 +842,7 @@ function FormEntradaUnica({ produtos, campos, produtoId, setProdutoId, produtoNo
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Quantidade *</label>
-          <input type="number" min="0" step="any" required className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
+          <input type="number" min="0" step="any" inputMode="decimal" required className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} placeholder="0" />
         </div>
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Unidade</label>
@@ -843,7 +852,7 @@ function FormEntradaUnica({ produtos, campos, produtoId, setProdutoId, produtoNo
 
       <div>
         <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$) *</label>
-        <input type="number" step="0.01" min="0.01" required className="field" placeholder="0,00"
+        <input type="number" step="any" min="0.01" inputMode="decimal" required className="field" placeholder="0,00"
           value={precoEntrada} onChange={e => setPrecoEntrada(e.target.value)} />
         {quantidade && precoEntrada && (
           <p className="text-xs text-emerald-600 mt-1">
@@ -909,7 +918,7 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
   const [nfNumero, setNfNumero] = useState('')
   const [fornecedor, setFornecedor] = useState('')
   const [responsavel, setResponsavel] = useState('')
-  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(hojeLocal())
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemNF[]>([ITEM_VAZIO()])
   const [saving, setSaving] = useState(false)
@@ -946,15 +955,23 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
     const supabase = createClient()
     const obs = [nfNumero.trim() ? `NF: ${nfNumero.trim()}` : '', fornecedor.trim() ? `Fornecedor: ${fornecedor.trim()}` : '', observacoes.trim()].filter(Boolean).join(' | ') || null
 
-    for (const it of itensValidos) {
-      const prod = produtos.find(p => p.id === it.produtoId)
-      const qtd = parseFloat(it.quantidade)
-      const precoNum = parseFloat(it.precoUnitario)
-      const valorTotal = parseFloat(it.valorTotal) || qtd * precoNum
+    // Itens não são gravados numa transação: o que já foi gravado sai da lista, para um reenvio não duplicar
+    const gravados = new Set<ItemNF>()
+    const avisos: string[] = []
+    // Saldo/CMP correntes por produto (o mesmo produto pode aparecer em mais de um item)
+    const cmpCorrente = new Map<string, number>()
+    let falha: { item: ItemNF; msg: string } | null = null
 
-      await supabase.from('estoque_registros').insert({
+    for (const it of itensValidos) {
+      const produtoIdOk = it.produtoId && it.produtoId !== '__outro__' ? it.produtoId : null
+      const prod = produtoIdOk ? produtos.find(p => p.id === produtoIdOk) : undefined
+      const qtd = parseNumeroBR(it.quantidade)
+      const precoNum = parseNumeroBR(it.precoUnitario)
+      const valorTotal = numeroOuPadrao(it.valorTotal, 0) || qtd * precoNum
+
+      const { error: errReg } = await supabase.from('estoque_registros').insert({
         estoque_id: estoqueId,
-        produto_id: it.produtoId || null,
+        produto_id: produtoIdOk,
         produto_nome: it.produtoNome.trim() || prod?.nome || '',
         tipo: 'entrada',
         quantidade: qtd,
@@ -965,20 +982,31 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
         valor_total: valorTotal,
         observacoes: obs,
       })
+      if (errReg) { falha = { item: it, msg: mensagemErro(errReg) }; break }
+      gravados.add(it)
 
       if (prod) {
-        const novaQtd = prod.quantidade_atual + qtd
-        const cmpAtual = prod.preco_unitario || 0
-        const novoCMP = prod.quantidade_atual > 0
-          ? (prod.quantidade_atual * cmpAtual + qtd * precoNum) / novaQtd
+        const { saldo, error: errSaldo } = await ajustarSaldo(supabase, prod.id, qtd, { pisoZero: !controlaSaldo(prod) })
+        if (errSaldo || saldo === null) { avisos.push(`saldo de ${prod.nome} (${mensagemErro(errSaldo)})`); continue }
+        const anterior = arred(saldo - qtd)
+        const cmpAtual = cmpCorrente.get(prod.id) ?? (prod.preco_unitario || 0)
+        const novoCMP = anterior > 0 && saldo > 0
+          ? (anterior * cmpAtual + qtd * precoNum) / saldo
           : precoNum
-        await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd, preco_unitario: novoCMP }).eq('id', prod.id)
-        prod.quantidade_atual = novaQtd
-        prod.preco_unitario = novoCMP
+        const { error: errCmp } = await supabase.from('estoque_produtos').update({ preco_unitario: novoCMP }).eq('id', prod.id)
+        if (errCmp) avisos.push(`custo médio de ${prod.nome} (${mensagemErro(errCmp)})`)
+        else cmpCorrente.set(prod.id, novoCMP)
       }
     }
 
     setSaving(false)
+    if (avisos.length > 0) alert(`Itens gravados, mas não foi possível atualizar:\n• ${avisos.join('\n• ')}\n\nConfira em Produtos.`)
+    if (falha) {
+      const nomeFalha = falha.item.produtoNome.trim() || produtos.find(p => p.id === falha!.item.produtoId)?.nome || 'item'
+      setItens(prev => prev.filter(it => !gravados.has(it)))
+      setError(`${gravados.size} item(ns) gravado(s) e retirado(s) da lista. Falhou em "${nomeFalha}": ${falha.msg} Os itens que faltam continuam na lista — toque em Salvar de novo para enviar só eles.`)
+      return
+    }
     onSaved()
   }
 
@@ -1025,7 +1053,8 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
                     <span className="text-xs font-semibold text-[#94A3B8]">Item {i + 1}</span>
                     {itens.length > 1 && (
                       <button type="button" onClick={() => setItens(p => p.filter((_, idx) => idx !== i))}
-                        className="p-1 text-[#94A3B8] hover:text-red-500 transition-colors">
+                        aria-label={`Remover item ${i + 1}`} title="Remover item"
+                        className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
                         <Trash2 size={14} />
                       </button>
                     )}
@@ -1048,7 +1077,7 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
                   <div className="grid grid-cols-4 gap-2">
                     <div className="col-span-1">
                       <label className="block text-xs text-[#64748B] mb-1">Qtd *</label>
-                      <input type="number" min="0" step="any" className="field text-sm" value={it.quantidade}
+                      <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.quantidade}
                         onChange={e => updateItem(i, 'quantidade', e.target.value)} placeholder="0" />
                     </div>
                     <div className="col-span-1">
@@ -1058,12 +1087,12 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
                     </div>
                     <div className="col-span-1">
                       <label className="block text-xs text-[#64748B] mb-1">Preço Un. *</label>
-                      <input type="number" step="0.01" min="0" className="field text-sm" value={it.precoUnitario}
+                      <input type="number" step="any" min="0" inputMode="decimal" className="field text-sm" value={it.precoUnitario}
                         onChange={e => updateItem(i, 'precoUnitario', e.target.value)} placeholder="0,00" />
                     </div>
                     <div className="col-span-1">
                       <label className="block text-xs text-[#64748B] mb-1">Total</label>
-                      <input type="number" step="0.01" min="0" className="field text-sm bg-[#F8FAFC]" value={it.valorTotal}
+                      <input type="number" step="any" min="0" inputMode="decimal" className="field text-sm bg-[#F8FAFC]" value={it.valorTotal}
                         onChange={e => updateItem(i, 'valorTotal', e.target.value)} placeholder="0,00" />
                     </div>
                   </div>
@@ -1115,6 +1144,33 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
 }
 
 // ── Modal Importar NF (revisão pós-parse) ─────────────
+const normalizarNome = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+// Palpite de produto do catálogo para um item da NF: nome igual, código igual, ou
+// nomes com quase todas as palavras em comum ("CIMENTO CP II" NÃO casa com "CIMENTO CP V").
+function palpiteProduto(item: NfItem, produtos: EstoqueProduto[]): string {
+  const desc = normalizarNome(item.descricao)
+  const igual = produtos.find(p => normalizarNome(p.nome) === desc)
+  if (igual) return igual.id
+  if (item.codigo) {
+    const porCodigo = produtos.find(p => p.codigo && p.codigo.trim() === item.codigo.trim())
+    if (porCodigo) return porCodigo.id
+  }
+  const palavras = new Set(desc.split(' ').filter(Boolean))
+  let melhor = { id: '', score: 0 }
+  for (const p of produtos) {
+    const outras = new Set(normalizarNome(p.nome).split(' ').filter(Boolean))
+    const comuns = Array.from(palavras).filter(w => outras.has(w)).length
+    const uniao = new Set([...Array.from(palavras), ...Array.from(outras)]).size
+    const score = uniao ? comuns / uniao : 0
+    if (score > melhor.score) melhor = { id: p.id, score }
+  }
+  return melhor.score >= 0.75 ? melhor.id : ''
+}
+
+const VINCULO_NENHUM = ''
+const VINCULO_NOVO = '__novo__'
+
 function ModalImportNF({ estoqueId, produtos, nf, onClose, onSaved }: {
   estoqueId: string; produtos: EstoqueProduto[]
   nf: NfData; onClose: () => void; onSaved: () => void
@@ -1123,10 +1179,16 @@ function ModalImportNF({ estoqueId, produtos, nf, onClose, onSaved }: {
   const [selecionados, setSelecionados] = useState<Record<number, boolean>>(
     Object.fromEntries(itens.map((_, i) => [i, true]))
   )
+  // Produto do catálogo de cada item: id, '' = não vincular (só registra) ou '__novo__' = criar produto
+  const [vinculos, setVinculos] = useState<Record<number, string>>(
+    () => Object.fromEntries(itens.map((p, i) => [i, palpiteProduto(p, produtos)]))
+  )
   const [responsavel, setResponsavel] = useState('')
-  const [data, setData] = useState(nf.dataEmissao?.split('T')[0] ?? new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(nf.dataEmissao?.split('T')[0] ?? hojeLocal())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Produto criado numa tentativa anterior (não recria no reenvio)
+  const criados = useRef<Record<number, EstoqueProduto>>({})
 
   const allSelected = Object.values(selecionados).every(Boolean)
   const countSelecionados = Object.values(selecionados).filter(Boolean).length
@@ -1138,17 +1200,33 @@ function ModalImportNF({ estoqueId, produtos, nf, onClose, onSaved }: {
     const supabase = createClient()
     const obs = nf.nfNumero ? `NF: ${nf.nfNumero}${nf.emitente ? ` · ${nf.emitente}` : ''}` : null
 
-    const selecionadosList = itens.filter((_, i) => selecionados[i])
+    const indices = itens.map((_, i) => i).filter(i => selecionados[i])
+    const gravados: number[] = []
+    const avisos: string[] = []
+    const cmpCorrente = new Map<string, number>()
+    let falha: { i: number; msg: string } | null = null
 
-    for (const p of selecionadosList) {
-      const prodMatch = produtos.find(pr =>
-        pr.nome.toLowerCase().includes(p.descricao.toLowerCase().slice(0, 10)) ||
-        p.descricao.toLowerCase().includes(pr.nome.toLowerCase().slice(0, 10))
-      )
+    for (const i of indices) {
+      const p = itens[i]
+      const vinculo = vinculos[i] ?? VINCULO_NENHUM
+      let prod: EstoqueProduto | undefined = vinculo && vinculo !== VINCULO_NOVO ? produtos.find(pr => pr.id === vinculo) : undefined
 
-      await supabase.from('estoque_registros').insert({
+      if (vinculo === VINCULO_NOVO) {
+        prod = criados.current[i]
+        if (!prod) {
+          const { data: novo, error: errNovo } = await supabase.from('estoque_produtos').insert({
+            estoque_id: estoqueId, nome: p.descricao.trim(), unidade: p.unidade || 'un',
+            quantidade_atual: 0, quantidade_minima: 0, preco_unitario: p.valorUnitario || null,
+          }).select().single()
+          if (errNovo) { falha = { i, msg: mensagemErro(errNovo, 'ao cadastrar o produto') }; break }
+          prod = novo as EstoqueProduto
+          criados.current[i] = prod
+        }
+      }
+
+      const { error: errReg } = await supabase.from('estoque_registros').insert({
         estoque_id: estoqueId,
-        produto_id: prodMatch?.id ?? null,
+        produto_id: prod?.id ?? null,
         produto_nome: p.descricao,
         tipo: 'entrada',
         quantidade: p.quantidade,
@@ -1159,20 +1237,32 @@ function ModalImportNF({ estoqueId, produtos, nf, onClose, onSaved }: {
         valor_total: p.valorTotal,
         observacoes: obs,
       })
+      if (errReg) { falha = { i, msg: mensagemErro(errReg) }; break }
+      gravados.push(i)
 
-      if (prodMatch) {
-        const novaQtd = prodMatch.quantidade_atual + p.quantidade
-        const cmpAtual = prodMatch.preco_unitario || 0
-        const novoCMP = prodMatch.quantidade_atual > 0
-          ? (prodMatch.quantidade_atual * cmpAtual + p.quantidade * p.valorUnitario) / novaQtd
+      // Só mexe em saldo/custo do produto escolhido na revisão
+      if (prod) {
+        const { saldo, error: errSaldo } = await ajustarSaldo(supabase, prod.id, p.quantidade, { pisoZero: !controlaSaldo(prod) })
+        if (errSaldo || saldo === null) { avisos.push(`saldo de ${prod.nome} (${mensagemErro(errSaldo)})`); continue }
+        const anterior = arred(saldo - p.quantidade)
+        const cmpAtual = cmpCorrente.get(prod.id) ?? (prod.preco_unitario || 0)
+        const novoCMP = anterior > 0 && saldo > 0
+          ? (anterior * cmpAtual + p.quantidade * p.valorUnitario) / saldo
           : p.valorUnitario
-        await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd, preco_unitario: novoCMP }).eq('id', prodMatch.id)
-        prodMatch.quantidade_atual = novaQtd
-        prodMatch.preco_unitario = novoCMP
+        const { error: errCmp } = await supabase.from('estoque_produtos').update({ preco_unitario: novoCMP }).eq('id', prod.id)
+        if (errCmp) avisos.push(`custo médio de ${prod.nome} (${mensagemErro(errCmp)})`)
+        else cmpCorrente.set(prod.id, novoCMP)
       }
     }
 
     setSaving(false)
+    if (avisos.length > 0) alert(`Itens importados, mas não foi possível atualizar:\n• ${avisos.join('\n• ')}\n\nConfira em Produtos.`)
+    if (falha) {
+      // O que já foi gravado sai da seleção, para o reenvio não duplicar
+      setSelecionados(sel => { const n = { ...sel }; gravados.forEach(i => { n[i] = false }); return n })
+      setError(`${gravados.length} item(ns) importado(s) e desmarcado(s). Falhou em "${itens[falha.i].descricao}": ${falha.msg} Toque em Importar de novo para enviar só os que faltam.`)
+      return
+    }
     onSaved()
   }
 
@@ -1191,7 +1281,7 @@ function ModalImportNF({ estoqueId, produtos, nf, onClose, onSaved }: {
           {/* Resumo NF */}
           <div className="bg-[#F8FAFC] rounded-xl p-3 text-sm grid grid-cols-2 gap-2">
             {nf.emitente && <div><span className="text-[#94A3B8] text-xs">Fornecedor</span><p className="font-medium text-[#0F172A] truncate">{nf.emitente}</p></div>}
-            {nf.dataEmissao && <div><span className="text-[#94A3B8] text-xs">Data emissão</span><p className="font-medium text-[#0F172A]">{new Date(nf.dataEmissao).toLocaleDateString('pt-BR')}</p></div>}
+            {nf.dataEmissao && <div><span className="text-[#94A3B8] text-xs">Data emissão</span><p className="font-medium text-[#0F172A]">{parseData(nf.dataEmissao).toLocaleDateString('pt-BR')}</p></div>}
             {nf.valorTotal && <div><span className="text-[#94A3B8] text-xs">Valor total NF</span><p className="font-semibold text-[#4F7CFF]">{moeda(nf.valorTotal)}</p></div>}
             {nf.nfNumero && <div><span className="text-[#94A3B8] text-xs">Número</span><p className="font-medium text-[#0F172A]">{nf.nfNumero}</p></div>}
           </div>
@@ -1218,22 +1308,29 @@ function ModalImportNF({ estoqueId, produtos, nf, onClose, onSaved }: {
               </div>
               <div className="space-y-2">
                 {itens.map((p, i) => {
-                  const prodMatch = produtos.find(pr =>
-                    pr.nome.toLowerCase().includes(p.descricao.toLowerCase().slice(0, 10)) ||
-                    p.descricao.toLowerCase().includes(pr.nome.toLowerCase().slice(0, 10))
-                  )
+                  const vinculo = vinculos[i] ?? VINCULO_NENHUM
                   return (
-                    <label key={i} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${selecionados[i] ? 'border-[#4F7CFF] bg-[#EEF2FF]' : 'border-[#E2E8F0] bg-white'}`}>
-                      <input type="checkbox" className="mt-0.5 accent-[#4F7CFF]" checked={!!selecionados[i]}
+                    <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${selecionados[i] ? 'border-[#4F7CFF] bg-[#EEF2FF]' : 'border-[#E2E8F0] bg-white'}`}>
+                      <input type="checkbox" className="mt-0.5 w-4 h-4 accent-[#4F7CFF]" checked={!!selecionados[i]} aria-label={`Importar ${p.descricao}`}
                         onChange={e => setSelecionados(s => ({ ...s, [i]: e.target.checked }))} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[#0F172A] leading-tight">{p.descricao}</p>
-                        <p className="text-xs text-[#64748B] mt-0.5">
-                          {p.quantidade} {p.unidade} · {moeda(p.valorUnitario)}/un · <span className="font-semibold text-[#374151]">{moeda(p.valorTotal)}</span>
-                        </p>
-                        {prodMatch && <p className="text-xs text-emerald-600 mt-0.5">↳ Vinculado a: {prodMatch.nome}</p>}
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div>
+                          <p className="text-sm font-medium text-[#0F172A] leading-tight">{p.descricao}</p>
+                          <p className="text-xs text-[#64748B] mt-0.5">
+                            {p.quantidade} {p.unidade} · {moeda(p.valorUnitario)}/un · <span className="font-semibold text-[#374151]">{moeda(p.valorTotal)}</span>
+                          </p>
+                        </div>
+                        <select className="field text-xs py-1.5" value={vinculo} disabled={!selecionados[i]}
+                          onChange={e => setVinculos(v => ({ ...v, [i]: e.target.value }))}>
+                          <option value={VINCULO_NENHUM}>Não vincular (só registra a entrada, sem mexer em saldo)</option>
+                          <option value={VINCULO_NOVO}>+ Criar produto novo &quot;{p.descricao}&quot;</option>
+                          {produtos.map(pr => <option key={pr.id} value={pr.id}>{pr.nome}{pr.codigo ? ` (${pr.codigo})` : ''}</option>)}
+                        </select>
+                        {vinculo && vinculo !== VINCULO_NOVO && (
+                          <p className="text-[11px] text-emerald-700">Soma {p.quantidade} ao saldo e recalcula o custo médio deste produto.</p>
+                        )}
                       </div>
-                    </label>
+                    </div>
                   )
                 })}
               </div>

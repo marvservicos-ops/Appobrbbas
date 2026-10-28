@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { mensagemErro } from '@/lib/erros'
 
 type Mode = 'login' | 'forgot' | 'reset' | 'reset_ok'
 
@@ -18,13 +19,28 @@ export default function LoginPage() {
   const [info, setInfo] = useState('')
   const router = useRouter()
 
-  // Detecta token de recovery na URL (link do email)
+  // Detecta a volta do link de "esqueci a senha":
+  // - novo fluxo (PKCE): /auth/callback troca o ?code= pela sessão e manda para /login?recovery=1
+  // - fluxo antigo: #type=recovery no hash (links enviados antes da mudança)
+  // Também mostra avisos de ?bloqueado=1 (middleware) e ?erro=link (callback).
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
     const hash = window.location.hash
+    const supabase = createClient()
+
+    if (params.get('bloqueado') === '1') setError('Seu acesso foi bloqueado. Fale com o administrador.')
+    if (params.get('erro') === 'link') setError('O link expirou ou já foi usado. Peça um novo link de redefinição.')
+
+    if (params.get('recovery') === '1') {
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) setMode('reset')
+        else setError('O link expirou ou já foi usado. Peça um novo link de redefinição.')
+      })
+    }
+
     if (hash.includes('type=recovery') || hash.includes('access_token')) {
-      const supabase = createClient()
       // O Supabase client detecta o hash e estabelece a sessão automaticamente
-      supabase.auth.onAuthStateChange((event) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
         if (event === 'PASSWORD_RECOVERY') {
           setMode('reset')
         }
@@ -35,6 +51,7 @@ export default function LoginPage() {
           setMode('reset')
         }
       })
+      return () => subscription.unsubscribe()
     }
   }, [])
 
@@ -45,7 +62,7 @@ export default function LoginPage() {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setError('E-mail ou senha incorretos.')
+      setError(/banned/i.test(error.message) ? 'Seu acesso foi bloqueado. Fale com o administrador.' : mensagemErro(error, 'Não foi possível entrar'))
       setLoading(false)
     } else {
       router.push('/obras')
@@ -59,11 +76,13 @@ export default function LoginPage() {
     setError('')
     const supabase = createClient()
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/login?recovery=1')}`,
     })
     setLoading(false)
     if (error) {
-      setError(error.message)
+      setError(/rate limit|seconds/i.test(error.message)
+        ? 'Muitos pedidos seguidos. Aguarde um minuto e tente de novo.'
+        : mensagemErro(error, 'Não foi possível enviar o link'))
     } else {
       setInfo('Link de redefinição enviado! Verifique sua caixa de entrada.')
     }
@@ -75,8 +94,8 @@ export default function LoginPage() {
       setError('As senhas não coincidem.')
       return
     }
-    if (newPassword.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.')
+    if (newPassword.length < 8) {
+      setError('A senha deve ter pelo menos 8 caracteres.')
       return
     }
     setLoading(true)
@@ -146,8 +165,7 @@ export default function LoginPage() {
                 </button>
               </form>
               <p className="text-center text-sm text-[#94A3B8] mt-6">
-                Não possui uma conta?{' '}
-                <a href="#" className="text-[#4F7CFF] hover:underline font-medium">Solicitar acesso</a>
+                Não possui uma conta? Peça acesso ao administrador.
               </p>
             </>
           )}
@@ -205,7 +223,7 @@ export default function LoginPage() {
                   <label className="block text-sm font-medium text-[#374151] mb-1.5">Nova senha</label>
                   <div className="relative">
                     <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-                    <input type="password" placeholder="Mínimo 6 caracteres" value={newPassword}
+                    <input type="password" placeholder="Mínimo 8 caracteres" value={newPassword}
                       onChange={e => setNewPassword(e.target.value)} required
                       className="w-full pl-9 pr-4 py-2.5 border border-[#E2E8F0] rounded-lg text-sm focus:outline-none focus:border-[#4F7CFF] focus:ring-1 focus:ring-[#4F7CFF]/20 transition-colors placeholder:text-[#CBD5E1]" />
                   </div>
@@ -237,7 +255,7 @@ export default function LoginPage() {
                 <h2 className="font-semibold text-[#0F172A] mb-1">Senha redefinida!</h2>
                 <p className="text-sm text-[#64748B]">Sua senha foi atualizada com sucesso.</p>
               </div>
-              <button onClick={() => router.push('/obras')}
+              <button onClick={() => { router.push('/obras'); router.refresh() }}
                 className="w-full bg-[#4F7CFF] hover:bg-[#3D68F0] text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors text-sm mt-2">
                 Ir para o app <ArrowRight size={16} />
               </button>

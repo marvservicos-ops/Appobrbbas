@@ -12,10 +12,18 @@ export default function BarcodeScannerModal({ onScanned, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const readerRef = useRef<any>(null)
 
   useEffect(() => {
     let active = true
+    let lido = false
+    // @zxing/browser 0.2: quem para a câmera é o objeto devolvido por decodeFromVideoDevice
+    let controls: { stop: () => void } | null = null
+    const parar = () => {
+      if (controls) {
+        try { controls.stop() } catch {}
+        controls = null
+      }
+    }
 
     async function start() {
       try {
@@ -23,9 +31,9 @@ export default function BarcodeScannerModal({ onScanned, onClose }: Props) {
         if (!active) return
 
         const reader = new BrowserMultiFormatReader()
-        readerRef.current = reader
 
         const devices = await BrowserMultiFormatReader.listVideoInputDevices()
+        if (!active) return
         if (!devices.length) throw new Error('Nenhuma câmera encontrada.')
 
         // Prefere câmera traseira no mobile
@@ -38,19 +46,28 @@ export default function BarcodeScannerModal({ onScanned, onClose }: Props) {
 
         setLoading(false)
 
-        await reader.decodeFromVideoDevice(deviceId, videoRef.current!, (result, err) => {
-          if (result && active) {
-            onScanned(result.getText())
-            onClose()
-          }
+        const c = await reader.decodeFromVideoDevice(deviceId, videoRef.current!, (result, _err, ctrl) => {
+          if (!result || !active || lido) return
+          lido = true
+          try { ctrl.stop() } catch {}
+          onScanned(result.getText())
+          onClose()
         })
+        controls = c
+        // Fechou o modal (ou já leu) antes de a câmera abrir: desliga assim que abrir
+        if (!active || lido) parar()
       } catch (e: any) {
         if (!active) return
         setLoading(false)
         if (e?.message?.includes('Permission') || e?.name === 'NotAllowedError') {
           setError('Permissão de câmera negada. Autorize o acesso nas configurações do navegador.')
+        } else if (e?.name === 'NotReadableError' || e?.name === 'TrackStartError') {
+          setError('A câmera está em uso por outro app. Feche-o e tente de novo.')
+        } else if (e?.name === 'NotFoundError' || e?.name === 'OverconstrainedError' || e?.message === 'Nenhuma câmera encontrada.') {
+          setError('Nenhuma câmera encontrada.')
         } else {
-          setError(e?.message ?? 'Erro ao acessar a câmera.')
+          console.error('Scanner', e)
+          setError('Erro ao acessar a câmera.')
         }
       }
     }
@@ -59,9 +76,7 @@ export default function BarcodeScannerModal({ onScanned, onClose }: Props) {
 
     return () => {
       active = false
-      if (readerRef.current) {
-        try { readerRef.current.reset() } catch {}
-      }
+      parar()
     }
   }, [])
 
@@ -73,7 +88,7 @@ export default function BarcodeScannerModal({ onScanned, onClose }: Props) {
             <Camera size={18} className="text-[#4F7CFF]" />
             <h2 className="font-syne font-semibold text-[#0F172A]">Escanear Código</h2>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]">
             <X size={16} className="text-[#64748B]" />
           </button>
         </div>

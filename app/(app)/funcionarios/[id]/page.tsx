@@ -4,44 +4,15 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { ArrowLeft, Pencil, X, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Plus, Trash2, Wrench, Printer, Shirt } from 'lucide-react'
+import { ArrowLeft, Pencil, Loader2, CheckCircle2, XCircle, DollarSign, Clock, Package, TrendingUp, Heart, Wrench, Printer } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 import GestaoPJPanel from '@/components/GestaoPJPanel'
-import { UniformeCamposFuncionario, carregarTamanhosFuncionario, salvarTamanhosFuncionario, type TamanhosPorPeca } from '@/components/UniformeCamposFuncionario'
+import { formatarData } from '@/lib/datas'
+import ModalFuncionario, { ehPJ, type Funcionario, type RegraExtra } from '../ModalFuncionario'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const fmt2 = (v: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
-const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
-
-interface OutroBeneficio {
-  id: string
-  descricao: string
-  valor: number
-}
-
-interface Funcionario {
-  id: string
-  nome: string
-  cargo: string | null
-  categoria_uniforme_id: string | null
-  salario_bruto: number | null
-  horas_dia: number | null
-  dias_mes: number | null
-  custo_diario: number | null
-  ativo: boolean
-  data_admissao: string | null
-  acordo_rescisorio: boolean
-  fgts_pct: number | null
-  inss_patronal_pct: number | null
-  provisao_13_pct: number | null
-  provisao_ferias_pct: number | null
-  provisao_multa_pct: number | null
-  vale_refeicao: number | null
-  vale_transporte: number | null
-  vt_desconto_pct: number | null
-  plano_saude: number | null
-  outros_beneficios: OutroBeneficio[] | null
-}
+const fmtData = (d: string) => formatarData(d)
 
 interface RegistroItem {
   id: string
@@ -83,7 +54,6 @@ function calculos(f: Funcionario) {
   return { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct, vtBruto, vtDesconto, vtCustoEmpresa }
 }
 
-function gerarId() { return Math.random().toString(36).slice(2, 10) }
 
 function calcMulta(f: Funcionario): { multa: number; meses: number; fgtsAcumulado: number } {
   if (f.acordo_rescisorio || !f.data_admissao || !f.salario_bruto) return { multa: 0, meses: 0, fgtsAcumulado: 0 }
@@ -100,6 +70,7 @@ export default function CentralFuncionarioPage() {
   const router = useRouter()
   const { isAdmin, loading: accessLoading } = useAccess()
   const [funcionario, setFuncionario] = useState<Funcionario | null>(null)
+  const [regras, setRegras] = useState<RegraExtra[]>([])
   const [registros, setRegistros] = useState<RegistroItem[]>([])
   const [ferramentas, setFerramentas] = useState<FerramentaItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -113,7 +84,7 @@ export default function CentralFuncionarioPage() {
 
   async function load() {
     const supabase = createClient()
-    const [{ data: func }, { data: regs }, { data: emprestimos }] = await Promise.all([
+    const [{ data: func }, { data: regs }, { data: emprestimos }, { data: cfg }] = await Promise.all([
       supabase.from('funcionarios').select('*').eq('id', id).single(),
       supabase.from('estoque_registros')
         .select(`
@@ -128,9 +99,11 @@ export default function CentralFuncionarioPage() {
         .select('data_emprestimo, itens:ferramenta_emprestimo_itens(id, data_devolucao, ferramenta:ferramentas(nome, codigo_interno))')
         .eq('funcionario_id', id)
         .order('data_emprestimo', { ascending: false }),
+      supabase.from('configuracoes_empresa').select('chave, descricao, valor').like('chave', 'adicional_%'),
     ])
 
     setFuncionario(func)
+    if (cfg) setRegras(cfg as RegraExtra[])
 
     const ferrItems: FerramentaItem[] = (emprestimos ?? []).flatMap((emp: any) =>
       (emp.itens ?? []).map((it: any) => ({
@@ -193,7 +166,8 @@ export default function CentralFuncionarioPage() {
   const { custoTotalMensal, encargos, beneficioFixo, outrosTotal, custoDia, custoHora, encargosPct, vtBruto, vtDesconto, vtCustoEmpresa } = calculos(funcionario)
   const salario = funcionario.salario_bruto ?? 0
   const temEncargosOuBeneficios = encargos > 0 || (beneficioFixo + outrosTotal) > 0
-  const isPJ = funcionario.nome.toLowerCase().includes('joão victor') || funcionario.nome.toLowerCase().includes('joao victor')
+  // tipo_vinculo === 'pj'; antes do SQL de 28/10 (coluna inexistente/vazia) usa a regra antiga pelo nome
+  const isPJ = ehPJ(funcionario)
   const { multa, meses, fgtsAcumulado } = calcMulta(funcionario)
 
   return (
@@ -218,8 +192,8 @@ export default function CentralFuncionarioPage() {
             </div>
             {funcionario.cargo && <p className="text-sm text-[#64748B] mt-0.5">{funcionario.cargo}</p>}
           </div>
-          <button onClick={() => setShowEdit(true)}
-            className="w-9 h-9 rounded-xl border border-[#E2E8F0] flex items-center justify-center hover:bg-[#EEF2FF] hover:border-[#4F7CFF] hover:text-[#4F7CFF] transition-colors text-[#64748B] shrink-0 mt-0.5">
+          <button onClick={() => setShowEdit(true)} aria-label="Editar funcionário" title="Editar funcionário"
+            className="w-10 h-10 rounded-xl border border-[#E2E8F0] flex items-center justify-center hover:bg-[#EEF2FF] hover:border-[#4F7CFF] hover:text-[#4F7CFF] transition-colors text-[#64748B] shrink-0 mt-0.5">
             <Pencil size={14} />
           </button>
         </div>
@@ -527,279 +501,14 @@ export default function CentralFuncionarioPage() {
       </div>
 
       {showEdit && (
-        <ModalEditarFuncionario
+        <ModalFuncionario
           funcionario={funcionario}
+          regras={regras}
+          suportaVinculo={'tipo_vinculo' in funcionario}
           onClose={() => setShowEdit(false)}
           onSaved={() => { setShowEdit(false); load() }}
         />
       )}
-    </div>
-  )
-}
-
-function ModalEditarFuncionario({ funcionario, onClose, onSaved }: {
-  funcionario: Funcionario
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [nome, setNome] = useState(funcionario.nome)
-  const [cargo, setCargo] = useState(funcionario.cargo ?? '')
-  const [categoriaUniformeId, setCategoriaUniformeId] = useState(funcionario.categoria_uniforme_id ?? '')
-  const [tamanhosPecas, setTamanhosPecas] = useState<TamanhosPorPeca>({})
-  const [dataAdmissao, setDataAdmissao] = useState(funcionario.data_admissao ?? '')
-  const [acordoRescisorio, setAcordoRescisorio] = useState(funcionario.acordo_rescisorio ?? false)
-  const [salarioBruto, setSalarioBruto] = useState(funcionario.salario_bruto ? String(funcionario.salario_bruto) : '')
-  const [diasMes, setDiasMes] = useState(funcionario.dias_mes ? String(funcionario.dias_mes) : '30')
-  const [horasMes, setHorasMes] = useState(funcionario.horas_dia ? String(funcionario.horas_dia) : '220')
-  const [ativo, setAtivo] = useState(funcionario.ativo)
-  const [fgtsPct, setFgtsPct] = useState(String(funcionario.fgts_pct ?? 8))
-  const [inssPatronalPct, setInssPatronalPct] = useState(String(funcionario.inss_patronal_pct ?? 0))
-  const [provisao13Pct, setProvisao13Pct] = useState(String(funcionario.provisao_13_pct ?? 8.33))
-  const [provisaoFeriasPct, setProvisaoFeriasPct] = useState(String(funcionario.provisao_ferias_pct ?? 11.11))
-  const [provisaoMultaPct, setProvisaoMultaPct] = useState(String(funcionario.provisao_multa_pct ?? 3.2))
-  const [valeRefeicao, setValeRefeicao] = useState(funcionario.vale_refeicao ? String(funcionario.vale_refeicao) : '')
-  const [valeTransporte, setValeTransporte] = useState(funcionario.vale_transporte ? String(funcionario.vale_transporte) : '')
-  const [vtDescontoPct, setVtDescontoPct] = useState(String(funcionario.vt_desconto_pct ?? 6))
-  const [planoSaude, setPlanoSaude] = useState(funcionario.plano_saude ? String(funcionario.plano_saude) : '')
-  const [outrosBeneficios, setOutrosBeneficios] = useState<OutroBeneficio[]>(
-    Array.isArray(funcionario.outros_beneficios) ? funcionario.outros_beneficios : []
-  )
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    carregarTamanhosFuncionario(funcionario.id).then(setTamanhosPecas)
-  }, [funcionario.id])
-
-  function setTamanho(pecaId: string, key: 'tamanho' | 'quantidade', value: string) {
-    setTamanhosPecas(prev => ({ ...prev, [pecaId]: { tamanho: prev[pecaId]?.tamanho ?? '', quantidade: prev[pecaId]?.quantidade ?? '1', [key]: value } }))
-  }
-
-  const salNum = parseFloat(salarioBruto) || 0
-  const diasNum = parseFloat(diasMes) || 30
-  const horasNum = parseFloat(horasMes) || 220
-  const encargosPctNum = (parseFloat(fgtsPct) || 0) + (parseFloat(inssPatronalPct) || 0) + (parseFloat(provisao13Pct) || 0) + (parseFloat(provisaoFeriasPct) || 0) + (parseFloat(provisaoMultaPct) || 0)
-  const encargosNum = salNum * encargosPctNum / 100
-  const vtBrutoNum = parseFloat(valeTransporte) || 0
-  const vtDescontoNum = Math.min(vtBrutoNum, salNum * ((parseFloat(vtDescontoPct) || 0) / 100))
-  const vtCustoEmpresaNum = Math.max(0, vtBrutoNum - vtDescontoNum)
-  const beneficiosFixoNum = (parseFloat(valeRefeicao) || 0) + vtCustoEmpresaNum + (parseFloat(planoSaude) || 0)
-  const outrosNum = outrosBeneficios.reduce((s, o) => s + (o.valor || 0), 0)
-  const custoTotalMensal = salNum + encargosNum + beneficiosFixoNum + outrosNum
-  const custoDia = diasNum > 0 ? custoTotalMensal / diasNum : 0
-  const custoHora = horasNum > 0 ? custoTotalMensal / horasNum : 0
-
-  function addOutro() { setOutrosBeneficios(prev => [...prev, { id: gerarId(), descricao: '', valor: 0 }]) }
-  function removeOutro(id: string) { setOutrosBeneficios(prev => prev.filter(o => o.id !== id)) }
-  function updateOutro(id: string, key: 'descricao' | 'valor', val: string) {
-    setOutrosBeneficios(prev => prev.map(o => o.id === id ? { ...o, [key]: key === 'valor' ? parseFloat(val) || 0 : val } : o))
-  }
-
-  async function salvar() {
-    if (!nome.trim()) return
-    setSaving(true)
-    const supabase = createClient()
-    const { error: err } = await supabase.from('funcionarios').update({
-      nome: nome.trim(), cargo: cargo.trim() || null,
-      categoria_uniforme_id: categoriaUniformeId || null,
-      data_admissao: dataAdmissao || null,
-      acordo_rescisorio: acordoRescisorio,
-      salario_bruto: salNum || null, horas_dia: horasNum, dias_mes: diasNum,
-      custo_diario: custoDia || null, ativo,
-      fgts_pct: parseFloat(fgtsPct) || 8,
-      inss_patronal_pct: parseFloat(inssPatronalPct) || 0,
-      provisao_13_pct: parseFloat(provisao13Pct) || 8.33,
-      provisao_ferias_pct: parseFloat(provisaoFeriasPct) || 11.11,
-      provisao_multa_pct: parseFloat(provisaoMultaPct) || 3.2,
-      vale_refeicao: parseFloat(valeRefeicao) || null,
-      vale_transporte: parseFloat(valeTransporte) || null,
-      vt_desconto_pct: parseFloat(vtDescontoPct) ?? 6,
-      plano_saude: parseFloat(planoSaude) || null,
-      outros_beneficios: outrosBeneficios.filter(o => o.descricao.trim()).length > 0
-        ? outrosBeneficios.filter(o => o.descricao.trim()) : null,
-    }).eq('id', funcionario.id)
-    if (err) { setSaving(false); setError(err.message); return }
-    await salvarTamanhosFuncionario(funcionario.id, tamanhosPecas)
-    setSaving(false)
-    onSaved()
-  }
-
-  const encargosRows = [
-    { label: 'FGTS', hint: '8% padrão', val: fgtsPct, set: setFgtsPct },
-    { label: 'INSS Patronal', hint: '0% Simples / 20% Lucro Presumido', val: inssPatronalPct, set: setInssPatronalPct },
-    { label: '13º Salário', hint: '8,33% (= 1/12)', val: provisao13Pct, set: setProvisao13Pct },
-    { label: 'Férias + Abono 1/3', hint: '11,11%', val: provisaoFeriasPct, set: setProvisaoFeriasPct },
-    { label: 'Provisão Multa FGTS', hint: '3,2% (= 40% × 8%)', val: provisaoMultaPct, set: setProvisaoMultaPct },
-  ]
-
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
-          <h2 className="font-syne font-semibold text-[#0F172A]">Editar Funcionário</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
-        </div>
-        <div className="p-6 space-y-5">
-
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Nome *</label>
-              <input className="field" value={nome} onChange={e => setNome(e.target.value)} autoFocus />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#374151] mb-1.5">Cargo</label>
-              <input className="field" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ex: Técnico HVAC" />
-            </div>
-            <div className="border-t border-[#E2E8F0] pt-4">
-              <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><Shirt size={13} /> Uniforme</p>
-              <UniformeCamposFuncionario
-                categoriaId={categoriaUniformeId}
-                setCategoriaId={setCategoriaUniformeId}
-                tamanhos={tamanhosPecas}
-                setTamanho={setTamanho}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Data de Admissão</label>
-                <input type="date" className="field" value={dataAdmissao} onChange={e => setDataAdmissao(e.target.value)} />
-              </div>
-              <div className="flex items-end pb-0.5">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <button type="button" onClick={() => setAcordoRescisorio(v => !v)}
-                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${acordoRescisorio ? 'bg-[#4F7CFF]' : 'bg-[#CBD5E1]'}`}>
-                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${acordoRescisorio ? 'left-4' : 'left-0.5'}`} />
-                  </button>
-                  <span className="text-xs font-medium text-[#374151]">Acordo rescisório pago</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-[#E2E8F0] pt-4">
-            <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><DollarSign size={13} /> Remuneração</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Salário Mensal Bruto (R$)</label>
-                <input className="field" type="number" min="0" step="0.01" value={salarioBruto} onChange={e => setSalarioBruto(e.target.value)} placeholder="0,00" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Dias/mês</label>
-                  <input className="field" type="number" value={diasMes} onChange={e => setDiasMes(e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[#374151] mb-1.5">Horas/mês</label>
-                  <input className="field" type="number" value={horasMes} onChange={e => setHorasMes(e.target.value)} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-[#E2E8F0] pt-4">
-            <div className="mb-3">
-              <p className="text-xs font-semibold text-[#374151] flex items-center gap-1.5"><TrendingUp size={13} /> Encargos Trabalhistas</p>
-              <p className="text-[11px] text-[#94A3B8] mt-0.5">% sobre o salário, provisionados mensalmente</p>
-            </div>
-            <div className="space-y-2.5">
-              {encargosRows.map(({ label, hint, val, set }) => (
-                <div key={label} className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-[#374151]">{label}</p>
-                    <p className="text-[11px] text-[#94A3B8]">{hint}</p>
-                  </div>
-                  <div className="relative w-24 shrink-0">
-                    <input className="field text-right pr-6 py-1.5 text-sm" type="number" min="0" max="100" step="0.01"
-                      value={val} onChange={e => set(e.target.value)} />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#94A3B8]">%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {salNum > 0 && (
-              <div className="mt-3 flex justify-between text-xs text-[#64748B] bg-[#F8FAFC] rounded-lg px-3 py-2 border border-[#E2E8F0]">
-                <span>Total encargos ({fmt2(encargosPctNum)}%)</span>
-                <span className="font-semibold text-[#0F172A]">{moeda(encargosNum)}/mês</span>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-[#E2E8F0] pt-4">
-            <p className="text-xs font-semibold text-[#374151] mb-3 flex items-center gap-1.5"><Heart size={13} /> Benefícios Mensais</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Refeição / Alimentação</label>
-                <input className="field" type="number" min="0" step="0.01" value={valeRefeicao} onChange={e => setValeRefeicao(e.target.value)} placeholder="0,00" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Vale Transporte <span className="text-[#94A3B8] font-normal">(valor bruto mensal)</span></label>
-                <div className="flex gap-2">
-                  <input className="field flex-1" type="number" min="0" step="0.01" value={valeTransporte} onChange={e => setValeTransporte(e.target.value)} placeholder="0,00" />
-                  <div className="relative w-28 shrink-0">
-                    <input className="field text-right pr-8" type="number" min="0" max="6" step="0.1"
-                      value={vtDescontoPct} onChange={e => setVtDescontoPct(e.target.value)} title="Desconto do funcionário (máx. 6% CLT)" />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#94A3B8]">% desc.</span>
-                  </div>
-                </div>
-                {vtBrutoNum > 0 && (
-                  <div className="mt-1.5 text-[11px] text-[#94A3B8] flex gap-3">
-                    <span>Desconto folha: <span className="text-red-400 font-medium">−{moeda(vtDescontoNum)}</span></span>
-                    <span>Custo empresa: <span className="text-emerald-600 font-medium">{moeda(vtCustoEmpresaNum)}</span></span>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] mb-1.5">Plano de Saúde</label>
-                <input className="field" type="number" min="0" step="0.01" value={planoSaude} onChange={e => setPlanoSaude(e.target.value)} placeholder="0,00" />
-              </div>
-              {outrosBeneficios.map(o => (
-                <div key={o.id} className="flex items-center gap-2">
-                  <input className="field flex-1 text-sm" placeholder="Descrição" value={o.descricao} onChange={e => updateOutro(o.id, 'descricao', e.target.value)} />
-                  <input className="field w-28 text-sm" type="number" min="0" step="0.01" placeholder="Valor" value={o.valor || ''} onChange={e => updateOutro(o.id, 'valor', e.target.value)} />
-                  <button type="button" onClick={() => removeOutro(o.id)} className="p-1.5 text-[#94A3B8] hover:text-red-500 transition-colors shrink-0">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-              <button type="button" onClick={addOutro} className="text-xs text-[#4F7CFF] hover:text-[#3d6ae0] flex items-center gap-1 transition-colors">
-                <Plus size={12} /> Adicionar outro benefício
-              </button>
-            </div>
-          </div>
-
-          {salNum > 0 && (
-            <div className="bg-[#F0F4FF] border border-[#C7D2FE] rounded-xl p-4">
-              <p className="text-xs font-semibold text-[#4F7CFF] mb-2">Custo Total Mensal</p>
-              <div className="space-y-1 text-xs mb-3">
-                <div className="flex justify-between text-[#64748B]"><span>Salário bruto</span><span className="font-medium text-[#374151]">{moeda(salNum)}</span></div>
-                <div className="flex justify-between text-[#64748B]"><span>Encargos ({fmt2(encargosPctNum)}%)</span><span className="font-medium text-[#374151]">{moeda(encargosNum)}</span></div>
-                {(beneficiosFixoNum + outrosNum) > 0 && <div className="flex justify-between text-[#64748B]"><span>Benefícios</span><span className="font-medium text-[#374151]">{moeda(beneficiosFixoNum + outrosNum)}</span></div>}
-                <div className="flex justify-between border-t border-[#C7D2FE] pt-1.5 font-bold text-sm text-[#0F172A]"><span>Total</span><span>{moeda(custoTotalMensal)}</span></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><p className="text-xs text-[#64748B]">Custo/dia</p><p className="font-syne font-bold text-[#0F172A]">{moeda(custoDia)}</p></div>
-                <div><p className="text-xs text-[#64748B]">Custo/hora</p><p className="font-syne font-bold text-[#0F172A]">{moeda(custoHora)}</p></div>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setAtivo(a => !a)}
-              className={`w-10 h-6 rounded-full transition-colors relative ${ativo ? 'bg-[#4F7CFF]' : 'bg-[#CBD5E1]'}`}>
-              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${ativo ? 'left-4' : 'left-0.5'}`} />
-            </button>
-            <span className="text-sm text-[#374151]">{ativo ? 'Ativo' : 'Inativo'}</span>
-          </div>
-          {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9]">Cancelar</button>
-            <button onClick={salvar} disabled={saving || !nome.trim()} className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5">
-              {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              {saving ? 'Salvando...' : 'Salvar'}
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

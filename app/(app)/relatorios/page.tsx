@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BarChart2, Wrench, Package, AlertTriangle, CheckCircle2, Clock, TrendingDown, Users, FileText, Printer, Mail, Send, Loader2, Check, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
+import { formatarData } from '@/lib/datas'
 
 interface ObraResumo {
   id: string
@@ -304,6 +305,9 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
   const [cc, setCc] = useState('')
   const [assunto, setAssunto] = useState('')
   const [mensagem, setMensagem] = useState('')
+  // Depois que o usuário edita assunto/mensagem, marcar outro RDO não sobrescreve o texto
+  const assuntoEditado = useRef(false)
+  const mensagemEditada = useRef(false)
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
@@ -329,7 +333,11 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
     setDestinatarios('')
     setCc('')
     setContatos({})
+    assuntoEditado.current = false
+    mensagemEditada.current = false
     if (!obraId) return
+    // Descarta respostas que chegarem depois de trocar de obra
+    let cancelado = false
     setLoadingRdos(true)
     const supabase = createClient()
     Promise.all([
@@ -337,6 +345,7 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
       supabase.from('relatorio_email_threads').select('id, ultimo_destinatarios, ultimo_cc').eq('obra_id', obraId).eq('tipo', 'rdo').maybeSingle(),
       supabase.from('obras').select('gestor_id, comprador_id').eq('id', obraId).single(),
     ]).then(async ([rdosRes, threadRes, obraRes]) => {
+      if (cancelado) return
       setRdos((rdosRes.data ?? []) as RdoResumo[])
       setTemThread(Boolean(threadRes.data))
       if (threadRes.data?.ultimo_destinatarios?.length) setDestinatarios(threadRes.data.ultimo_destinatarios.join(', '))
@@ -349,12 +358,14 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
           obraRow.gestor_id ? supabase.from('clientes').select('nome, email').eq('id', obraRow.gestor_id).single() : Promise.resolve({ data: null }),
           obraRow.comprador_id ? supabase.from('clientes').select('nome, email').eq('id', obraRow.comprador_id).single() : Promise.resolve({ data: null }),
         ])
+        if (cancelado) return
         setContatos({
           gestor: gestorRes.data?.email ? gestorRes.data : undefined,
           comprador: compradorRes.data?.email ? compradorRes.data : undefined,
         })
       }
     })
+    return () => { cancelado = true }
   }, [obraId])
 
   function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
@@ -366,11 +377,15 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
   }
 
   useEffect(() => {
-    if (!obra || selecionados.size === 0) { setAssunto(''); setMensagem(''); return }
+    if (!obra || selecionados.size === 0) {
+      if (!assuntoEditado.current) setAssunto('')
+      if (!mensagemEditada.current) setMensagem('')
+      return
+    }
     const escolhidos = rdos.filter(r => selecionados.has(r.id)).sort((a, b) => a.numero - b.numero)
-    const datas = escolhidos.map(r => new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR')).join(', ')
-    setAssunto(`RDO — ${obra.titulo}`)
-    setMensagem(
+    const datas = escolhidos.map(r => formatarData(r.data)).join(', ')
+    if (!assuntoEditado.current) setAssunto(`RDO — ${obra.titulo}`)
+    if (!mensagemEditada.current) setMensagem(
       escolhidos.length === 1
         ? `Bom dia,\n\nSegue em anexo o relatório do dia ${datas} da obra ${obra.titulo}.\n\nQualquer dúvida, estamos à disposição.`
         : `Bom dia,\n\nSeguem em anexo os relatórios dos dias ${datas} da obra ${obra.titulo}.\n\nQualquer dúvida, estamos à disposição.`
@@ -500,12 +515,12 @@ function EnviarRdoTab({ obras }: { obras: ObraResumo[] }) {
         </div>
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Assunto *</label>
-          <input className="field" value={assunto} onChange={e => setAssunto(e.target.value)} placeholder="Selecione um relatório para preencher automaticamente" />
+          <input className="field" value={assunto} onChange={e => { assuntoEditado.current = e.target.value !== ''; setAssunto(e.target.value) }} placeholder="Selecione um relatório para preencher automaticamente" />
           <p className="text-xs text-[#94A3B8] mt-1">Evite mudar o assunto entre envios — o Gmail só agrupa e-mails da mesma conversa quando o assunto é idêntico.</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-[#374151] mb-1.5">Mensagem</label>
-          <textarea className="field" rows={7} value={mensagem} onChange={e => setMensagem(e.target.value)} placeholder="Selecione um relatório para preencher automaticamente" />
+          <textarea className="field" rows={7} value={mensagem} onChange={e => { mensagemEditada.current = e.target.value !== ''; setMensagem(e.target.value) }} placeholder="Selecione um relatório para preencher automaticamente" />
         </div>
 
         {erro && (

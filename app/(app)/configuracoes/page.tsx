@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { User, Building2, Bell, Shield, Save, Loader2, Check, Clock, Percent, Car, Plus, Trash2, Power, Mail, Pencil, X, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { mensagemErro } from '@/lib/erros'
+import { useAccess } from '@/lib/useAccess'
 import dynamic from 'next/dynamic'
 
 const RichTextEditor = dynamic(() => import('@/components/RichTextEditor'), { ssr: false })
@@ -26,10 +28,12 @@ function SecaoEmailTemplates() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ nome: '', assunto: '', corpo: '', destinatario_tipo: 'gestor' as EmailTemplate['destinatario_tipo'] })
   const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
   const editorInsertRef = useRef<((text: string) => void) | null>(null)
 
   async function load() {
-    const { data } = await createClient().from('email_templates').select('*').order('nome')
+    const { data, error } = await createClient().from('email_templates').select('*').order('nome')
+    if (error) setErro(mensagemErro(error, 'Não foi possível carregar os modelos'))
     setTemplates((data ?? []) as EmailTemplate[])
     setLoading(false)
   }
@@ -59,20 +63,22 @@ function SecaoEmailTemplates() {
   async function salvar() {
     if (!form.nome.trim() || !form.assunto.trim() || !form.corpo.trim()) return
     setSalvando(true)
+    setErro('')
     const sb = createClient()
-    if (editando) {
-      await sb.from('email_templates').update(form).eq('id', editando.id)
-    } else {
-      await sb.from('email_templates').insert(form)
-    }
-    setShowForm(false)
+    const { error } = editando
+      ? await sb.from('email_templates').update(form).eq('id', editando.id)
+      : await sb.from('email_templates').insert(form)
     setSalvando(false)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível salvar o modelo')); return }
+    setShowForm(false)
     load()
   }
 
-  async function excluir(id: string) {
-    if (!confirm('Excluir este modelo?')) return
-    await createClient().from('email_templates').delete().eq('id', id)
+  async function excluir(t: EmailTemplate) {
+    if (!confirm(`Excluir o modelo "${t.nome}"?`)) return
+    setErro('')
+    const { error } = await createClient().from('email_templates').delete().eq('id', t.id)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível excluir o modelo')); return }
     load()
   }
 
@@ -107,7 +113,7 @@ function SecaoEmailTemplates() {
         <div className="border border-[#E2E8F0] rounded-xl p-5 mb-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-[#0F172A]">{editando ? 'Editar modelo' : 'Novo modelo'}</h3>
-            <button onClick={() => setShowForm(false)}><X size={15} className="text-[#94A3B8]" /></button>
+            <button onClick={() => setShowForm(false)} aria-label="Fechar formulário" title="Fechar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]"><X size={15} className="text-[#94A3B8]" /></button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -146,6 +152,7 @@ function SecaoEmailTemplates() {
               placeholder="Olá {{nome_gestor}}, tudo bem?..."
             />
           </div>
+          {erro && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{erro}</p>}
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-[#64748B] hover:bg-[#F1F5F9] rounded-lg transition-colors">Cancelar</button>
             <button onClick={salvar} disabled={salvando || !form.nome || !form.assunto || !form.corpo}
@@ -156,6 +163,7 @@ function SecaoEmailTemplates() {
         </div>
       )}
 
+      {erro && !showForm && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3">{erro}</p>}
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-[#4F7CFF]" /></div>
       ) : templates.length === 0 ? (
@@ -176,11 +184,11 @@ function SecaoEmailTemplates() {
                 </div>
                 <p className="text-xs text-[#64748B] mt-0.5 truncate">{t.assunto}</p>
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                <button onClick={() => abrirEditar(t)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
+              <div className="flex gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+                <button onClick={() => abrirEditar(t)} aria-label={`Editar modelo ${t.nome}`} title="Editar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF] transition-colors">
                   <Pencil size={13} />
                 </button>
-                <button onClick={() => excluir(t.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-400 transition-colors">
+                <button onClick={() => excluir(t)} aria-label={`Excluir modelo ${t.nome}`} title="Excluir" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-400 transition-colors">
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -198,33 +206,62 @@ function SecaoVeiculos() {
   const [adicionando, setAdicionando] = useState(false)
   const [novo, setNovo] = useState({ nome: '', placa: '', cor: '' })
   const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+  // Edição de um veículo já cadastrado (nome, placa, cor)
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [edicao, setEdicao] = useState({ nome: '', placa: '', cor: '' })
 
   useEffect(() => {
     createClient().from('veiculos').select('id, nome, placa, cor, ativo').order('nome')
-      .then(({ data }) => { setVeiculos(data ?? []); setLoading(false) })
+      .then(({ data, error }) => {
+        if (error) setErro(mensagemErro(error, 'Não foi possível carregar os veículos'))
+        setVeiculos(data ?? []); setLoading(false)
+      })
   }, [])
 
   async function adicionar() {
     if (!novo.nome.trim() || !novo.placa.trim()) return
-    setSalvando(true)
-    const { data } = await createClient().from('veiculos')
+    setSalvando(true); setErro('')
+    const { data, error } = await createClient().from('veiculos')
       .insert({ nome: novo.nome.trim(), placa: novo.placa.trim().toUpperCase(), cor: novo.cor.trim(), ativo: true })
       .select().single()
-    if (data) { setVeiculos(v => [...v, data as Veiculo].sort((a, b) => a.nome.localeCompare(b.nome))) }
+    setSalvando(false)
+    if (error || !data) { setErro(mensagemErro(error, 'Não foi possível adicionar o veículo')); return }
+    setVeiculos(v => [...v, data as Veiculo].sort((a, b) => a.nome.localeCompare(b.nome)))
     setNovo({ nome: '', placa: '', cor: '' })
     setAdicionando(false)
+  }
+
+  function abrirEdicao(v: Veiculo) {
+    setAdicionando(false); setErro('')
+    setEditandoId(v.id)
+    setEdicao({ nome: v.nome, placa: v.placa, cor: v.cor ?? '' })
+  }
+
+  async function salvarEdicao() {
+    if (!editandoId || !edicao.nome.trim() || !edicao.placa.trim()) return
+    setSalvando(true); setErro('')
+    const patch = { nome: edicao.nome.trim(), placa: edicao.placa.trim().toUpperCase(), cor: edicao.cor.trim() }
+    const { error } = await createClient().from('veiculos').update(patch).eq('id', editandoId)
     setSalvando(false)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível salvar o veículo')); return }
+    setVeiculos(v => v.map(x => x.id === editandoId ? { ...x, ...patch } : x).sort((a, b) => a.nome.localeCompare(b.nome)))
+    setEditandoId(null)
   }
 
   async function toggleAtivo(id: string, ativo: boolean) {
-    await createClient().from('veiculos').update({ ativo: !ativo }).eq('id', id)
+    setErro('')
+    const { error } = await createClient().from('veiculos').update({ ativo: !ativo }).eq('id', id)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível alterar o veículo')); return }
     setVeiculos(v => v.map(x => x.id === id ? { ...x, ativo: !ativo } : x))
   }
 
-  async function remover(id: string) {
-    if (!confirm('Remover este veículo?')) return
-    await createClient().from('veiculos').delete().eq('id', id)
-    setVeiculos(v => v.filter(x => x.id !== id))
+  async function remover(v: Veiculo) {
+    if (!confirm(`Remover o veículo ${v.nome} (${v.placa})?`)) return
+    setErro('')
+    const { error } = await createClient().from('veiculos').delete().eq('id', v.id)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível remover o veículo')); return }
+    setVeiculos(list => list.filter(x => x.id !== v.id))
   }
 
   return (
@@ -239,29 +276,49 @@ function SecaoVeiculos() {
             <p className="text-xs text-[#94A3B8]">Veículos disponíveis no Quadro de Alocação</p>
           </div>
         </div>
-        <button onClick={() => setAdicionando(true)}
+        <button onClick={() => { setEditandoId(null); setAdicionando(true) }}
           className="text-xs text-[#4F7CFF] hover:text-blue-700 font-medium px-3 py-1.5 border border-[#C7D2FE] rounded-lg hover:bg-[#EEF2FF] transition-colors flex items-center gap-1">
           <Plus size={13} /> Adicionar
         </button>
       </div>
 
+      {erro && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3">{erro}</p>}
       {loading ? (
         <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-[#4F7CFF]" /></div>
       ) : (
         <div className="space-y-2">
-          {veiculos.map(v => (
+          {veiculos.map(v => editandoId === v.id ? (
+            <div key={v.id} className="border border-[#4F7CFF] rounded-xl p-3 space-y-2 bg-[#F8FAFC]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label className="block text-xs font-medium text-[#374151]">Nome<input className="field text-sm py-1.5 mt-1" value={edicao.nome} onChange={e => setEdicao(x => ({ ...x, nome: e.target.value }))} /></label>
+                <label className="block text-xs font-medium text-[#374151]">Placa<input className="field text-sm py-1.5 mt-1" value={edicao.placa} onChange={e => setEdicao(x => ({ ...x, placa: e.target.value }))} /></label>
+                <label className="block text-xs font-medium text-[#374151]">Cor<input className="field text-sm py-1.5 mt-1" value={edicao.cor} onChange={e => setEdicao(x => ({ ...x, cor: e.target.value }))} /></label>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setEditandoId(null)} className="flex-1 py-2 text-xs text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-white transition-colors">Cancelar</button>
+                <button onClick={salvarEdicao} disabled={salvando || !edicao.nome.trim() || !edicao.placa.trim()}
+                  className="flex-1 py-2 text-xs font-semibold bg-[#4F7CFF] text-white rounded-lg disabled:opacity-40 hover:bg-blue-600 transition-colors flex items-center justify-center gap-1">
+                  {salvando ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {salvando ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          ) : (
             <div key={v.id} className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${v.ativo ? 'bg-[#F8FAFC]' : 'bg-[#F1F5F9] opacity-60'}`}>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-[#374151]">{v.nome}</p>
                 <p className="text-xs text-[#94A3B8]">{v.placa}{v.cor ? ` · ${v.cor}` : ''}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => toggleAtivo(v.id, v.ativo)} title={v.ativo ? 'Desativar' : 'Ativar'}
-                  className={`p-1.5 rounded-lg transition-colors ${v.ativo ? 'text-[#10B981] hover:bg-green-50' : 'text-[#94A3B8] hover:bg-[#F8FAFC]'}`}>
+                <button onClick={() => abrirEdicao(v)} title="Editar" aria-label={`Editar veículo ${v.nome}`}
+                  className="w-9 h-9 flex items-center justify-center rounded-lg text-[#94A3B8] hover:text-[#4F7CFF] hover:bg-[#EEF2FF] transition-colors">
+                  <Pencil size={14} />
+                </button>
+                <button onClick={() => toggleAtivo(v.id, v.ativo)} title={v.ativo ? 'Desativar' : 'Ativar'} aria-label={`${v.ativo ? 'Desativar' : 'Ativar'} veículo ${v.nome}`}
+                  className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${v.ativo ? 'text-[#10B981] hover:bg-green-50' : 'text-[#94A3B8] hover:bg-[#F8FAFC]'}`}>
                   <Power size={14} />
                 </button>
-                <button onClick={() => remover(v.id)}
-                  className="p-1.5 rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 transition-colors">
+                <button onClick={() => remover(v)} title="Remover" aria-label={`Remover veículo ${v.nome}`}
+                  className="w-9 h-9 flex items-center justify-center rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 transition-colors">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -291,7 +348,7 @@ function SecaoVeiculos() {
                 <button onClick={() => setAdicionando(false)} className="flex-1 py-1.5 text-xs text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-white transition-colors">Cancelar</button>
                 <button onClick={adicionar} disabled={salvando || !novo.nome.trim() || !novo.placa.trim()}
                   className="flex-1 py-1.5 text-xs font-semibold bg-[#4F7CFF] text-white rounded-lg disabled:opacity-40 hover:bg-blue-600 transition-colors flex items-center justify-center gap-1">
-                  {salvando ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Salvar
+                  {salvando ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {salvando ? 'Salvando…' : 'Salvar'}
                 </button>
               </div>
             </div>
@@ -312,6 +369,7 @@ function SecaoTributacao() {
   const [aliquota, setAliquota] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [erro, setErro] = useState('')
 
   useEffect(() => {
     createClient().from('configuracoes_empresa').select('valor').eq('chave', 'aliquota_simples').maybeSingle()
@@ -320,15 +378,16 @@ function SecaoTributacao() {
 
   async function salvar() {
     const pct = parseFloat(aliquota)
-    if (isNaN(pct) || pct < 0 || pct > 100) return
-    setSalvando(true)
-    await createClient().from('configuracoes_empresa').upsert({
+    if (isNaN(pct) || pct < 0 || pct > 100) { setErro('Informe uma alíquota entre 0 e 100.'); return }
+    setSalvando(true); setErro('')
+    const { error } = await createClient().from('configuracoes_empresa').upsert({
       chave: 'aliquota_simples',
       descricao: 'Simples Nacional — alíquota efetiva',
       valor: { percentual: pct },
       updated_at: new Date().toISOString(),
     }, { onConflict: 'chave' })
     setSalvando(false)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível salvar a alíquota')); return }
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -372,6 +431,7 @@ function SecaoTributacao() {
         </button>
       </div>
 
+      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
       {aliquota && !isNaN(parseFloat(aliquota)) && parseFloat(aliquota) > 0 && (
         <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-[#374151]">
           <p className="font-medium text-amber-700 mb-1">Exemplo de cálculo:</p>
@@ -402,8 +462,7 @@ function SecaoDiarioObra() {
         })
         const json = await res.json()
         if (!res.ok || !json.ok) {
-          const detalhe = [json.errorType, json.error, json.errorStack].filter(Boolean).join(' — ')
-          setErro(detalhe || 'falha desconhecida')
+          setErro(json.error || 'não foi possível concluir o backup agora.')
           break
         }
 
@@ -426,8 +485,7 @@ function SecaoDiarioObra() {
         if (rodadas >= 300) { setErro('Muitas rodadas — parando por segurança. Clique de novo pra continuar.'); break }
       }
     } catch (e) {
-      const nome = e instanceof Error ? e.constructor.name : typeof e
-      setErro(`${nome}: ${e instanceof Error ? e.message : String(e)} (falhou na rodada ${rodadas}, do lado do navegador)`)
+      setErro(mensagemErro(e as Error, `Falhou na rodada ${rodadas}`))
     }
     setRodando(false)
   }
@@ -466,6 +524,7 @@ function SecaoExtras() {
   const [editando, setEditando] = useState<Record<string, string>>({})
   const [salvando, setSalvando] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
+  const [erro, setErro] = useState('')
 
   useEffect(() => {
     createClient()
@@ -485,38 +544,45 @@ function SecaoExtras() {
 
   async function salvarRegra(chave: string) {
     const pct = parseFloat(editando[chave])
-    if (isNaN(pct) || pct < 0) return
-    setSalvando(chave)
-    await createClient()
+    if (isNaN(pct) || pct < 0) { setErro('Informe um percentual válido (0 ou mais).'); return }
+    setSalvando(chave); setErro('')
+    const { error } = await createClient()
       .from('configuracoes_empresa')
       .update({ valor: { percentual: pct }, updated_at: new Date().toISOString() })
       .eq('chave', chave)
     setSalvando(null)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível salvar o percentual')); return }
     setSaved(chave)
     setTimeout(() => setSaved(null), 2000)
   }
 
   async function adicionarRegra() {
     const chave = `adicional_custom_${Date.now()}`
-    const { data } = await createClient()
+    setErro('')
+    const { data, error } = await createClient()
       .from('configuracoes_empresa')
       .insert({ chave, descricao: 'Nova regra', valor: { percentual: 0 } })
       .select()
       .single()
+    if (error) { setErro(mensagemErro(error, 'Não foi possível adicionar a regra')); return }
     if (data) {
       setRegras(r => [...r, data as RegraExtra])
       setEditando(e => ({ ...e, [chave]: '0' }))
     }
   }
 
-  async function removerRegra(chave: string) {
-    if (!confirm('Remover esta regra?')) return
-    await createClient().from('configuracoes_empresa').delete().eq('chave', chave)
-    setRegras(r => r.filter(x => x.chave !== chave))
+  async function removerRegra(r: RegraExtra) {
+    if (!confirm(`Remover a regra "${r.descricao}"?`)) return
+    setErro('')
+    const { error } = await createClient().from('configuracoes_empresa').delete().eq('chave', r.chave)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível remover a regra')); return }
+    setRegras(lista => lista.filter(x => x.chave !== r.chave))
   }
 
   async function salvarDescricao(chave: string, descricao: string) {
-    await createClient().from('configuracoes_empresa').update({ descricao }).eq('chave', chave)
+    setErro('')
+    const { error } = await createClient().from('configuracoes_empresa').update({ descricao }).eq('chave', chave)
+    if (error) { setErro(mensagemErro(error, 'Não foi possível salvar o nome da regra')); return }
     setRegras(r => r.map(x => x.chave === chave ? { ...x, descricao } : x))
   }
 
@@ -538,6 +604,7 @@ function SecaoExtras() {
         </button>
       </div>
 
+      {erro && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3">{erro}</p>}
       <div className="space-y-3">
         {regras.map(r => (
           <div key={r.chave} className="flex items-center gap-3 p-3 bg-[#F8FAFC] rounded-xl">
@@ -559,12 +626,12 @@ function SecaoExtras() {
                 />
                 <span className="text-sm text-[#64748B]">%</span>
               </div>
-              <button onClick={() => salvarRegra(r.chave)} disabled={salvando === r.chave}
-                className="p-1.5 rounded-lg bg-[#4F7CFF] text-white hover:bg-blue-600 transition-colors">
+              <button onClick={() => salvarRegra(r.chave)} disabled={salvando === r.chave} aria-label={`Salvar percentual de ${r.descricao}`} title="Salvar"
+                className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#4F7CFF] text-white hover:bg-blue-600 transition-colors">
                 {salvando === r.chave ? <Loader2 size={13} className="animate-spin" /> : saved === r.chave ? <Check size={13} /> : <Save size={13} />}
               </button>
-              <button onClick={() => removerRegra(r.chave)}
-                className="p-1.5 rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 transition-colors text-xs font-bold">
+              <button onClick={() => removerRegra(r)} aria-label={`Remover regra ${r.descricao}`} title="Remover"
+                className="w-9 h-9 flex items-center justify-center rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 transition-colors text-xs font-bold">
                 ×
               </button>
             </div>
@@ -595,6 +662,10 @@ function assinaturaPadrao(nome: string, cargo: string) {
 }
 
 export default function ConfiguracoesPage() {
+  // Tributação, Adicionais, Dados da empresa e Backup: só admin (o RLS também restringe a escrita)
+  const { isAdmin } = useAccess()
+  const [erroPerfil, setErroPerfil] = useState('')
+  const [erroEmpresa, setErroEmpresa] = useState('')
   const [perfil, setPerfil] = useState({ nome: '', email: '', cargo: '' })
   const [assinaturaEmail, setAssinaturaEmail] = useState('')
   const [empresa, setEmpresa] = useState(EMPRESA_PADRAO)
@@ -628,11 +699,32 @@ export default function ConfiguracoesPage() {
 
   async function salvarPerfil(e: React.FormEvent) {
     e.preventDefault()
+    if (!perfil.nome.trim()) { setErroPerfil('Informe o seu nome.'); return }
     setSalvando(true)
+    setErroPerfil('')
     const supabase = createClient()
-    await supabase.auth.updateUser({
+    const { error } = await supabase.auth.updateUser({
       data: { nome: perfil.nome, cargo: perfil.cargo, assinatura_email: assinaturaEmail }
     })
+    if (error) { setSalvando(false); setErroPerfil(mensagemErro(error, 'Não foi possível salvar o perfil')); return }
+    // Nome/cargo também em app_profiles (é de lá que saem o remetente dos e-mails
+    // e o nome nas listas). O RLS só deixa admin gravar, então vai pela API.
+    try {
+      const res = await fetch('/api/perfil', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: perfil.nome, cargo: perfil.cargo }),
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setSalvando(false)
+        setErroPerfil(json.error || 'Não foi possível salvar o perfil. Tente de novo.')
+        return
+      }
+    } catch (err) {
+      setSalvando(false)
+      setErroPerfil(mensagemErro(err as Error, 'Não foi possível salvar o perfil'))
+      return
+    }
     setSalvando(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -640,13 +732,15 @@ export default function ConfiguracoesPage() {
 
   async function salvarEmpresa() {
     setSalvandoEmpresa(true)
-    await createClient().from('configuracoes_empresa').upsert({
+    setErroEmpresa('')
+    const { error } = await createClient().from('configuracoes_empresa').upsert({
       chave: 'dados_empresa',
       descricao: 'Dados cadastrais da empresa (razão social, CNPJ, telefone, endereço)',
       valor: empresa,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'chave' })
     setSalvandoEmpresa(false)
+    if (error) { setErroEmpresa(mensagemErro(error, 'Não foi possível salvar os dados da empresa')); return }
     setSavedEmpresa(true)
     setTimeout(() => setSavedEmpresa(false), 2000)
   }
@@ -697,6 +791,7 @@ export default function ConfiguracoesPage() {
               <RichTextEditor value={assinaturaEmail} onChange={setAssinaturaEmail} placeholder="Assinatura que aparece no fim dos e-mails enviados pelo sistema (ex: relatórios de obra)" />
               <p className="text-xs text-[#94A3B8] mt-1">Aparece automaticamente no fim de todo e-mail que você enviar pelo sistema (relatórios de obra, etc.).</p>
             </div>
+            {erroPerfil && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{erroPerfil}</p>}
             <div className="flex justify-end">
               <button type="submit" disabled={salvando} className="btn-primary flex items-center gap-2">
                 {salvando ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
@@ -707,7 +802,7 @@ export default function ConfiguracoesPage() {
         </section>
 
         {/* Empresa */}
-        <section className="card">
+        {isAdmin && <section className="card">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-9 h-9 rounded-xl bg-[#F0FDF4] flex items-center justify-center">
               <Building2 size={18} className="text-[#10B981]" />
@@ -742,17 +837,22 @@ export default function ConfiguracoesPage() {
                 {salvandoEmpresa ? 'Salvando...' : savedEmpresa ? 'Salvo!' : 'Salvar'}
               </button>
             </div>
+            {erroEmpresa && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{erroEmpresa}</p>}
           </div>
-        </section>
+        </section>}
 
-        {/* Backup do Diário de Obra */}
-        <SecaoDiarioObra />
+        {isAdmin && (
+          <>
+            {/* Backup do Diário de Obra */}
+            <SecaoDiarioObra />
 
-        {/* Tributação */}
-        <SecaoTributacao />
+            {/* Tributação */}
+            <SecaoTributacao />
 
-        {/* Adicionais Mão de Obra */}
-        <SecaoExtras />
+            {/* Adicionais Mão de Obra */}
+            <SecaoExtras />
+          </>
+        )}
 
         {/* Frota de Veículos */}
         <SecaoVeiculos />
@@ -776,8 +876,11 @@ export default function ConfiguracoesPage() {
                   const supabase = createClient()
                   const { data: { user } } = await supabase.auth.getUser()
                   if (user?.email) {
-                    await supabase.auth.resetPasswordForEmail(user.email)
-                    alert('Link de redefinição enviado para ' + user.email)
+                    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+                      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/login?recovery=1')}`,
+                    })
+                    if (error) alert(mensagemErro(error, 'Não foi possível enviar o link'))
+                    else alert('Link de redefinição enviado para ' + user.email)
                   }
                 }}
                 className="px-4 py-2 text-sm font-medium text-[#4F7CFF] border border-[#C7D2FE] rounded-lg hover:bg-[#EEF2FF] transition-colors">

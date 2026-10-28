@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { PrintCarregando, PrintNaoEncontrado } from '../../Estados'
 
 interface RegistroEpi {
   id: string
@@ -41,36 +42,35 @@ export default function EpiLotePrintPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const [{ data }, { data: dadosEmpresa }] = await Promise.all([
-        supabase.from('estoque_registros')
-          .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome, icone), produto:produto_id(codigo), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
-          .eq('lote_id', loteId)
-          .order('created_at'),
-        supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
-      ])
-      setRegistros((data ?? []) as unknown as RegistroEpi[])
-      if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
-      setLoading(false)
+      try {
+        const supabase = createClient()
+        const [{ data }, { data: dadosEmpresa }] = await Promise.all([
+          supabase.from('estoque_registros')
+            .select('id, data, produto_nome, quantidade, unidade, responsavel, observacoes, funcionario:funcionario_id(nome, cargo, funcao, cpf), estoque:estoque_id(nome, icone), produto:produto_id(codigo), valores:estoque_registro_valores(valor, campo:campo_id(nome))')
+            .eq('lote_id', loteId)
+            .order('created_at'),
+          supabase.from('configuracoes_empresa').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
+        ])
+        setRegistros((data ?? []) as unknown as RegistroEpi[])
+        if (dadosEmpresa?.valor) setEmpresa(e => ({ ...e, ...(dadosEmpresa.valor as object) }))
+      } catch (err) {
+        console.error('Erro ao carregar dados para impressão', err)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [loteId])
 
   useEffect(() => {
-    if (!loading && registros.length > 0) setTimeout(() => window.print(), 600)
+    // Só imprime com todos os dados carregados (loading cai depois de todas as consultas)
+    if (loading || !(registros.length > 0)) return
+    const t = setTimeout(() => window.print(), 600)
+    return () => clearTimeout(t)
   }, [loading, registros])
 
-  if (loading || registros.length === 0) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'white' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #4F7CFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <p style={{ color: '#64748B', fontSize: 13 }}>Preparando termo...</p>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      </div>
-    )
-  }
+  if (loading) return <PrintCarregando texto="Preparando termo..." />
+  if (registros.length === 0) return <PrintNaoEncontrado texto="Entrega em lote não encontrada." voltarHref="/estoque" voltarTexto="Voltar ao estoque" />
 
   const s: Record<string, React.CSSProperties> = {
     table: { borderCollapse: 'collapse', width: '100%', marginTop: 12 },

@@ -6,6 +6,7 @@ import { DollarSign, Package, TrendingDown, ChevronDown, ChevronRight } from 'lu
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import { useAccess } from '@/lib/useAccess'
+import { mensagemErro } from '@/lib/erros'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 
@@ -35,51 +36,75 @@ export default function FinanceiroPage() {
   const [estoques, setEstoques] = useState<EstoqueCC[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [erro, setErro] = useState<string | null>(null)
+
   useEffect(() => {
     if (!accessLoading && !isAdmin) router.replace('/obras')
   }, [isAdmin, accessLoading, router])
 
+  // Só carrega os valores depois de confirmar que é admin
   useEffect(() => {
-    async function load() {
-      const supabase = createClient()
-      const [{ data: estData }, { data: prodData }] = await Promise.all([
-        supabase.from('estoques').select('*').order('nome'),
-        supabase.from('estoque_produtos')
-          .select('id, estoque_id, nome, quantidade_atual, unidade, preco_unitario')
-          .eq('ativo', true)
-          .gt('quantidade_atual', 0)
-          .not('preco_unitario', 'is', null)
-          .order('nome'),
-      ])
+    if (!accessLoading && isAdmin) load()
+  }, [accessLoading, isAdmin])
 
-      const estoquesMap: Record<string, EstoqueCC> = {}
-      for (const e of (estData ?? []).filter((x: { ativo?: boolean }) => x.ativo !== false)) {
-        estoquesMap[e.id] = { ...e, produtos: [], total: 0, expanded: true }
-      }
-      for (const p of prodData ?? []) {
-        const val = p.quantidade_atual * (p.preco_unitario || 0)
-        const prod: ProdutoCC = {
-          ...p,
-          preco_unitario: p.preco_unitario || 0,
-          valor_imobilizado: val,
-        }
-        if (estoquesMap[p.estoque_id]) {
-          estoquesMap[p.estoque_id].produtos.push(prod)
-          estoquesMap[p.estoque_id].total += val
-        }
-      }
-
-      setEstoques(Object.values(estoquesMap).filter(e => e.produtos.length > 0))
+  async function load() {
+    setLoading(true)
+    setErro(null)
+    const supabase = createClient()
+    const [{ data: estData, error: estErr }, { data: prodData, error: prodErr }] = await Promise.all([
+      supabase.from('estoques').select('*').order('nome'),
+      supabase.from('estoque_produtos')
+        .select('id, estoque_id, nome, quantidade_atual, unidade, preco_unitario')
+        .eq('ativo', true)
+        .gt('quantidade_atual', 0)
+        .not('preco_unitario', 'is', null)
+        .order('nome'),
+    ])
+    if (estErr || prodErr) {
+      setErro(mensagemErro(estErr ?? prodErr, 'Erro ao carregar o financeiro'))
       setLoading(false)
+      return
     }
-    load()
-  }, [])
+
+    const estoquesMap: Record<string, EstoqueCC> = {}
+    for (const e of (estData ?? []).filter((x: { ativo?: boolean }) => x.ativo !== false)) {
+      estoquesMap[e.id] = { ...e, produtos: [], total: 0, expanded: true }
+    }
+    for (const p of prodData ?? []) {
+      const val = p.quantidade_atual * (p.preco_unitario || 0)
+      const prod: ProdutoCC = {
+        ...p,
+        preco_unitario: p.preco_unitario || 0,
+        valor_imobilizado: val,
+      }
+      if (estoquesMap[p.estoque_id]) {
+        estoquesMap[p.estoque_id].produtos.push(prod)
+        estoquesMap[p.estoque_id].total += val
+      }
+    }
+
+    setEstoques(Object.values(estoquesMap).filter(e => e.produtos.length > 0))
+    setLoading(false)
+  }
 
   const totalGeral = estoques.reduce((sum, e) => sum + e.total, 0)
   const totalItens = estoques.reduce((sum, e) => sum + e.produtos.length, 0)
 
   function toggleEstoque(id: string) {
     setEstoques(list => list.map(e => e.id === id ? { ...e, expanded: !e.expanded } : e))
+  }
+
+  if (accessLoading || !isAdmin) {
+    return (
+      <div className="flex flex-col h-full">
+        <Topbar />
+        <div className="flex items-center justify-center h-40">
+          {accessLoading
+            ? <div className="w-6 h-6 border-2 border-[#4F7CFF] border-t-transparent rounded-full animate-spin" />
+            : <p className="text-sm text-[#64748B]">Acesso restrito a administradores.</p>}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -129,6 +154,11 @@ export default function FinanceiroPage() {
         {loading ? (
           <div className="flex items-center justify-center h-40">
             <div className="w-6 h-6 border-2 border-[#4F7CFF] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : erro ? (
+          <div className="card flex flex-col items-center justify-center py-12 text-center">
+            <p className="text-sm font-medium text-red-600">{erro}</p>
+            <button onClick={load} className="btn-primary mt-4 text-sm">Tentar de novo</button>
           </div>
         ) : estoques.length === 0 ? (
           <div className="card flex flex-col items-center justify-center py-16 text-center">

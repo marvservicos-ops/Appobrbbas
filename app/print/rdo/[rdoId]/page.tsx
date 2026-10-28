@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { PrintCarregando, PrintNaoEncontrado } from '../../Estados'
+import { parseData, diasEntre } from '@/lib/datas'
 import { Obra, RDO, RDOClima, RDOMaoObra, RDOEquipamento, RDOAtividade, RDOOcorrencia, RDOComentario, RDOFoto, RDOAssinatura } from '@/lib/types'
 
 const DIAS_SEMANA = ['Domingo','Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado']
@@ -27,63 +29,63 @@ export default function RDOPrintPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const rdoRes = await supabase.from('rdos').select('*').eq('id', rdoId).single()
-      if (!rdoRes.data) { setLoading(false); return }
-      const rdoData = rdoRes.data as RDO
-      setRdo(rdoData)
+      try {
+        const supabase = createClient()
+        const rdoRes = await supabase.from('rdos').select('*').eq('id', rdoId).single()
+        if (!rdoRes.data) return
+        const rdoData = rdoRes.data as RDO
+        setRdo(rdoData)
 
-      const [obraRes, climaRes, maoRes, eqRes, atRes, ocRes, comRes, fotosRes, assRes, modeloRes] = await Promise.all([
-        supabase.from('obras').select('*, cliente:clientes(*)').eq('id', rdoData.obra_id).single(),
-        supabase.from('rdo_clima').select('*').eq('rdo_id', rdoId).order('periodo'),
-        supabase.from('rdo_mao_obra').select('*').eq('rdo_id', rdoId),
-        supabase.from('rdo_equipamentos').select('*').eq('rdo_id', rdoId),
-        supabase.from('rdo_atividades').select('*').eq('rdo_id', rdoId).order('ordem'),
-        supabase.from('rdo_ocorrencias').select('*').eq('rdo_id', rdoId).order('created_at'),
-        supabase.from('rdo_comentarios').select('*').eq('rdo_id', rdoId).order('created_at'),
-        supabase.from('rdo_fotos').select('*').eq('rdo_id', rdoId).order('ordem'),
-        supabase.from('rdo_assinaturas').select('*').eq('rdo_id', rdoId),
-        supabase.from('rdo_modelos').select('nome,logo_empresa_url,logo_relatorio_url,logo_relatorio2_url').eq('obra_id', rdoData.obra_id).eq('ativo', true).limit(1).maybeSingle(),
-      ])
-      if (obraRes.data) setObra(obraRes.data as Obra)
-      if (climaRes.data) setClima(climaRes.data as RDOClima[])
-      if (maoRes.data) setMaoObra(maoRes.data as RDOMaoObra[])
-      if (eqRes.data) setEquipamentos(eqRes.data as RDOEquipamento[])
-      if (atRes.data) setAtividades(atRes.data as RDOAtividade[])
-      if (ocRes.data) setOcorrencias(ocRes.data as RDOOcorrencia[])
-      if (comRes.data) setComentarios(comRes.data as RDOComentario[])
-      if (fotosRes.data) setFotos(fotosRes.data as RDOFoto[])
-      if (assRes.data) setAssinaturas(assRes.data as RDOAssinatura[])
-      if (modeloRes.data) setModelo(modeloRes.data)
-      setLoading(false)
+        const [obraRes, climaRes, maoRes, eqRes, atRes, ocRes, comRes, fotosRes, assRes, modeloRes] = await Promise.all([
+          supabase.from('obras').select('*, cliente:clientes(*)').eq('id', rdoData.obra_id).single(),
+          supabase.from('rdo_clima').select('*').eq('rdo_id', rdoId).order('periodo'),
+          supabase.from('rdo_mao_obra').select('*').eq('rdo_id', rdoId),
+          supabase.from('rdo_equipamentos').select('*').eq('rdo_id', rdoId),
+          supabase.from('rdo_atividades').select('*').eq('rdo_id', rdoId).order('ordem'),
+          supabase.from('rdo_ocorrencias').select('*').eq('rdo_id', rdoId).order('created_at'),
+          supabase.from('rdo_comentarios').select('*').eq('rdo_id', rdoId).order('created_at'),
+          supabase.from('rdo_fotos').select('*').eq('rdo_id', rdoId).order('ordem'),
+          supabase.from('rdo_assinaturas').select('*').eq('rdo_id', rdoId),
+          supabase.from('rdo_modelos').select('nome,logo_empresa_url,logo_relatorio_url,logo_relatorio2_url').eq('obra_id', rdoData.obra_id).eq('ativo', true).limit(1).maybeSingle(),
+        ])
+        if (obraRes.data) setObra(obraRes.data as Obra)
+        if (climaRes.data) setClima(climaRes.data as RDOClima[])
+        if (maoRes.data) setMaoObra(maoRes.data as RDOMaoObra[])
+        if (eqRes.data) setEquipamentos(eqRes.data as RDOEquipamento[])
+        if (atRes.data) setAtividades(atRes.data as RDOAtividade[])
+        if (ocRes.data) setOcorrencias(ocRes.data as RDOOcorrencia[])
+        if (comRes.data) setComentarios(comRes.data as RDOComentario[])
+        if (fotosRes.data) setFotos(fotosRes.data as RDOFoto[])
+        if (assRes.data) setAssinaturas(assRes.data as RDOAssinatura[])
+        if (modeloRes.data) setModelo(modeloRes.data)
+      } catch (err) {
+        console.error('Erro ao carregar dados para impressão', err)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [rdoId])
 
   useEffect(() => {
-    if (!loading && rdo) setTimeout(() => window.print(), 600)
-  }, [loading, rdo])
+    // Só imprime com todos os dados carregados (loading cai depois de todas as consultas)
+    if (loading || !(rdo && obra)) return
+    const t = setTimeout(() => window.print(), 600)
+    return () => clearTimeout(t)
+  }, [loading, rdo, obra])
 
-  if (loading || !rdo || !obra) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'white' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #4F7CFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <p style={{ color: '#64748B', fontSize: 13 }}>Preparando relatório...</p>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      </div>
-    )
-  }
+  if (loading) return <PrintCarregando texto="Preparando relatório..." />
+  if (!rdo || !obra) return <PrintNaoEncontrado texto="Relatório (RDO) não encontrado." voltarHref="/relatorios" voltarTexto="Voltar aos relatórios" />
 
-  const dataRdo = new Date(rdo.data + 'T12:00:00')
+  const dataRdo = parseData(rdo.data)
   const diaSemana = DIAS_SEMANA[dataRdo.getDay()]
-  const today = new Date()
-  const startDate = obra.data_inicio ? new Date(obra.data_inicio + 'T00:00:00') : null
-  const endDate = obra.previsao_termino ? new Date(obra.previsao_termino + 'T00:00:00') : null
-  const prazoContratual = startDate && endDate ? Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000) : '—'
-  const prazoDecorrido = startDate ? Math.max(0, Math.ceil((today.getTime() - startDate.getTime()) / 86400000)) : '—'
-  const prazoVencer = endDate ? Math.max(0, Math.ceil((endDate.getTime() - today.getTime()) / 86400000)) : '—'
+  // Prazos contados até a data do RDO (não a de hoje): reimprimir um RDO antigo dá os mesmos números
+  const diaRdo = rdo.data.slice(0, 10)
+  const inicio = obra.data_inicio ? obra.data_inicio.slice(0, 10) : null
+  const termino = obra.previsao_termino ? obra.previsao_termino.slice(0, 10) : null
+  const prazoContratual = inicio && termino ? diasEntre(inicio, termino) : '—'
+  const prazoDecorrido = inicio ? Math.max(0, diasEntre(inicio, diaRdo)) : '—'
+  const prazoVencer = termino ? Math.max(0, diasEntre(diaRdo, termino)) : '—'
   const climaAtivo = clima.filter(c => c.ativo)
   const totalMao = maoObra.reduce((s, m) => s + m.quantidade, 0)
   const periodoLabel: Record<string, string> = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }

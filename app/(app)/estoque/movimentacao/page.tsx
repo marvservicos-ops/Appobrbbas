@@ -6,6 +6,8 @@ import Image from 'next/image'
 import { ArrowLeft, ArrowUpCircle, ArrowDownCircle, Search, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueItem, Obra, TipoMovimentacao } from '@/lib/types'
+import { mensagemErro } from '@/lib/erros'
+import { arred, parseNumeroBR } from '@/lib/numero'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 
@@ -62,8 +64,8 @@ function MovimentacaoForm() {
 
   const filteredItens = itens.filter(i => i.nome.toLowerCase().includes(itemSearch.toLowerCase())).slice(0, 8)
 
-  const qtd = parseFloat(form.quantidade) || 0
-  const precoEntrada = parseFloat(form.preco_unitario_entrada) || 0
+  const qtd = parseNumeroBR(form.quantidade) || 0
+  const precoEntrada = parseNumeroBR(form.preco_unitario_entrada) || 0
   const valorTotalEntrada = qtd * precoEntrada
 
   // Custo médio ponderado calculado em tempo real
@@ -89,18 +91,31 @@ function MovimentacaoForm() {
       return
     }
 
+    if (loading) return
     setLoading(true)
     setError('')
     const supabase = createClient()
 
-    const novaQtd = tipo === 'entrada'
-      ? qtdAtual + qtd
-      : qtdAtual - qtd
+    // Saldo e custo médio relidos do banco agora (outra pessoa pode ter movimentado)
+    const { data: atual, error: errLer } = await supabase.from('estoque_itens')
+      .select('quantidade_atual, preco_unitario').eq('id', selectedItem.id).single()
+    if (errLer || !atual) { setError(mensagemErro(errLer, 'Erro ao ler o saldo do item')); setLoading(false); return }
+    const saldoBanco = Number(atual.quantidade_atual ?? 0)
+    const cmpBanco = Number(atual.preco_unitario ?? 0)
+    if (tipo === 'saida' && qtd > saldoBanco) {
+      setError(`Quantidade insuficiente. Disponível agora: ${saldoBanco} ${selectedItem.unidade}`)
+      setLoading(false)
+      return
+    }
+    const novaQtd = arred(tipo === 'entrada' ? saldoBanco + qtd : saldoBanco - qtd)
+    const cmpNovo = tipo === 'entrada' && precoEntrada > 0
+      ? (saldoBanco * cmpBanco + qtd * precoEntrada) / (saldoBanco + qtd)
+      : cmpBanco
 
     const status = tipo === 'saida' && form.requer_devolucao ? 'pendente_devolucao' : 'concluido'
 
     // Custo unitário snapshot: para entrada = preço informado; para saída = CMP atual do item
-    const preco_unitario_custo = tipo === 'entrada' ? precoEntrada : (cmpAtual || 0)
+    const preco_unitario_custo = tipo === 'entrada' ? precoEntrada : (cmpBanco || 0)
     const valor_total = tipo === 'entrada' ? valorTotalEntrada : (qtd * preco_unitario_custo)
 
     // Para entrada: atualiza CMP no item; para saída: só atualiza quantidade
@@ -109,27 +124,34 @@ function MovimentacaoForm() {
       updated_at: new Date().toISOString(),
     }
     if (tipo === 'entrada' && precoEntrada > 0) {
-      itemUpdate.preco_unitario = novoCMP
+      itemUpdate.preco_unitario = cmpNovo
     }
 
-    const [movRes] = await Promise.all([
-      supabase.from('estoque_movimentacoes').insert({
-        item_id: selectedItem.id,
-        tipo,
-        quantidade: qtd,
-        responsavel: form.responsavel,
-        obra_id: form.obra_id || null,
-        motivo: form.motivo || null,
-        observacoes: form.observacoes || null,
-        status,
-        preco_unitario_custo,
-        valor_total,
-        data_prevista_devolucao: form.requer_devolucao && form.data_prevista_devolucao ? form.data_prevista_devolucao : null,
-      }),
-      supabase.from('estoque_itens').update(itemUpdate).eq('id', selectedItem.id),
-    ])
+    // Em sequência: primeiro o registro; o saldo só muda se ele foi gravado
+    const { data: mov, error: errMov } = await supabase.from('estoque_movimentacoes').insert({
+      item_id: selectedItem.id,
+      tipo,
+      quantidade: qtd,
+      responsavel: form.responsavel,
+      obra_id: form.obra_id || null,
+      motivo: form.motivo || null,
+      observacoes: form.observacoes || null,
+      status,
+      preco_unitario_custo,
+      valor_total,
+      data_prevista_devolucao: form.requer_devolucao && form.data_prevista_devolucao ? form.data_prevista_devolucao : null,
+    }).select('id').single()
+    if (errMov || !mov) { setError(mensagemErro(errMov, 'Erro ao registrar movimentação')); setLoading(false); return }
 
-    if (movRes.error) { setError(movRes.error.message); setLoading(false); return }
+    const { error: errItem } = await supabase.from('estoque_itens').update(itemUpdate).eq('id', selectedItem.id)
+    if (errItem) {
+      // Desfaz o registro para não ficar sem efeito no saldo
+      const { error: errDel } = await supabase.from('estoque_movimentacoes').delete().eq('id', mov.id)
+      if (errDel) console.error('Erro ao desfazer movimentação', errDel)
+      setError(mensagemErro(errItem, 'Erro ao atualizar o saldo do item'))
+      setLoading(false)
+      return
+    }
     router.push(`/estoque/itens/${selectedItem.id}`)
   }
 
@@ -236,7 +258,7 @@ function MovimentacaoForm() {
                 </label>
                 <input
                   required
-                  type="number"
+                  type="text" inputMode="decimal"
                   step="0.01"
                   min="0.01"
                   className="field"
@@ -253,7 +275,7 @@ function MovimentacaoForm() {
                 <div>
                   <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$) *</label>
                   <input
-                    type="number"
+                    type="text" inputMode="decimal"
                     step="0.01"
                     min="0.01"
                     className="field"

@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { diasEntre } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
 import { Obra, RDO, RDOClima, RDOMaoObra, RDOEquipamento, RDOAtividade, RDOOcorrencia, RDOComentario, RDOFoto, RDOAssinatura } from '@/lib/types'
 
 const DIAS_SEMANA = ['Domingo','Segunda-Feira','Terça-Feira','Quarta-Feira','Quinta-Feira','Sexta-Feira','Sábado']
@@ -21,6 +23,7 @@ export default function RDOImprimirPage() {
   const [fotos, setFotos] = useState<RDOFoto[]>([])
   const [assinaturas, setAssinaturas] = useState<RDOAssinatura[]>([])
   const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -37,6 +40,8 @@ export default function RDOImprimirPage() {
         supabase.from('rdo_fotos').select('*').eq('rdo_id', rdoId).order('ordem'),
         supabase.from('rdo_assinaturas').select('*').eq('rdo_id', rdoId),
       ])
+      const erroLeitura = [obraRes, rdoRes].find(x => x.error && x.error.code !== 'PGRST116')?.error
+      if (erroLeitura) setErro(mensagemErro(erroLeitura, 'Não foi possível carregar o RDO'))
       if (obraRes.data) setObra(obraRes.data as Obra)
       if (rdoRes.data) setRdo(rdoRes.data as RDO)
       if (climaRes.data) setClima(climaRes.data as RDOClima[])
@@ -58,6 +63,14 @@ export default function RDOImprimirPage() {
     }
   }, [loading, rdo])
 
+  if (!loading && (!rdo || !obra)) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-white">
+        <p className="text-sm text-gray-600 text-center px-6">{erro || 'RDO não encontrado.'}</p>
+      </div>
+    )
+  }
+
   if (loading || !rdo || !obra) {
     return (
       <div className="flex items-center justify-center h-screen bg-white">
@@ -71,12 +84,13 @@ export default function RDOImprimirPage() {
 
   const dataRdo = new Date(rdo.data + 'T12:00:00')
   const diaSemana = DIAS_SEMANA[dataRdo.getDay()]
-  const today = new Date()
-  const startDate = obra.data_inicio ? new Date(obra.data_inicio + 'T00:00:00') : null
-  const endDate = obra.previsao_termino ? new Date(obra.previsao_termino + 'T00:00:00') : null
-  const prazoContratual = startDate && endDate ? Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000) : '—'
-  const prazoDecorrido = startDate ? Math.max(0, Math.ceil((today.getTime() - startDate.getTime()) / 86400000)) : '—'
-  const prazoVencer = endDate ? Math.max(0, Math.ceil((endDate.getTime() - today.getTime()) / 86400000)) : '—'
+  // Prazos até a data do RDO (reimprimir um RDO antigo dá os mesmos números)
+  const inicio = obra.data_inicio?.slice(0, 10)
+  const termino = obra.previsao_termino?.slice(0, 10)
+  const dataRef = rdo.data.slice(0, 10)
+  const prazoContratual = inicio && termino ? diasEntre(inicio, termino) : '—'
+  const prazoDecorrido = inicio ? Math.max(0, diasEntre(inicio, dataRef)) : '—'
+  const prazoVencer = termino ? Math.max(0, diasEntre(dataRef, termino)) : '—'
 
   const periodoLabel: Record<string, string> = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
   const climaAtivo = clima.filter(c => c.ativo)

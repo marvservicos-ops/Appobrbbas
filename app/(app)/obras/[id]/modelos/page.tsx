@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import Link from 'next/link'
+import { mensagemErro } from '@/lib/erros'
 
 interface RDOModelo {
   id: string
@@ -52,7 +53,8 @@ export default function ModelosPage() {
 
   async function load() {
     const supabase = createClient()
-    const { data } = await supabase.from('rdo_modelos').select('*').eq('obra_id', obraId).order('created_at')
+    const { data, error } = await supabase.from('rdo_modelos').select('*').eq('obra_id', obraId).order('created_at')
+    if (error) alert(mensagemErro(error, 'Não foi possível carregar os modelos'))
     setModelos((data as RDOModelo[]) ?? [])
     setLoading(false)
   }
@@ -89,10 +91,14 @@ export default function ModelosPage() {
       assinaturas: modelo.assinaturas,
       ativo: modelo.ativo,
     }
-    if (modelo.id) {
-      await supabase.from('rdo_modelos').update(payload).eq('id', modelo.id)
-    } else {
-      await supabase.from('rdo_modelos').insert(payload)
+    const { error } = modelo.id
+      ? await supabase.from('rdo_modelos').update(payload).eq('id', modelo.id)
+      : await supabase.from('rdo_modelos').insert(payload)
+    if (error) {
+      // Mantém o formulário aberto com o que foi digitado
+      alert(mensagemErro(error, 'Não foi possível salvar o modelo'))
+      setSaving(false)
+      return
     }
     await load()
     setEditando(null)
@@ -103,23 +109,28 @@ export default function ModelosPage() {
   async function excluir(id: string) {
     if (!confirm('Excluir este modelo?')) return
     const supabase = createClient()
-    await supabase.from('rdo_modelos').delete().eq('id', id)
+    const { error } = await supabase.from('rdo_modelos').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Não foi possível excluir o modelo')); return }
     setModelos(prev => prev.filter(m => m.id !== id))
   }
 
   async function uploadLogo(campo: 'empresa' | 'relatorio' | 'relatorio2', fileOriginal: File, modelo: RDOModelo, setModelo: (m: RDOModelo) => void) {
     setUploadingLogo(campo)
-    const file = await converterSeForHeic(fileOriginal)
-    const supabase = createClient()
-    const path = `modelos/${obraId}/${campo}_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
-    if (!error) {
+    try {
+      const file = await converterSeForHeic(fileOriginal)
+      const supabase = createClient()
+      const path = `modelos/${obraId}/${campo}_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+      const { error } = await supabase.storage.from('documentos').upload(path, file, { upsert: true })
+      if (error) { alert(mensagemErro(error, 'Não foi possível enviar a logo')); return }
       const { data } = supabase.storage.from('documentos').getPublicUrl(path)
       if (campo === 'empresa') setModelo({ ...modelo, logo_empresa_url: data.publicUrl, logo_empresa_path: path })
       if (campo === 'relatorio') setModelo({ ...modelo, logo_relatorio_url: data.publicUrl, logo_relatorio_path: path })
       if (campo === 'relatorio2') setModelo({ ...modelo, logo_relatorio2_url: data.publicUrl, logo_relatorio2_path: path })
+    } catch (e) {
+      alert(mensagemErro(e as Error, 'Não foi possível enviar a logo'))
+    } finally {
+      setUploadingLogo(null)
     }
-    setUploadingLogo(null)
   }
 
   if (loading) return (
@@ -133,7 +144,7 @@ export default function ModelosPage() {
   return (
     <div className="flex flex-col min-h-screen bg-[#F8FAFC]">
       <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-4 gap-3 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-20">
-        <Link href={`/obras/${obraId}?tab=relatorios`} className="flex items-center gap-1.5 text-sm text-[#64748B] hover:text-[#0F172A]">
+        <Link href={`/obras/${obraId}?tab=relatorios`} aria-label="Voltar para a obra" title="Voltar para a obra" className="flex items-center gap-1.5 p-2 -ml-2 text-sm text-[#64748B] hover:text-[#0F172A]">
           <ArrowLeft size={16} />
         </Link>
         <h1 className="font-syne font-semibold text-[#0F172A] text-sm flex-1">Personalizar Relatórios</h1>
@@ -166,12 +177,12 @@ export default function ModelosPage() {
                 <h3 className="font-syne font-semibold text-sm text-[#0F172A]">{m.nome}</h3>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => { setEditando(m); setCriando(false) }}
-                  className="text-[#64748B] hover:text-[#4F7CFF] p-1.5 rounded hover:bg-[#EEF2FF] transition-colors">
+                <button onClick={() => { setEditando(m); setCriando(false) }} aria-label={`Editar modelo ${m.nome}`} title="Editar modelo"
+                  className="text-[#64748B] hover:text-[#4F7CFF] p-2 rounded hover:bg-[#EEF2FF] transition-colors">
                   <Pencil size={14} />
                 </button>
-                <button onClick={() => excluir(m.id)}
-                  className="text-[#94A3B8] hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors">
+                <button onClick={() => excluir(m.id)} aria-label={`Excluir modelo ${m.nome}`} title="Excluir modelo"
+                  className="text-[#94A3B8] hover:text-red-500 p-2 rounded hover:bg-red-50 transition-colors">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -207,6 +218,7 @@ export default function ModelosPage() {
         {/* Formulário de criação/edição */}
         {modeloParaEditar && (
           <ModeloForm
+            key={modeloParaEditar.id || 'novo'}
             inicial={modeloParaEditar}
             obraId={obraId}
             saving={saving}
@@ -341,7 +353,7 @@ function ModeloForm({ inicial, obraId, saving, uploadingLogo, onSalvar, onCancel
           {modelo.assinaturas.map((a, i) => (
             <div key={i} className="flex items-center gap-2 p-2 bg-[#F8FAFC] rounded-lg">
               <span className="flex-1 text-sm text-[#374151]">{a}</span>
-              <button onClick={() => removeAssinatura(i)} className="text-[#94A3B8] hover:text-red-500"><X size={13} /></button>
+              <button onClick={() => removeAssinatura(i)} aria-label="Remover assinatura" title="Remover assinatura" className="p-1.5 -m-1 text-[#94A3B8] hover:text-red-500"><X size={13} /></button>
             </div>
           ))}
         </div>
@@ -359,7 +371,7 @@ function ModeloForm({ inicial, obraId, saving, uploadingLogo, onSalvar, onCancel
         <button onClick={() => onSalvar(modelo)} disabled={saving || !modelo.nome.trim()}
           className="btn-primary flex items-center gap-2">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          {inicial.id ? 'Salvar alterações' : 'Criar modelo'}
+          {saving ? 'Salvando…' : inicial.id ? 'Salvar alterações' : 'Criar modelo'}
         </button>
         <button onClick={onCancelar} className="text-sm text-[#64748B] hover:text-[#374151] px-3 py-2">Cancelar</button>
       </div>

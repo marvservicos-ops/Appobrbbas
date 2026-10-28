@@ -1,19 +1,40 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
-import { createClient } from '@/lib/supabase/server'
-import { getCurrentProfile, profileCan } from '@/lib/access'
+import { exigirUsuarioAtivo } from '@/lib/apiAuth'
 import { createServiceClient } from '@/lib/supabase/service'
 
-export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+// obra_acessos_cliente não tem mais policy para o navegador (ver
+// supabase/migrations/2026_10_28_seguranca.sql): toda leitura/escrita passa por aqui,
+// com checagem da permissão "financeiro".
 
-  const profile = await getCurrentProfile()
-  if (!profileCan(profile, 'financeiro')) {
-    return NextResponse.json({ error: 'Sem permissão para gerar acesso do cliente.' }, { status: 403 })
+// GET ?obraId=... → token do acesso ativo da obra (para montar o link do portal)
+export async function GET(request: Request) {
+  const auth = await exigirUsuarioAtivo({ permissao: 'financeiro' })
+  if (!auth.ok) return auth.resposta
+
+  const obraId = new URL(request.url).searchParams.get('obraId') ?? ''
+  if (!obraId) return NextResponse.json({ error: 'obraId é obrigatório.' }, { status: 400 })
+
+  const { data, error } = await createServiceClient()
+    .from('obra_acessos_cliente')
+    .select('token')
+    .eq('obra_id', obraId)
+    .eq('ativo', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) {
+    console.error('[portal/gerar-acesso GET]', error)
+    return NextResponse.json({ error: 'Não foi possível consultar o acesso do cliente.' }, { status: 500 })
   }
+  return NextResponse.json({ token: data?.token ?? null })
+}
+
+export async function POST(request: Request) {
+  const auth = await exigirUsuarioAtivo({ permissao: 'financeiro' })
+  if (!auth.ok) return auth.resposta
+  const { user } = auth
 
   const body = await request.json()
   const obraId = String(body.obraId ?? '')
@@ -30,12 +51,18 @@ export async function POST(request: Request) {
     .update({ ativo: false })
     .eq('obra_id', obraId)
     .eq('ativo', true)
-  if (deactivateError) return NextResponse.json({ error: deactivateError.message }, { status: 500 })
+  if (deactivateError) {
+    console.error('[portal/gerar-acesso] erro ao desativar acesso anterior', deactivateError)
+    return NextResponse.json({ error: 'Não foi possível gerar o acesso. Tente de novo.' }, { status: 500 })
+  }
 
   const { error: insertError } = await service
     .from('obra_acessos_cliente')
     .insert({ obra_id: obraId, token, pin_hash: pinHash, ativo: true, created_by: user.id })
-  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
+  if (insertError) {
+    console.error('[portal/gerar-acesso] erro ao criar acesso', insertError)
+    return NextResponse.json({ error: 'Não foi possível gerar o acesso. Tente de novo.' }, { status: 500 })
+  }
 
   return NextResponse.json({ token, pin })
 }

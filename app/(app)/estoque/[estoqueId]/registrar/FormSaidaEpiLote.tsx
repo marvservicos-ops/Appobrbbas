@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation'
 import { Plus, Trash2, Eraser, AlertTriangle, Shield } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueCampo, EstoqueProduto } from '@/lib/types'
+import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
+import { hojeLocal } from '@/lib/datas'
+import { arred, numeroOuPadrao } from '@/lib/numero'
+import { mensagemErro } from '@/lib/erros'
 
 interface ItemCarrinho {
   key: string
@@ -20,7 +24,7 @@ const isCAField = (c: EstoqueCampo) => {
   return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
 }
 
-export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, campos, funcionarios, responsaveis }: {
+export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos: produtosIniciais, campos, funcionarios, responsaveis }: {
   estoqueId: string
   estoqueNome: string
   produtos: EstoqueProduto[]
@@ -32,7 +36,11 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
   const [respModoLivre, setRespModoLivre] = useState(false)
 
   const [funcionarioId, setFuncionarioId] = useState('')
-  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(hojeLocal())
+  // Cópia local: o saldo é atualizado com o que o banco devolve, sem mexer nas props
+  const [produtos, setProdutos] = useState<EstoqueProduto[]>(produtosIniciais)
+  // Pop-up do termo bloqueado (iPhone): mostra o link em vez de sair da tela
+  const [termoUrl, setTermoUrl] = useState('')
   const [responsavel, setResponsavel] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemCarrinho[]>([])
@@ -49,6 +57,9 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
   const isDrawing = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
   const [temAssinatura, setTemAssinatura] = useState(false)
+  // Reenvio depois de falha parcial: mesmo lote (um termo só) e mesma assinatura já enviada
+  const loteRef = useRef<string | null>(null)
+  const assinaturaRef = useRef<string | null>(null)
 
   function getPos(e: React.MouseEvent | React.TouchEvent) {
     const canvas = canvasRef.current!
@@ -58,7 +69,7 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
     if ('touches' in e) return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY }
     return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
   }
-  function startDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = true; lastPos.current = getPos(e); setTemAssinatura(true) }
+  function startDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = true; lastPos.current = getPos(e); setTemAssinatura(true); assinaturaRef.current = null }
   function draw(e: React.MouseEvent | React.TouchEvent) {
     e.preventDefault(); if (!isDrawing.current) return
     const canvas = canvasRef.current!; const ctx = canvas.getContext('2d')!
@@ -68,7 +79,7 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
     lastPos.current = pos
   }
   function stopDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = false }
-  function limparCanvas() { const canvas = canvasRef.current!; canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height); setTemAssinatura(false) }
+  function limparCanvas() { const canvas = canvasRef.current!; canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height); setTemAssinatura(false); assinaturaRef.current = null }
 
   function selecionarProduto(id: string) {
     setProdutoId(id)
@@ -87,12 +98,12 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
   function adicionarItem() {
     setError('')
     if (!produtoId || (produtoId === '__outro__' && !produtoNome.trim())) { setError('Selecione o produto.'); return }
-    const qtd = parseFloat(quantidade)
+    const qtd = numeroOuPadrao(quantidade, 0)
     if (!qtd || qtd <= 0) { setError('Informe a quantidade.'); return }
     if (produtoId !== '__outro__') {
       const prod = produtos.find(p => p.id === produtoId)
       const jaNoCarrinho = itens.filter(i => i.produtoId === produtoId).reduce((s, i) => s + parseFloat(i.quantidade), 0)
-      if (prod && prod.quantidade_atual - jaNoCarrinho - qtd < 0) {
+      if (prod && controlaSaldo(prod) && prod.quantidade_atual - jaNoCarrinho - qtd < 0) {
         setError(`Saldo insuficiente! Estoque atual: ${prod.quantidade_atual} ${prod.unidade}.`); return
       }
     }
@@ -119,31 +130,41 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
 
     setSaving(true)
     const supabase = createClient()
+    // Abre a aba do termo já no toque: depois de await o iPhone bloqueia o pop-up
+    const abaTermo = window.open('', '_blank')
+    abaTermo?.document.write('<p style="font-family:sans-serif;padding:16px">Gerando termo…</p>')
+    const parar = (msg: string) => { abaTermo?.close(); setError(msg); setSaving(false) }
 
-    let assinatura_url: string | null = null
-    if (temAssinatura && canvasRef.current) {
+    let assinatura_url: string | null = assinaturaRef.current
+    if (!assinatura_url && temAssinatura && canvasRef.current) {
       const blob = await new Promise<Blob | null>(res => canvasRef.current!.toBlob(res, 'image/png'))
       if (blob) {
         const path = `${estoqueId}/${Date.now()}.png`
         const { error: upErr } = await supabase.storage.from('assinaturas').upload(path, blob)
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('assinaturas').getPublicUrl(path)
-          assinatura_url = urlData.publicUrl
-        }
+        if (upErr) { parar(mensagemErro(upErr, 'Não foi possível enviar a assinatura')); return }
+        const { data: urlData } = supabase.storage.from('assinaturas').getPublicUrl(path)
+        assinatura_url = urlData.publicUrl
+        assinaturaRef.current = assinatura_url
       }
     }
 
-    const loteId = crypto.randomUUID()
+    const loteId = loteRef.current ??= crypto.randomUUID()
+    // Itens não são gravados numa transação: o que já foi gravado sai do carrinho, para um reenvio não duplicar
+    const gravados = new Set<string>()
+    const avisos: string[] = []
+    let falha: { item: ItemCarrinho; msg: string } | null = null
 
     for (const item of itens) {
+      const qtd = parseFloat(item.quantidade)
       const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
         estoque_id: estoqueId, produto_id: item.produtoId === '__outro__' ? null : item.produtoId,
-        produto_nome: item.produtoNome, tipo: 'saida', quantidade: parseFloat(item.quantidade), unidade: item.unidade,
+        produto_nome: item.produtoNome, tipo: 'saida', quantidade: qtd, unidade: item.unidade,
         responsavel: responsavel.trim(), assinatura_url, data, observacoes: observacoes || null,
         funcionario_id: funcionarioId, destino_tipo: null, lote_id: loteId,
       }).select().single()
 
-      if (regErr) { setError(regErr.message); setSaving(false); return }
+      if (regErr) { falha = { item, msg: mensagemErro(regErr) }; break }
+      gravados.add(item.key)
 
       const valores = campos
         .map(c => {
@@ -151,34 +172,60 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
           return v ? { registro_id: reg.id, campo_id: c.id, valor: v } : null
         })
         .filter(Boolean) as { registro_id: string; campo_id: string; valor: string }[]
-      if (valores.length > 0) await supabase.from('estoque_registro_valores').insert(valores)
+      if (valores.length > 0) {
+        const { error: errVal } = await supabase.from('estoque_registro_valores').insert(valores)
+        if (errVal) avisos.push(`campos extras de ${item.produtoNome} (${mensagemErro(errVal)})`)
+      }
 
       if (item.produtoId !== '__outro__') {
         const prod = produtos.find(p => p.id === item.produtoId)
         if (prod) {
-          const quantidadeAnterior = prod.quantidade_atual
-          const novaQtd = quantidadeAnterior - parseFloat(item.quantidade)
-          await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd }).eq('id', item.produtoId)
-          prod.quantidade_atual = novaQtd // mantém consistente caso o mesmo produto apareça de novo no loop
-
-          if (prod.quantidade_minima > 0) {
-            fetch('/api/estoque/alerta-critico', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                produtoNome: prod.nome, estoqueNome,
-                quantidadeAnterior, quantidadeNova: novaQtd,
-                quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
-              }),
-            }).catch(() => {})
+          const { saldo, error: errSaldo } = await ajustarSaldo(supabase, item.produtoId, -qtd, { pisoZero: !controlaSaldo(prod) })
+          if (errSaldo || saldo === null) avisos.push(`saldo de ${item.produtoNome} (${mensagemErro(errSaldo)})`)
+          else {
+            setProdutos(prev => prev.map(p => p.id === prod.id ? { ...p, quantidade_atual: saldo } : p))
+            if (controlaSaldo(prod) && prod.quantidade_minima > 0) {
+              fetch('/api/estoque/alerta-critico', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  produtoNome: prod.nome, estoqueNome,
+                  quantidadeAnterior: arred(saldo + qtd), quantidadeNova: saldo,
+                  quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
+                }),
+              }).catch(() => {})
+            }
           }
         }
       }
     }
 
     setSaving(false)
-    window.open(`/print/epi-lote/${loteId}`, '_blank')
-    router.push(`/estoque/${estoqueId}`)
+    if (avisos.length > 0) alert(`Entrega registrada, mas não foi possível atualizar:\n• ${avisos.join('\n• ')}\n\nConfira e ajuste manualmente.`)
+    if (falha) {
+      abaTermo?.close()
+      setItens(prev => prev.filter(i => !gravados.has(i.key)))
+      setError(`${gravados.size} item(ns) gravado(s) e retirado(s) da lista. Falhou em "${falha.item.produtoNome}": ${falha.msg} Os itens que faltam continuam na lista — toque em Registrar de novo para enviar só eles (o termo sai num só).`)
+      return
+    }
+    const url = `/print/epi-lote/${loteId}`
+    if (abaTermo) {
+      abaTermo.location.href = url
+      router.push(`/estoque/${estoqueId}`)
+    } else {
+      setTermoUrl(url)
+    }
   }
+
+  if (termoUrl) return (
+    <div className="px-4 py-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800 space-y-3">
+      <p className="font-medium">Entrega registrada. Abra o termo de responsabilidade para imprimir e o funcionário assinar.</p>
+      <div className="flex flex-wrap gap-2">
+        <a href={termoUrl} target="_blank" rel="noreferrer" className="btn-primary text-sm">Abrir termo</a>
+        <button type="button" onClick={() => router.push(`/estoque/${estoqueId}`)}
+          className="px-4 py-2 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg bg-white">Voltar ao estoque</button>
+      </div>
+    </div>
+  )
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -225,7 +272,7 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
             {itens.map(item => (
               <div key={item.key} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2 border border-[#E2E8F0]">
                 <span className="text-[#0F172A] font-medium">{item.produtoNome} <span className="text-[#94A3B8] font-normal">· {item.quantidade} {item.unidade}</span></span>
-                <button type="button" onClick={() => removerItem(item.key)} className="text-[#94A3B8] hover:text-red-500">
+                <button type="button" onClick={() => removerItem(item.key)} aria-label={`Remover ${item.produtoNome}`} title="Remover item" className="p-2 -m-1 text-[#94A3B8] hover:text-red-500">
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -251,7 +298,7 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
           </div>
           <div className="w-20">
             <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd</label>
-            <input type="number" min="0" step="any" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
+            <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
           </div>
         </div>
 
@@ -288,8 +335,8 @@ export default function FormSaidaEpiLote({ estoqueId, estoqueNome, produtos, cam
             </button>
           )}
         </div>
-        <div className="border-2 border-dashed border-[#E2E8F0] rounded-xl overflow-hidden bg-white">
-          <canvas ref={canvasRef} width={600} height={160} className="w-full"
+        <div className="border-2 border-dashed border-[#E2E8F0] rounded-xl overflow-hidden bg-white touch-none">
+          <canvas ref={canvasRef} width={600} height={160} className="w-full touch-none"
             onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
             onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
         </div>

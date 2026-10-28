@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { converterSeForHeic } from '@/lib/utils/heic'
 import { validarPdf } from '@/lib/utils/pdf'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
+import { mensagemErro } from '@/lib/erros'
+import { parseNumeroBR } from '@/lib/numero'
 
 export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatrimonio = false, onClose, onCreated }: {
   estoqueId: string; malaIdPadrao?: string; modoPatrimonio?: boolean; onClose: () => void; onCreated: () => void
@@ -54,30 +56,39 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
     if (!malaIdPadrao && !modoPatrimonio) carregarMalas()
   }, [estoqueId, malaIdPadrao, modoPatrimonio])
 
+  // Envia para o storage e devolve a URL pública; em caso de erro mostra a mensagem e devolve null
+  async function enviarArquivo(file: File, prefixo = ''): Promise<string | null> {
+    const supabase = createClient()
+    const path = `ferramentas/${estoqueId}/${prefixo}${Date.now()}_${sanitizarNomeArquivo(file.name)}`
+    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
+    if (err) { setError(mensagemErro(err, 'Erro ao enviar arquivo')); return null }
+    return supabase.storage.from('estoque').getPublicUrl(path).data.publicUrl
+  }
+
   async function uploadFoto(fileOriginal: File) {
     setUploadingFoto(true)
-    const file = await converterSeForHeic(fileOriginal)
-    const supabase = createClient()
-    const path = `ferramentas/${estoqueId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
-    if (!err) {
-      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
-      setFotoUrl(data.publicUrl)
+    setError('')
+    try {
+      const url = await enviarArquivo(await converterSeForHeic(fileOriginal))
+      if (url) setFotoUrl(url)
+    } catch (e) {
+      setError(mensagemErro(e as Error, 'Erro ao enviar foto'))
+    } finally {
+      setUploadingFoto(false)
     }
-    setUploadingFoto(false)
   }
 
   async function uploadFoto2(fileOriginal: File) {
     setUploadingFoto2(true)
-    const file = await converterSeForHeic(fileOriginal)
-    const supabase = createClient()
-    const path = `ferramentas/${estoqueId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
-    if (!err) {
-      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
-      setFotoUrl2(data.publicUrl)
+    setError('')
+    try {
+      const url = await enviarArquivo(await converterSeForHeic(fileOriginal))
+      if (url) setFotoUrl2(url)
+    } catch (e) {
+      setError(mensagemErro(e as Error, 'Erro ao enviar foto'))
+    } finally {
+      setUploadingFoto2(false)
     }
-    setUploadingFoto2(false)
   }
 
   async function uploadManual(file: File) {
@@ -85,23 +96,28 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
     if (erro) { setError(erro); return }
     setUploadingManual(true)
     setError('')
-    const supabase = createClient()
-    const path = `ferramentas/${estoqueId}/manual_${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-    const { error: err } = await supabase.storage.from('estoque').upload(path, file, { upsert: true })
-    if (!err) {
-      const { data } = supabase.storage.from('estoque').getPublicUrl(path)
-      setManualUrl(data.publicUrl)
-      setManualNome(file.name)
-    } else {
-      setError(err.message)
+    try {
+      const url = await enviarArquivo(file, 'manual_')
+      if (url) {
+        setManualUrl(url)
+        setManualNome(file.name)
+      }
+    } catch (e) {
+      setError(mensagemErro(e as Error, 'Erro ao enviar manual'))
+    } finally {
+      setUploadingManual(false)
     }
-    setUploadingManual(false)
   }
+
+  const enviando = uploadingFoto || uploadingFoto2 || uploadingManual
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nome.trim()) return
     if (!codigoInterno.trim()) { setError('Informe o código interno/patrimônio.'); return }
+    if (enviando) { setError('Aguarde o envio dos arquivos terminar.'); return }
+    const valorNum = valorAquisicao.trim() ? parseNumeroBR(valorAquisicao) : null
+    if (valorNum != null && (Number.isNaN(valorNum) || valorNum < 0)) { setError('Valor de aquisição inválido.'); return }
     setLoading(true)
     setError('')
     const supabase = createClient()
@@ -113,7 +129,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
       marca: marca.trim() || null,
       modelo: modelo.trim() || null,
       numero_serie: numeroSerie.trim() || null,
-      valor_aquisicao: valorAquisicao ? parseFloat(valorAquisicao) : null,
+      valor_aquisicao: valorNum,
       data_aquisicao: dataAquisicao || null,
       observacoes: observacoes.trim() || null,
       foto_url: fotoUrl || null,
@@ -124,7 +140,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
       mala_id: !ehMala && malaId ? malaId : null,
     })
     if (err) {
-      setError(err.code === '23505' ? 'Já existe uma ferramenta com esse código interno nesta categoria.' : err.message)
+      setError(err.code === '23505' ? 'Já existe uma ferramenta com esse código interno nesta categoria.' : mensagemErro(err, 'Erro ao salvar'))
       setLoading(false)
       return
     }
@@ -136,7 +152,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100dvh-env(safe-area-inset-top))] overflow-y-auto mt-auto sm:mt-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">{modoPatrimonio ? 'Novo Item de Patrimônio' : 'Nova Ferramenta'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
           <div>
@@ -171,7 +187,7 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Valor de aquisição (R$)</label>
-              <input type="number" step="0.01" min="0" className="field" placeholder="0,00" value={valorAquisicao} onChange={e => setValorAquisicao(e.target.value)} />
+              <input type="text" inputMode="decimal" className="field" placeholder="0,00" value={valorAquisicao} onChange={e => setValorAquisicao(e.target.value)} />
             </div>
             <div>
               <label className="block text-sm font-medium text-[#374151] mb-1.5">Data de aquisição</label>
@@ -213,8 +229,13 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
                 {uploadingFoto ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {uploadingFoto ? 'Enviando...' : fotoUrl ? 'Trocar foto' : 'Adicionar foto'}
                 <input type="file" accept="image/*,.heic,.heif" className="hidden" disabled={uploadingFoto}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f) }} />
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadFoto(f) }} />
               </label>
+              {fotoUrl && (
+                <button type="button" onClick={() => setFotoUrl('')} aria-label="Remover foto" title="Remover foto" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
+                  <X size={16} />
+                </button>
+              )}
             </div>
           </div>
           {modoPatrimonio && (
@@ -231,8 +252,13 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
                   {uploadingFoto2 ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploadingFoto2 ? 'Enviando...' : fotoUrl2 ? 'Trocar foto' : 'Adicionar foto'}
                   <input type="file" accept="image/*,.heic,.heif" className="hidden" disabled={uploadingFoto2}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto2(f) }} />
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadFoto2(f) }} />
                 </label>
+                {fotoUrl2 && (
+                  <button type="button" onClick={() => setFotoUrl2('')} aria-label="Remover foto 2" title="Remover foto 2" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
+                    <X size={16} />
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -248,14 +274,19 @@ export default function ModalNovaFerramenta({ estoqueId, malaIdPadrao, modoPatri
                 {uploadingManual ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {uploadingManual ? 'Enviando...' : manualUrl ? 'Trocar PDF' : 'Adicionar PDF'}
                 <input type="file" accept="application/pdf,.pdf" className="hidden" disabled={uploadingManual}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadManual(f) }} />
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadManual(f) }} />
               </label>
+              {manualUrl && (
+                <button type="button" onClick={() => { setManualUrl(''); setManualNome('') }} aria-label="Remover manual" title="Remover manual" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors">
+                  <X size={16} />
+                </button>
+              )}
             </div>
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg transition-colors">Cancelar</button>
-            <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Salvando...' : 'Salvar'}</button>
+            <button type="submit" disabled={loading || enviando} className="btn-primary">{loading ? 'Salvando…' : enviando ? 'Enviando arquivo…' : 'Salvar'}</button>
           </div>
         </form>
       </div>

@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Sparkles, Upload, Loader2, X, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
+import { hojeLocal } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import { numeroOuPadrao } from '@/lib/numero'
 
 type Categoria = 'combustivel' | 'investimento' | 'destinacao' | 'gas'
 
@@ -67,7 +70,7 @@ const CATEGORIA_LABEL: Record<Categoria, string> = {
 function itemVazio(nomeArquivo: string): ItemIA {
   return {
     nomeArquivo, categoria: null, salvo: false, aberto: true,
-    data: new Date().toISOString().split('T')[0],
+    data: hojeLocal(),
     veiculoId: '', combustivelTipo: 'Gasolina', litros: '', valorCombustivel: '',
     item: '', categoriaInvestimento: 'Ferramental', quantidade: '1', valorInvestimento: '',
     cliente: '', material: '', quantidadeKg: '', valorDestinacao: '',
@@ -176,7 +179,7 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
           base = aplicarExtraido(base, parsed)
         }
       } catch (err) {
-        base.erroAnalise = 'Erro ao analisar: ' + String(err)
+        base.erroAnalise = mensagemErro(err as Error, 'Erro ao analisar')
       }
       resultados.push(base)
       setProgresso(p => ({ ...p, feito: p.feito + 1 }))
@@ -211,7 +214,7 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
     } else if (it.categoria === 'investimento') {
       if (!it.item.trim() || !it.valorInvestimento) { atualizar(idx, { erroSalvar: 'Preencha o item e o valor.' }); return false }
       const r = await supabase.from('esg_investimentos').insert({
-        data: it.data, item: it.item.trim(), categoria: it.categoriaInvestimento, quantidade: parseFloat(it.quantidade) || 1, valor: parseFloat(it.valorInvestimento),
+        data: it.data, item: it.item.trim(), categoria: it.categoriaInvestimento, quantidade: numeroOuPadrao(it.quantidade, 1), valor: parseFloat(it.valorInvestimento),
       })
       err = r.error
     } else if (it.categoria === 'destinacao') {
@@ -229,7 +232,7 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
       err = r.error
     }
 
-    if (err) { atualizar(idx, { erroSalvar: err.message }); return false }
+    if (err) { atualizar(idx, { erroSalvar: mensagemErro(err, 'Erro ao salvar') }); return false }
     atualizar(idx, { erroSalvar: null, salvo: true })
     return true
   }
@@ -247,17 +250,26 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
     if (!algumFalhou) onSaved()
   }
 
+  // Fechar: avisa antes de descartar itens analisados e não salvos; se algum
+  // item já foi salvo, fecha pelo onSaved para a página recarregar a lista.
+  function fechar() {
+    const naoSalvos = itens.filter(it => !it.salvo).length
+    if (naoSalvos > 0 && !confirm(`Descartar ${naoSalvos} ite${naoSalvos > 1 ? 'ns analisados' : 'm analisado'} e não salvo${naoSalvos > 1 ? 's' : ''}?`)) return
+    if (itens.some(it => it.salvo)) onSaved()
+    else onClose()
+  }
+
   const pendentes = itens.filter(it => !it.salvo)
   const todosResolvidos = itens.length > 0 && itens.every(it => it.categoria)
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A] flex items-center gap-2">
             <Sparkles size={16} className="text-[#4F7CFF]" /> Adicionar com IA
           </h3>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={fechar} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
@@ -301,7 +313,7 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {!it.salvo && (
-                        <span onClick={e => { e.stopPropagation(); removerItem(idx) }} className="text-[#CBD5E1] hover:text-red-500 p-1">
+                        <span onClick={e => { e.stopPropagation(); removerItem(idx) }} title="Remover item" aria-label="Remover item" role="button" className="text-[#CBD5E1] hover:text-red-500 p-2">
                           <Trash2 size={13} />
                         </span>
                       )}
@@ -355,11 +367,11 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Litros *</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.litros} onChange={e => atualizar(idx, { litros: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.litros} onChange={e => atualizar(idx, { litros: e.target.value })} />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Valor (R$) *</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.valorCombustivel} onChange={e => atualizar(idx, { valorCombustivel: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.valorCombustivel} onChange={e => atualizar(idx, { valorCombustivel: e.target.value })} />
                                 </div>
                               </div>
                             </>
@@ -383,11 +395,11 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Quantidade</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.quantidade} onChange={e => atualizar(idx, { quantidade: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.quantidade} onChange={e => atualizar(idx, { quantidade: e.target.value })} />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Valor (R$) *</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.valorInvestimento} onChange={e => atualizar(idx, { valorInvestimento: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.valorInvestimento} onChange={e => atualizar(idx, { valorInvestimento: e.target.value })} />
                                 </div>
                               </div>
                             </>
@@ -408,11 +420,11 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Quantidade (kg) *</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.quantidadeKg} onChange={e => atualizar(idx, { quantidadeKg: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.quantidadeKg} onChange={e => atualizar(idx, { quantidadeKg: e.target.value })} />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Valor recebido (R$)</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.valorDestinacao} onChange={e => atualizar(idx, { valorDestinacao: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.valorDestinacao} onChange={e => atualizar(idx, { valorDestinacao: e.target.value })} />
                                 </div>
                               </div>
                             </>
@@ -442,11 +454,11 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Quantidade (kg) *</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.quantidadeGasKg} onChange={e => atualizar(idx, { quantidadeGasKg: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.quantidadeGasKg} onChange={e => atualizar(idx, { quantidadeGasKg: e.target.value })} />
                                 </div>
                                 <div>
                                   <label className="block text-xs font-medium text-[#64748B] mb-1">Valor recebido (R$)</label>
-                                  <input type="number" min="0" step="any" className="field text-sm" value={it.valorGas} onChange={e => atualizar(idx, { valorGas: e.target.value })} />
+                                  <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={it.valorGas} onChange={e => atualizar(idx, { valorGas: e.target.value })} />
                                 </div>
                               </div>
                             </>
@@ -467,7 +479,7 @@ export default function ModalImportarEsgIA({ onClose, onSaved }: { onClose: () =
           <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-[#E2E8F0]">
             <span className="text-xs text-[#94A3B8]">{itens.length - pendentes.length}/{itens.length} salvos</span>
             <div className="flex gap-2">
-              <button onClick={onClose} className="text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg px-3 py-1.5">
+              <button onClick={fechar} className="text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] rounded-lg px-3 py-1.5">
                 {pendentes.length === 0 ? 'Fechar' : 'Cancelar'}
               </button>
               {pendentes.length > 0 && (

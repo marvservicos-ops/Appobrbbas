@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAccess } from '@/lib/useAccess'
+import { mensagemErro } from '@/lib/erros'
 import { calcularPendencias, type Pendencia, type Grupo, type IconePendencia } from '@/lib/pendencias'
 import {
   Users, FileText, Send, DollarSign, Package, CalendarClock, Thermometer,
@@ -50,7 +51,7 @@ export default function PainelPendencias() {
         })
       : await sb.from('pendencias_dispensadas').delete().eq('pendencia_id', p.id)
     setSalvando(null)
-    if (error) { setErro('Não foi possível salvar. A tabela pendencias_dispensadas já foi criada no Supabase?'); return }
+    if (error) { setErro(mensagemErro(error, 'Não foi possível salvar')); return }
     setPendencias(lista => lista?.map(x => x.id === p.id ? { ...x, dispensada: ok } : x) ?? null)
   }
 

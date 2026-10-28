@@ -7,6 +7,9 @@ import {
 } from '@/lib/types'
 import { Leaf, Fuel, Hammer, Recycle, Wind, Plus, Pencil, Trash2, X, BarChart3, Sparkles } from 'lucide-react'
 import ModalImportarEsgIA from './ModalImportarEsgIA'
+import { hojeLocal } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import { numeroOuPadrao } from '@/lib/numero'
 
 type Tab = 'combustivel' | 'investimentos' | 'destinacao' | 'gas' | 'relatorios'
 
@@ -98,6 +101,15 @@ function agruparPorMes<T>(items: T[], getData: (i: T) => string, getValor: (i: T
   return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([ym, v]) => ({ label: mesLabel(ym), value: v }))
 }
 
+function ErroCarga({ msg, onRetry }: { msg: string; onRetry: () => void }) {
+  return (
+    <div className="text-center py-6 px-4">
+      <p className="text-sm text-red-600">{msg}</p>
+      <button onClick={onRetry} className="mt-2 text-xs font-medium text-[#4F7CFF] hover:underline">Tentar de novo</button>
+    </div>
+  )
+}
+
 // ── Aba Combustível ────────────────────────────────────
 function ModalCombustivel({ entity, veiculos, onClose, onSaved }: {
   entity?: EsgCombustivel | null
@@ -105,7 +117,7 @@ function ModalCombustivel({ entity, veiculos, onClose, onSaved }: {
   onClose: () => void; onSaved: () => void
 }) {
   const editing = !!entity
-  const [data, setData] = useState(entity?.data ?? new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(entity?.data ?? hojeLocal())
   const [veiculoId, setVeiculoId] = useState(entity?.veiculo_id ?? '')
   const [combustivel, setCombustivel] = useState(entity?.combustivel ?? 'Gasolina')
   const [litros, setLitros] = useState(entity ? String(entity.litros) : '')
@@ -126,16 +138,16 @@ function ModalCombustivel({ entity, veiculos, onClose, onSaved }: {
       ? await supabase.from('esg_combustivel').update(payload).eq('id', entity!.id)
       : await supabase.from('esg_combustivel').insert(payload)
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(mensagemErro(err, 'Erro ao salvar')); return }
     onSaved()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">{editing ? 'Editar abastecimento' : 'Novo abastecimento'}</h3>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -163,11 +175,11 @@ function ModalCombustivel({ entity, veiculos, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Litros *</label>
-              <input type="number" min="0" step="any" className="field" value={litros} onChange={e => setLitros(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={litros} onChange={e => setLitros(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Valor (R$) *</label>
-              <input type="number" min="0" step="any" className="field" value={valor} onChange={e => setValor(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={valor} onChange={e => setValor(e.target.value)} />
             </div>
           </div>
           <div>
@@ -190,13 +202,16 @@ function AbaCombustivel() {
   const [veiculos, setVeiculos] = useState<{ id: string; nome: string; placa: string | null }[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<EsgCombustivel | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
 
   async function load() {
     const sb = createClient()
-    const [{ data: r }, { data: v }] = await Promise.all([
+    const [{ data: r, error: e1 }, { data: v, error: e2 }] = await Promise.all([
       sb.from('esg_combustivel').select('*, veiculo:veiculos(id, nome, placa)').order('data', { ascending: false }),
       sb.from('veiculos').select('id, nome, placa').eq('ativo', true).order('nome'),
     ])
+    if (e1 || e2) { setErro(mensagemErro(e1 ?? e2, 'Erro ao carregar os abastecimentos')); return }
+    setErro(null)
     setRegistros((r ?? []) as EsgCombustivel[])
     setVeiculos((v ?? []) as { id: string; nome: string; placa: string | null }[])
   }
@@ -204,7 +219,8 @@ function AbaCombustivel() {
 
   async function excluir(id: string) {
     if (!confirm('Excluir este abastecimento?')) return
-    await createClient().from('esg_combustivel').delete().eq('id', id)
+    const { error } = await createClient().from('esg_combustivel').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir o abastecimento')); return }
     load()
   }
 
@@ -235,7 +251,9 @@ function AbaCombustivel() {
             <Plus size={13} /> Novo abastecimento
           </button>
         </div>
-        {registros.length === 0 ? (
+        {erro ? (
+          <ErroCarga msg={erro} onRetry={load} />
+        ) : registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum abastecimento registrado</p>
         ) : (
           <div className="overflow-x-auto">
@@ -259,12 +277,12 @@ function AbaCombustivel() {
                     <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.litros)} L</td>
                     <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{fmt(r.valor)}</td>
                     <td className="px-4 py-2.5">
-                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                          <Pencil size={13} />
+                      <div className="flex gap-1 justify-end opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} aria-label="Editar" title="Editar" className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={14} />
                         </button>
-                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                          <Trash2 size={13} />
+                        <button onClick={() => excluir(r.id)} aria-label="Excluir" title="Excluir" className="w-9 h-9 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
@@ -286,7 +304,7 @@ function AbaCombustivel() {
 // ── Aba Investimentos (Melhorias) ──────────────────────
 function ModalInvestimento({ entity, onClose, onSaved }: { entity?: EsgInvestimento | null; onClose: () => void; onSaved: () => void }) {
   const editing = !!entity
-  const [data, setData] = useState(entity?.data ?? new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(entity?.data ?? hojeLocal())
   const [item, setItem] = useState(entity?.item ?? '')
   const [categoria, setCategoria] = useState<EsgInvestimentoCategoria>(entity?.categoria ?? 'Ambiental')
   const [quantidade, setQuantidade] = useState(entity ? String(entity.quantidade) : '1')
@@ -300,22 +318,22 @@ function ModalInvestimento({ entity, onClose, onSaved }: { entity?: EsgInvestime
     if (!item.trim()) { setError('Informe o item.'); return }
     if (!valor || parseFloat(valor) < 0) { setError('Informe o valor.'); return }
     setSaving(true)
-    const payload = { data, item: item.trim(), categoria, quantidade: parseFloat(quantidade) || 1, valor: parseFloat(valor), observacoes: observacoes || null }
+    const payload = { data, item: item.trim(), categoria, quantidade: numeroOuPadrao(quantidade, 1), valor: parseFloat(valor), observacoes: observacoes || null }
     const supabase = createClient()
     const { error: err } = editing
       ? await supabase.from('esg_investimentos').update(payload).eq('id', entity!.id)
       : await supabase.from('esg_investimentos').insert(payload)
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(mensagemErro(err, 'Erro ao salvar')); return }
     onSaved()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">{editing ? 'Editar investimento' : 'Novo investimento'}</h3>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -340,11 +358,11 @@ function ModalInvestimento({ entity, onClose, onSaved }: { entity?: EsgInvestime
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Quantidade</label>
-              <input type="number" min="0" step="any" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Valor (R$) *</label>
-              <input type="number" min="0" step="any" className="field" value={valor} onChange={e => setValor(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={valor} onChange={e => setValor(e.target.value)} />
             </div>
           </div>
           <div>
@@ -366,16 +384,20 @@ function AbaInvestimentos() {
   const [registros, setRegistros] = useState<EsgInvestimento[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<EsgInvestimento | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
 
   async function load() {
-    const { data } = await createClient().from('esg_investimentos').select('*').order('data', { ascending: false })
+    const { data, error } = await createClient().from('esg_investimentos').select('*').order('data', { ascending: false })
+    if (error) { setErro(mensagemErro(error, 'Erro ao carregar os investimentos')); return }
+    setErro(null)
     setRegistros((data ?? []) as EsgInvestimento[])
   }
   useEffect(() => { load() }, [])
 
   async function excluir(id: string) {
     if (!confirm('Excluir este investimento?')) return
-    await createClient().from('esg_investimentos').delete().eq('id', id)
+    const { error } = await createClient().from('esg_investimentos').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir o investimento')); return }
     load()
   }
 
@@ -402,7 +424,9 @@ function AbaInvestimentos() {
             <Plus size={13} /> Novo investimento
           </button>
         </div>
-        {registros.length === 0 ? (
+        {erro ? (
+          <ErroCarga msg={erro} onRetry={load} />
+        ) : registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum investimento registrado</p>
         ) : (
           <div className="overflow-x-auto">
@@ -428,12 +452,12 @@ function AbaInvestimentos() {
                     <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.quantidade)}</td>
                     <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{fmt(r.valor)}</td>
                     <td className="px-4 py-2.5">
-                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                          <Pencil size={13} />
+                      <div className="flex gap-1 justify-end opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} aria-label="Editar" title="Editar" className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={14} />
                         </button>
-                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                          <Trash2 size={13} />
+                        <button onClick={() => excluir(r.id)} aria-label="Excluir" title="Excluir" className="w-9 h-9 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
@@ -455,7 +479,7 @@ function AbaInvestimentos() {
 // ── Aba Destinação dos Materiais ───────────────────────
 function ModalDestinacao({ entity, onClose, onSaved }: { entity?: EsgDestinacaoMaterial | null; onClose: () => void; onSaved: () => void }) {
   const editing = !!entity
-  const [data, setData] = useState(entity?.data ?? new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(entity?.data ?? hojeLocal())
   const [cliente, setCliente] = useState(entity?.cliente ?? '')
   const [material, setMaterial] = useState(entity?.material ?? '')
   const [quantidade, setQuantidade] = useState(entity ? String(entity.quantidade) : '')
@@ -479,16 +503,16 @@ function ModalDestinacao({ entity, onClose, onSaved }: { entity?: EsgDestinacaoM
       ? await supabase.from('esg_destinacao_materiais').update(payload).eq('id', entity!.id)
       : await supabase.from('esg_destinacao_materiais').insert(payload)
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(mensagemErro(err, 'Erro ao salvar')); return }
     onSaved()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">{editing ? 'Editar destinação' : 'Nova destinação'}</h3>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -508,11 +532,11 @@ function ModalDestinacao({ entity, onClose, onSaved }: { entity?: EsgDestinacaoM
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Quantidade (kg) *</label>
-              <input type="number" min="0" step="any" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Valor recebido (R$)</label>
-              <input type="number" min="0" step="any" className="field" value={valor} onChange={e => setValor(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={valor} onChange={e => setValor(e.target.value)} />
             </div>
           </div>
           <div>
@@ -534,16 +558,20 @@ function AbaDestinacaoMateriais() {
   const [registros, setRegistros] = useState<EsgDestinacaoMaterial[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<EsgDestinacaoMaterial | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
 
   async function load() {
-    const { data } = await createClient().from('esg_destinacao_materiais').select('*').order('data', { ascending: false })
+    const { data, error } = await createClient().from('esg_destinacao_materiais').select('*').order('data', { ascending: false })
+    if (error) { setErro(mensagemErro(error, 'Erro ao carregar as destinações')); return }
+    setErro(null)
     setRegistros((data ?? []) as EsgDestinacaoMaterial[])
   }
   useEffect(() => { load() }, [])
 
   async function excluir(id: string) {
     if (!confirm('Excluir esta destinação?')) return
-    await createClient().from('esg_destinacao_materiais').delete().eq('id', id)
+    const { error } = await createClient().from('esg_destinacao_materiais').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir a destinação')); return }
     load()
   }
 
@@ -574,7 +602,9 @@ function AbaDestinacaoMateriais() {
             <Plus size={13} /> Nova destinação
           </button>
         </div>
-        {registros.length === 0 ? (
+        {erro ? (
+          <ErroCarga msg={erro} onRetry={load} />
+        ) : registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhuma destinação registrada</p>
         ) : (
           <div className="overflow-x-auto">
@@ -598,12 +628,12 @@ function AbaDestinacaoMateriais() {
                     <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.quantidade)} kg</td>
                     <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{r.valor != null ? fmt(r.valor) : '—'}</td>
                     <td className="px-4 py-2.5">
-                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                          <Pencil size={13} />
+                      <div className="flex gap-1 justify-end opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} aria-label="Editar" title="Editar" className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={14} />
                         </button>
-                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                          <Trash2 size={13} />
+                        <button onClick={() => excluir(r.id)} aria-label="Excluir" title="Excluir" className="w-9 h-9 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
@@ -631,7 +661,7 @@ function ModalReciclagemGas({ entity, contratos, onClose, onSaved }: {
   onClose: () => void; onSaved: () => void
 }) {
   const editing = !!entity
-  const [data, setData] = useState(entity?.data ?? new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(entity?.data ?? hojeLocal())
   const [contratoId, setContratoId] = useState(entity?.manutencao_contrato_id ?? '')
   const [empresaEmissora, setEmpresaEmissora] = useState(entity?.empresa_emissora ?? '')
   const [tipoGas, setTipoGas] = useState(entity?.tipo_gas ?? '')
@@ -663,16 +693,16 @@ function ModalReciclagemGas({ entity, contratos, onClose, onSaved }: {
       ? await supabase.from('esg_reciclagem_gas').update(payload).eq('id', entity!.id)
       : await supabase.from('esg_reciclagem_gas').insert(payload)
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(mensagemErro(err, 'Erro ao salvar')); return }
     onSaved()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h3 className="font-syne font-semibold text-[#0F172A]">{editing ? 'Editar reciclagem de gás' : 'Nova reciclagem de gás'}</h3>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -704,11 +734,11 @@ function ModalReciclagemGas({ entity, contratos, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Quantidade (kg) *</label>
-              <input type="number" min="0" step="any" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium text-[#64748B] mb-1">Valor recebido (R$)</label>
-              <input type="number" min="0" step="any" className="field" value={valorRecebido} onChange={e => setValorRecebido(e.target.value)} />
+              <input type="number" min="0" step="any" inputMode="decimal" className="field" value={valorRecebido} onChange={e => setValorRecebido(e.target.value)} />
             </div>
           </div>
           <div>
@@ -731,13 +761,16 @@ function AbaReciclagemGas() {
   const [contratos, setContratos] = useState<{ id: string; numero_contrato: string | null; empresa?: { razao_social: string; apelido?: string | null } | null }[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<EsgReciclagemGas | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
 
   async function load() {
     const sb = createClient()
-    const [{ data: r }, { data: c }] = await Promise.all([
+    const [{ data: r, error: e1 }, { data: c, error: e2 }] = await Promise.all([
       sb.from('esg_reciclagem_gas').select('*, contrato:contratos_manutencao(id, numero_contrato, empresa:empresas(razao_social, apelido))').order('data', { ascending: false }),
       sb.from('contratos_manutencao').select('id, numero_contrato, empresa:empresas(razao_social, apelido)').eq('ativo', true),
     ])
+    if (e1 || e2) { setErro(mensagemErro(e1 ?? e2, 'Erro ao carregar a reciclagem de gás')); return }
+    setErro(null)
     setRegistros((r ?? []) as EsgReciclagemGas[])
     setContratos((c ?? []) as any)
   }
@@ -745,7 +778,8 @@ function AbaReciclagemGas() {
 
   async function excluir(id: string) {
     if (!confirm('Excluir este registro?')) return
-    await createClient().from('esg_reciclagem_gas').delete().eq('id', id)
+    const { error } = await createClient().from('esg_reciclagem_gas').delete().eq('id', id)
+    if (error) { alert(mensagemErro(error, 'Erro ao excluir o registro')); return }
     load()
   }
 
@@ -776,7 +810,9 @@ function AbaReciclagemGas() {
             <Plus size={13} /> Novo registro
           </button>
         </div>
-        {registros.length === 0 ? (
+        {erro ? (
+          <ErroCarga msg={erro} onRetry={load} />
+        ) : registros.length === 0 ? (
           <p className="text-sm text-[#94A3B8] text-center py-6">Nenhum registro ainda</p>
         ) : (
           <div className="overflow-x-auto">
@@ -802,12 +838,12 @@ function AbaReciclagemGas() {
                     <td className="px-4 py-2.5 text-right text-[#374151] whitespace-nowrap">{fmtNum(r.quantidade)} kg</td>
                     <td className="px-4 py-2.5 text-right font-semibold text-[#0F172A] whitespace-nowrap">{r.valor_recebido != null ? fmt(r.valor_recebido) : '—'}</td>
                     <td className="px-4 py-2.5">
-                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setEditing(r); setShowModal(true) }} className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
-                          <Pencil size={13} />
+                      <div className="flex gap-1 justify-end opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditing(r); setShowModal(true) }} aria-label="Editar" title="Editar" className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#EEF2FF] text-[#94A3B8] hover:text-[#4F7CFF]">
+                          <Pencil size={14} />
                         </button>
-                        <button onClick={() => excluir(r.id)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
-                          <Trash2 size={13} />
+                        <button onClick={() => excluir(r.id)} aria-label="Excluir" title="Excluir" className="w-9 h-9 flex items-center justify-center rounded hover:bg-red-50 text-[#94A3B8] hover:text-red-400">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>

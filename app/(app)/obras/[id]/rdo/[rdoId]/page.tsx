@@ -9,6 +9,15 @@ import { converterSeForHeic } from '@/lib/utils/heic'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Obra, RDO, RDOClima, RDOMaoObra, RDOEquipamento, RDOAtividade, RDOOcorrencia, RDOComentario, RDOFoto, RDOAssinatura } from '@/lib/types'
 import Link from 'next/link'
+import { diasEntre } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+
+// Progresso digitado: vazio = 100; aceita 0 e limita a 0–100
+function parseProgresso(v: string | undefined): number {
+  if (v == null || v.trim() === '') return 100
+  const n = parseInt(v, 10)
+  return Number.isNaN(n) ? 100 : Math.min(100, Math.max(0, n))
+}
 
 const STATUS_CONFIG = {
   preenchendo: { label: 'Preenchendo', cls: 'bg-blue-100 text-blue-700' },
@@ -35,8 +44,11 @@ export default function RDOPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const [enviandoFotos, setEnviandoFotos] = useState(0)
+  const [erroCarregar, setErroCarregar] = useState('')
 
   async function load() {
+    setErroCarregar('')
     const supabase = createClient()
     const [obraRes, rdoRes, climaRes, maoRes, eqRes, atRes, ocRes, comRes, fotosRes, assRes] = await Promise.all([
       supabase.from('obras').select('*, cliente:clientes(*)').eq('id', obraId).single(),
@@ -50,6 +62,9 @@ export default function RDOPage() {
       supabase.from('rdo_fotos').select('*').eq('rdo_id', rdoId).order('ordem'),
       supabase.from('rdo_assinaturas').select('*').eq('rdo_id', rdoId),
     ])
+    const erroLeitura = [obraRes, rdoRes].find(x => x.error && x.error.code !== 'PGRST116')?.error
+      ?? [climaRes, maoRes, eqRes, atRes, ocRes, comRes, fotosRes, assRes].find(x => x.error)?.error
+    if (erroLeitura) setErroCarregar(mensagemErro(erroLeitura, 'Não foi possível carregar o RDO'))
     if (obraRes.data) setObra(obraRes.data as Obra)
     if (rdoRes.data) setRdo(rdoRes.data as RDO)
     if (climaRes.data) setClima(climaRes.data as RDOClima[])
@@ -65,191 +80,226 @@ export default function RDOPage() {
 
   useEffect(() => { load() }, [rdoId])
 
+  // Mostra o erro e devolve true — a tela só muda quando o banco confirmou
+  function falhou(error: { message: string } | null, contexto: string): boolean {
+    if (!error) return false
+    alert(mensagemErro(error, contexto))
+    return true
+  }
+
   async function updateStatus(status: RDO['status']) {
     const supabase = createClient()
-    await supabase.from('rdos').update({ status }).eq('id', rdoId)
-    setRdo(r => r ? { ...r, status } : r)
+    const { error } = await supabase.from('rdos').update({ status }).eq('id', rdoId)
     setShowStatusMenu(false)
+    if (falhou(error, 'Não foi possível mudar o status')) return
+    setRdo(r => r ? { ...r, status } : r)
   }
 
   async function updateIndice(val: string) {
+    if ((rdo?.indice_pluviometrico ?? '') === val) return
     const supabase = createClient()
-    await supabase.from('rdos').update({ indice_pluviometrico: val || null }).eq('id', rdoId)
+    const { error } = await supabase.from('rdos').update({ indice_pluviometrico: val || null }).eq('id', rdoId)
+    if (falhou(error, 'Não foi possível salvar o índice pluviométrico')) return
+    setRdo(r => r ? { ...r, indice_pluviometrico: val || undefined } as RDO : r)
   }
 
   // ── CLIMA ─────────────────────────────────────────────
   async function togglePeriodo(c: RDOClima) {
     const supabase = createClient()
-    await supabase.from('rdo_clima').update({ ativo: !c.ativo }).eq('id', c.id)
+    const { error } = await supabase.from('rdo_clima').update({ ativo: !c.ativo }).eq('id', c.id)
+    if (falhou(error, 'Não foi possível salvar o clima')) return
     setClima(prev => prev.map(x => x.id === c.id ? { ...x, ativo: !x.ativo } : x))
   }
 
   async function updateClima(c: RDOClima, field: 'tempo' | 'condicao', value: string) {
     const supabase = createClient()
-    await supabase.from('rdo_clima').update({ [field]: value }).eq('id', c.id)
+    const { error } = await supabase.from('rdo_clima').update({ [field]: value }).eq('id', c.id)
+    if (falhou(error, 'Não foi possível salvar o clima')) return
     setClima(prev => prev.map(x => x.id === c.id ? { ...x, [field]: value } : x))
   }
 
-  // ── MÃO DE OBRA ───────────────────────────────────────
-  async function addMaoObra(funcao: string, tipo: string, quantidade: number) {
-    const supabase = createClient()
-    const { data } = await supabase.from('rdo_mao_obra').insert({ rdo_id: rdoId, funcao, tipo, quantidade }).select().single()
-    if (data) setMaoObra(prev => [...prev, data as RDOMaoObra])
+  // ── Itens das listas (inserir / editar / excluir) ─────
+  async function inserirItem<T>(tabela: string, dados: Record<string, unknown>, setter: React.Dispatch<React.SetStateAction<T[]>>, contexto: string): Promise<boolean> {
+    const { data, error } = await createClient().from(tabela).insert({ rdo_id: rdoId, ...dados }).select().single()
+    if (falhou(error, contexto)) return false
+    if (data) setter(prev => [...prev, data as T])
+    return true
   }
+
+  async function editarItem<T extends { id: string }>(tabela: string, id: string, dados: Partial<T>, setter: React.Dispatch<React.SetStateAction<T[]>>, contexto: string): Promise<boolean> {
+    const { error } = await createClient().from(tabela).update(dados as Record<string, unknown>).eq('id', id)
+    if (falhou(error, contexto)) return false
+    setter(prev => prev.map(x => x.id === id ? { ...x, ...dados } : x))
+    return true
+  }
+
+  async function excluirItem<T extends { id: string }>(tabela: string, id: string, descricao: string, setter: React.Dispatch<React.SetStateAction<T[]>>) {
+    if (!confirm(`Excluir ${descricao}?`)) return
+    const { error } = await createClient().from(tabela).delete().eq('id', id)
+    if (falhou(error, 'Não foi possível excluir')) return
+    setter(prev => prev.filter(x => x.id !== id))
+  }
+
+  // ── MÃO DE OBRA ───────────────────────────────────────
+  const addMaoObra = (funcao: string, tipo: string, quantidade: number) =>
+    inserirItem<RDOMaoObra>('rdo_mao_obra', { funcao, tipo, quantidade }, setMaoObra, 'Não foi possível adicionar a mão de obra')
 
   async function updateQtdMao(id: string, delta: number) {
     const item = maoObra.find(m => m.id === id)
     if (!item) return
     const novaQtd = Math.max(1, item.quantidade + delta)
-    const supabase = createClient()
-    await supabase.from('rdo_mao_obra').update({ quantidade: novaQtd }).eq('id', id)
-    setMaoObra(prev => prev.map(m => m.id === id ? { ...m, quantidade: novaQtd } : m))
-  }
-
-  async function removeMaoObra(id: string) {
-    const supabase = createClient()
-    await supabase.from('rdo_mao_obra').delete().eq('id', id)
-    setMaoObra(prev => prev.filter(m => m.id !== id))
+    await editarItem<RDOMaoObra>('rdo_mao_obra', id, { quantidade: novaQtd }, setMaoObra, 'Não foi possível alterar a quantidade')
   }
 
   // ── EQUIPAMENTOS ──────────────────────────────────────
-  async function addEquipamento(nome: string, quantidade: number) {
-    const supabase = createClient()
-    const { data } = await supabase.from('rdo_equipamentos').insert({ rdo_id: rdoId, nome, quantidade }).select().single()
-    if (data) setEquipamentos(prev => [...prev, data as RDOEquipamento])
-  }
+  const addEquipamento = (nome: string, quantidade: number) =>
+    inserirItem<RDOEquipamento>('rdo_equipamentos', { nome, quantidade }, setEquipamentos, 'Não foi possível adicionar o equipamento')
 
   async function updateQtdEq(id: string, delta: number) {
     const item = equipamentos.find(e => e.id === id)
     if (!item) return
     const novaQtd = Math.max(1, item.quantidade + delta)
-    const supabase = createClient()
-    await supabase.from('rdo_equipamentos').update({ quantidade: novaQtd }).eq('id', id)
-    setEquipamentos(prev => prev.map(e => e.id === id ? { ...e, quantidade: novaQtd } : e))
-  }
-
-  async function removeEquipamento(id: string) {
-    const supabase = createClient()
-    await supabase.from('rdo_equipamentos').delete().eq('id', id)
-    setEquipamentos(prev => prev.filter(e => e.id !== id))
+    await editarItem<RDOEquipamento>('rdo_equipamentos', id, { quantidade: novaQtd }, setEquipamentos, 'Não foi possível alterar a quantidade')
   }
 
   // ── ATIVIDADES ────────────────────────────────────────
-  async function addAtividade(descricao: string, progresso: number, status_ativ: string) {
-    const supabase = createClient()
-    const { data } = await supabase.from('rdo_atividades').insert({ rdo_id: rdoId, descricao, progresso, status_ativ, ordem: atividades.length }).select().single()
-    if (data) setAtividades(prev => [...prev, data as RDOAtividade])
-  }
-
-  async function removeAtividade(id: string) {
-    const supabase = createClient()
-    await supabase.from('rdo_atividades').delete().eq('id', id)
-    setAtividades(prev => prev.filter(a => a.id !== id))
-  }
+  const addAtividade = (descricao: string, progresso: number, status_ativ: string) =>
+    inserirItem<RDOAtividade>('rdo_atividades', { descricao, progresso, status_ativ, ordem: atividades.length }, setAtividades, 'Não foi possível adicionar a atividade')
 
   // ── OCORRÊNCIAS ───────────────────────────────────────
-  async function addOcorrencia(descricao: string) {
-    const supabase = createClient()
-    const { data } = await supabase.from('rdo_ocorrencias').insert({ rdo_id: rdoId, descricao }).select().single()
-    if (data) setOcorrencias(prev => [...prev, data as RDOOcorrencia])
-  }
-
-  async function removeOcorrencia(id: string) {
-    const supabase = createClient()
-    await supabase.from('rdo_ocorrencias').delete().eq('id', id)
-    setOcorrencias(prev => prev.filter(o => o.id !== id))
-  }
+  const addOcorrencia = (descricao: string) =>
+    inserirItem<RDOOcorrencia>('rdo_ocorrencias', { descricao }, setOcorrencias, 'Não foi possível adicionar a ocorrência')
 
   // ── COMENTÁRIOS ───────────────────────────────────────
-  async function addComentario(autor: string, texto: string) {
-    const supabase = createClient()
-    const { data } = await supabase.from('rdo_comentarios').insert({ rdo_id: rdoId, autor, texto }).select().single()
-    if (data) setComentarios(prev => [...prev, data as RDOComentario])
-  }
-
-  async function removeComentario(id: string) {
-    const supabase = createClient()
-    await supabase.from('rdo_comentarios').delete().eq('id', id)
-    setComentarios(prev => prev.filter(c => c.id !== id))
-  }
+  const addComentario = (autor: string, texto: string) =>
+    inserirItem<RDOComentario>('rdo_comentarios', { autor, texto }, setComentarios, 'Não foi possível adicionar o comentário')
 
   // ── FOTOS ─────────────────────────────────────────────
   async function uploadFotos(files: FileList) {
+    const lista = Array.from(files)
+    if (lista.length === 0) return
     const supabase = createClient()
-    for (const fileOriginal of Array.from(files)) {
-      const file = await converterSeForHeic(fileOriginal)
-      const path = `${rdoId}/${Date.now()}_${sanitizarNomeArquivo(file.name)}`
-      const { error } = await supabase.storage.from('rdo-fotos').upload(path, file)
-      if (!error) {
-        const { data: urlData } = supabase.storage.from('rdo-fotos').getPublicUrl(path)
-        const { data } = await supabase.from('rdo_fotos').insert({ rdo_id: rdoId, url: urlData.publicUrl, path, ordem: fotos.length }).select().single()
-        if (data) setFotos(prev => [...prev, data as RDOFoto])
+    const base = fotos.length
+    const falhas: string[] = []
+    setEnviandoFotos(lista.length)
+    try {
+      for (let i = 0; i < lista.length; i++) {
+        const fileOriginal = lista[i]
+        try {
+          const file = await converterSeForHeic(fileOriginal)
+          const path = `${rdoId}/${Date.now()}_${i}_${sanitizarNomeArquivo(file.name)}`
+          const { error } = await supabase.storage.from('rdo-fotos').upload(path, file)
+          if (error) { console.error('upload foto RDO:', error); falhas.push(fileOriginal.name); continue }
+          const { data: urlData } = supabase.storage.from('rdo-fotos').getPublicUrl(path)
+          const { data, error: errFoto } = await supabase.from('rdo_fotos').insert({ rdo_id: rdoId, url: urlData.publicUrl, path, ordem: base + i }).select().single()
+          if (errFoto) {
+            console.error('gravar foto RDO:', errFoto)
+            await supabase.storage.from('rdo-fotos').remove([path])
+            falhas.push(fileOriginal.name)
+            continue
+          }
+          if (data) setFotos(prev => [...prev, data as RDOFoto])
+        } catch (e) {
+          console.error('foto RDO:', e)
+          falhas.push(fileOriginal.name)
+        } finally {
+          setEnviandoFotos(n => Math.max(0, n - 1))
+        }
       }
+    } finally {
+      setEnviandoFotos(0)
     }
+    if (falhas.length > 0) alert(`Não foi possível enviar ${falhas.length === 1 ? 'a foto' : `${falhas.length} fotos`}: ${falhas.join(', ')}. Verifique a internet e tente de novo.`)
   }
 
   async function updateLegenda(id: string, legenda: string) {
-    const supabase = createClient()
-    await supabase.from('rdo_fotos').update({ legenda }).eq('id', id)
-    setFotos(prev => prev.map(f => f.id === id ? { ...f, legenda } : f))
+    if ((fotos.find(f => f.id === id)?.legenda ?? '') === legenda) return
+    await editarItem<RDOFoto>('rdo_fotos', id, { legenda }, setFotos, 'Não foi possível salvar a legenda')
   }
 
   async function removeFoto(foto: RDOFoto) {
+    if (!confirm('Excluir esta foto do RDO?')) return
     const supabase = createClient()
+    const { error } = await supabase.from('rdo_fotos').delete().eq('id', foto.id)
+    if (falhou(error, 'Não foi possível excluir a foto')) return
     if (foto.path) await supabase.storage.from('rdo-fotos').remove([foto.path])
-    await supabase.from('rdo_fotos').delete().eq('id', foto.id)
     setFotos(prev => prev.filter(f => f.id !== foto.id))
   }
 
   // ── ASSINATURAS ───────────────────────────────────────
-  async function salvarAssinaturaBlob(tipo: string, nome: string, blob: Blob) {
+  async function salvarAssinaturaBlob(tipo: string, nome: string, blob: Blob): Promise<boolean> {
     setSaving(true)
-    const supabase = createClient()
-    const path = `rdo/${rdoId}/${tipo}_${Date.now()}.png`
-    const { error } = await supabase.storage.from('assinaturas').upload(path, blob, { upsert: true })
-    if (!error) {
+    try {
+      const supabase = createClient()
+      const path = `rdo/${rdoId}/${tipo}_${Date.now()}.png`
+      const { error } = await supabase.storage.from('assinaturas').upload(path, blob, { upsert: true })
+      if (falhou(error, 'Não foi possível enviar a assinatura')) return false
       const { data: urlData } = supabase.storage.from('assinaturas').getPublicUrl(path)
       const existing = assinaturas.find(a => a.tipo === tipo)
+      const agora = new Date().toISOString()
       if (existing) {
-        await supabase.from('rdo_assinaturas').update({ assinatura_url: urlData.publicUrl, nome, assinado_em: new Date().toISOString() }).eq('id', existing.id)
-        setAssinaturas(prev => prev.map(a => a.tipo === tipo ? { ...a, assinatura_url: urlData.publicUrl, nome, assinado_em: new Date().toISOString() } : a))
+        const { error: errUpd } = await supabase.from('rdo_assinaturas').update({ assinatura_url: urlData.publicUrl, nome, assinado_em: agora }).eq('id', existing.id)
+        if (falhou(errUpd, 'Não foi possível salvar a assinatura')) return false
+        setAssinaturas(prev => prev.map(a => a.tipo === tipo ? { ...a, assinatura_url: urlData.publicUrl, nome, assinado_em: agora } : a))
       } else {
-        const { data } = await supabase.from('rdo_assinaturas').insert({ rdo_id: rdoId, tipo, nome, assinatura_url: urlData.publicUrl, assinado_em: new Date().toISOString() }).select().single()
+        const { data, error: errIns } = await supabase.from('rdo_assinaturas').insert({ rdo_id: rdoId, tipo, nome, assinatura_url: urlData.publicUrl, assinado_em: agora }).select().single()
+        if (falhou(errIns, 'Não foi possível salvar a assinatura')) return false
         if (data) setAssinaturas(prev => [...prev, data as RDOAssinatura])
       }
+      return true
+    } catch (e) {
+      alert(mensagemErro(e as Error, 'Não foi possível salvar a assinatura'))
+      return false
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
-  async function salvarAssinatura(tipo: string, nome: string, canvasRef: React.RefObject<HTMLCanvasElement>) {
+  async function salvarAssinatura(tipo: string, nome: string, canvasRef: React.RefObject<HTMLCanvasElement>): Promise<boolean> {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas) return false
     const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'))
-    if (!blob) return
-    await salvarAssinaturaBlob(tipo, nome, blob)
+    if (!blob) return false
+    return salvarAssinaturaBlob(tipo, nome, blob)
   }
 
-  async function removerAssinatura(tipo: string) {
+  // Renomear o assinante de uma assinatura já feita
+  async function salvarNomeAssinante(tipo: string, nome: string) {
     const existing = assinaturas.find(a => a.tipo === tipo)
-    if (!existing) return
+    if (!existing || (existing.nome ?? '') === nome) return
+    await editarItem<RDOAssinatura>('rdo_assinaturas', existing.id, { nome }, setAssinaturas, 'Não foi possível salvar o nome do assinante')
+  }
+
+  async function removerAssinatura(tipo: string): Promise<boolean> {
+    const existing = assinaturas.find(a => a.tipo === tipo)
+    if (!existing) return false
+    if (!confirm('Remover esta assinatura?')) return false
     const supabase = createClient()
-    await supabase.from('rdo_assinaturas').delete().eq('id', existing.id)
+    const { error } = await supabase.from('rdo_assinaturas').delete().eq('id', existing.id)
+    if (falhou(error, 'Não foi possível remover a assinatura')) return false
     setAssinaturas(prev => prev.filter(a => a.tipo !== tipo))
+    return true
   }
 
   if (loading) return <div className="flex items-center justify-center h-screen"><Loader2 size={28} className="animate-spin text-[#4F7CFF]" /></div>
-  if (!rdo || !obra) return <div className="p-8 text-center text-[#64748B]">RDO não encontrado.</div>
+  if (!rdo || !obra) return (
+    <div className="p-8 text-center text-[#64748B]">
+      <p>{erroCarregar || 'RDO não encontrado.'}</p>
+      {erroCarregar && <button onClick={() => { setLoading(true); load() }} className="btn-primary text-sm mx-auto mt-4">Tentar de novo</button>}
+    </div>
+  )
 
   const dataRdo = new Date(rdo.data + 'T12:00:00')
   const diaSemana = DIAS_SEMANA[dataRdo.getDay()]
   const sc = STATUS_CONFIG[rdo.status]
 
-  const startDate = obra.data_inicio ? new Date(obra.data_inicio + 'T00:00:00') : null
-  const endDate = obra.previsao_termino ? new Date(obra.previsao_termino + 'T00:00:00') : null
-  const today = new Date()
-  const prazoContratual = startDate && endDate ? Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000) : null
-  const prazoDecorrido = startDate ? Math.max(0, Math.ceil((today.getTime() - startDate.getTime()) / 86400000)) : null
-  const prazoVencer = endDate ? Math.max(0, Math.ceil((endDate.getTime() - today.getTime()) / 86400000)) : null
+  // Prazos contados até a data do RDO (não a de hoje): reabrir um RDO antigo mostra os mesmos números
+  const inicio = obra.data_inicio?.slice(0, 10)
+  const termino = obra.previsao_termino?.slice(0, 10)
+  const dataRef = rdo.data.slice(0, 10)
+  const prazoContratual = inicio && termino ? diasEntre(inicio, termino) : null
+  const prazoDecorrido = inicio ? Math.max(0, diasEntre(inicio, dataRef)) : null
+  const prazoVencer = termino ? Math.max(0, diasEntre(dataRef, termino)) : null
 
   const periodoLabel: Record<string, string> = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
 
@@ -257,7 +307,7 @@ export default function RDOPage() {
     <div className="flex flex-col h-full min-h-screen bg-[#F8FAFC]">
       {/* Header */}
       <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center px-3 md:px-4 gap-2 md:gap-3 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-20">
-        <Link href={`/obras/${obraId}?tab=relatorios`} className="flex items-center gap-1.5 text-sm text-[#64748B] hover:text-[#0F172A]">
+        <Link href={`/obras/${obraId}?tab=relatorios`} aria-label="Voltar para a obra" title="Voltar para a obra" className="flex items-center gap-1.5 p-2 -ml-2 text-sm text-[#64748B] hover:text-[#0F172A]">
           <ArrowLeft size={16} />
         </Link>
         <span className="text-sm font-medium text-[#0F172A] truncate flex-1">
@@ -341,8 +391,8 @@ export default function RDOPage() {
               </div>
               <div className="flex items-center gap-3">
                 <label className="text-xs text-[#64748B] whitespace-nowrap">Índice pluviométrico (mm)</label>
-                <input defaultValue={rdo.indice_pluviometrico ?? ''} placeholder="Ex: 5.30"
-                  onBlur={e => updateIndice(e.target.value)}
+                <input defaultValue={rdo.indice_pluviometrico ?? ''} placeholder="Ex: 5.30" inputMode="decimal"
+                  onBlur={e => updateIndice(e.target.value.trim())}
                   className="field text-sm w-32" />
               </div>
             </div>
@@ -356,19 +406,22 @@ export default function RDOPage() {
                 { key: 'funcao', label: 'Função', placeholder: 'Ex: Encarregado de Refrigeração' },
                 { key: 'tipo', label: 'Tipo', type: 'select', options: [{ value: 'direta', label: 'Mão de Obra Direta' }, { value: 'indireta', label: 'Mão de Obra Indireta' }] },
               ]}
-              onAdd={(vals) => addMaoObra(vals.funcao, vals.tipo || 'direta', 1)}
-              renderItem={(item) => (
-                <div key={item.id} className="flex items-center gap-3 p-2.5 bg-[#F8FAFC] rounded-lg">
+              onAdd={(vals) => addMaoObra(vals.funcao.trim(), vals.tipo || 'direta', 1)}
+              valoresDe={item => ({ funcao: item.funcao, tipo: item.tipo })}
+              onEdit={(item, vals) => editarItem<RDOMaoObra>('rdo_mao_obra', item.id, { funcao: vals.funcao.trim(), tipo: (vals.tipo || 'direta') as RDOMaoObra['tipo'] }, setMaoObra, 'Não foi possível salvar a mão de obra')}
+              renderItem={(item, editar) => (
+                <div key={item.id} className="flex items-center gap-2 p-2.5 bg-[#F8FAFC] rounded-lg">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[#0F172A] truncate">{item.funcao}</p>
                     <p className="text-xs text-[#64748B]">{item.tipo === 'direta' ? 'Mão de Obra Direta' : 'Mão de Obra Indireta'}</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => updateQtdMao(item.id, -1)} className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-xs">−</button>
-                    <span className="w-8 text-center text-sm font-semibold">{item.quantidade}</span>
-                    <button onClick={() => updateQtdMao(item.id, +1)} className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-xs">+</button>
+                    <button onClick={() => updateQtdMao(item.id, -1)} aria-label="Diminuir quantidade" title="Diminuir quantidade" className="w-8 h-8 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-sm">−</button>
+                    <span className="w-7 text-center text-sm font-semibold">{item.quantidade}</span>
+                    <button onClick={() => updateQtdMao(item.id, +1)} aria-label="Aumentar quantidade" title="Aumentar quantidade" className="w-8 h-8 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-sm">+</button>
                   </div>
-                  <button onClick={() => removeMaoObra(item.id)} className="text-[#94A3B8] hover:text-red-500 transition-colors"><X size={14} /></button>
+                  <button onClick={editar} aria-label={`Editar ${item.funcao}`} title="Editar" className="p-2 text-[#94A3B8] hover:text-[#4F7CFF] transition-colors shrink-0"><Pencil size={14} /></button>
+                  <button onClick={() => excluirItem('rdo_mao_obra', item.id, `a função "${item.funcao}"`, setMaoObra)} aria-label={`Excluir ${item.funcao}`} title="Excluir" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
                 </div>
               )}
             />
@@ -379,16 +432,19 @@ export default function RDOPage() {
             <ListaComAdd
               items={equipamentos}
               fields={[{ key: 'nome', label: 'Equipamento', placeholder: 'Ex: Manifold digital' }]}
-              onAdd={(vals) => addEquipamento(vals.nome, 1)}
-              renderItem={(item) => (
-                <div key={item.id} className="flex items-center gap-3 p-2.5 bg-[#F8FAFC] rounded-lg">
-                  <p className="flex-1 text-sm font-medium text-[#0F172A]">{item.nome}</p>
+              onAdd={(vals) => addEquipamento(vals.nome.trim(), 1)}
+              valoresDe={item => ({ nome: item.nome })}
+              onEdit={(item, vals) => editarItem<RDOEquipamento>('rdo_equipamentos', item.id, { nome: vals.nome.trim() }, setEquipamentos, 'Não foi possível salvar o equipamento')}
+              renderItem={(item, editar) => (
+                <div key={item.id} className="flex items-center gap-2 p-2.5 bg-[#F8FAFC] rounded-lg">
+                  <p className="flex-1 min-w-0 text-sm font-medium text-[#0F172A]">{item.nome}</p>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => updateQtdEq(item.id, -1)} className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-xs">−</button>
-                    <span className="w-8 text-center text-sm font-semibold">{item.quantidade}</span>
-                    <button onClick={() => updateQtdEq(item.id, +1)} className="w-6 h-6 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-xs">+</button>
+                    <button onClick={() => updateQtdEq(item.id, -1)} aria-label="Diminuir quantidade" title="Diminuir quantidade" className="w-8 h-8 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-sm">−</button>
+                    <span className="w-7 text-center text-sm font-semibold">{item.quantidade}</span>
+                    <button onClick={() => updateQtdEq(item.id, +1)} aria-label="Aumentar quantidade" title="Aumentar quantidade" className="w-8 h-8 flex items-center justify-center rounded border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] text-sm">+</button>
                   </div>
-                  <button onClick={() => removeEquipamento(item.id)} className="text-[#94A3B8] hover:text-red-500 transition-colors"><X size={14} /></button>
+                  <button onClick={editar} aria-label={`Editar ${item.nome}`} title="Editar" className="p-2 text-[#94A3B8] hover:text-[#4F7CFF] transition-colors shrink-0"><Pencil size={14} /></button>
+                  <button onClick={() => excluirItem('rdo_equipamentos', item.id, `o equipamento "${item.nome}"`, setEquipamentos)} aria-label={`Excluir ${item.nome}`} title="Excluir" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
                 </div>
               )}
             />
@@ -400,20 +456,23 @@ export default function RDOPage() {
               items={atividades}
               fields={[
                 { key: 'descricao', label: 'Descrição da atividade', placeholder: 'Ex: Instalação do evaporador' },
-                { key: 'progresso', label: 'Progresso (%)', type: 'number', placeholder: '100' },
+                { key: 'progresso', label: 'Progresso (%) — 0 a 100', type: 'number', placeholder: '100' },
                 { key: 'status_ativ', label: 'Status', type: 'select', options: [
                   { value: 'Concluída', label: 'Concluída' },
                   { value: 'Em andamento', label: 'Em andamento' },
                   { value: 'Pendente', label: 'Pendente' },
                 ]},
               ]}
-              onAdd={(vals) => addAtividade(vals.descricao, parseInt(vals.progresso) || 100, vals.status_ativ || 'Concluída')}
-              renderItem={(item) => (
-                <div key={item.id} className="flex items-start gap-3 p-2.5 bg-[#F8FAFC] rounded-lg">
+              onAdd={(vals) => addAtividade(vals.descricao.trim(), parseProgresso(vals.progresso), vals.status_ativ || 'Concluída')}
+              valoresDe={item => ({ descricao: item.descricao, progresso: String(item.progresso ?? ''), status_ativ: item.status_ativ ?? 'Concluída' })}
+              onEdit={(item, vals) => editarItem<RDOAtividade>('rdo_atividades', item.id, { descricao: vals.descricao.trim(), progresso: parseProgresso(vals.progresso), status_ativ: vals.status_ativ || 'Concluída' } as Partial<RDOAtividade>, setAtividades, 'Não foi possível salvar a atividade')}
+              renderItem={(item, editar) => (
+                <div key={item.id} className="flex items-start gap-2 p-2.5 bg-[#F8FAFC] rounded-lg">
                   <div className="w-1.5 h-1.5 rounded-full bg-[#4F7CFF] mt-2 shrink-0" />
-                  <p className="flex-1 text-sm text-[#0F172A]">{item.descricao}</p>
-                  <span className="text-xs text-[#64748B] whitespace-nowrap shrink-0">{item.progresso}% {item.status_ativ}</span>
-                  <button onClick={() => removeAtividade(item.id)} className="text-[#94A3B8] hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
+                  <p className="flex-1 min-w-0 text-sm text-[#0F172A] pt-0.5">{item.descricao}</p>
+                  <span className="text-xs text-[#64748B] whitespace-nowrap shrink-0 pt-1">{item.progresso}% {item.status_ativ}</span>
+                  <button onClick={editar} aria-label="Editar atividade" title="Editar" className="p-2 -mt-1.5 text-[#94A3B8] hover:text-[#4F7CFF] transition-colors shrink-0"><Pencil size={14} /></button>
+                  <button onClick={() => excluirItem('rdo_atividades', item.id, 'esta atividade', setAtividades)} aria-label="Excluir atividade" title="Excluir" className="p-2 -mt-1.5 text-[#94A3B8] hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
                 </div>
               )}
             />
@@ -424,11 +483,14 @@ export default function RDOPage() {
             <ListaComAdd
               items={ocorrencias}
               fields={[{ key: 'descricao', label: 'Ocorrência', placeholder: 'Descreva a ocorrência...' }]}
-              onAdd={(vals) => addOcorrencia(vals.descricao)}
-              renderItem={(item) => (
-                <div key={item.id} className="flex items-start gap-3 p-2.5 bg-amber-50 rounded-lg border border-amber-100">
-                  <p className="flex-1 text-sm text-[#374151]">{item.descricao}</p>
-                  <button onClick={() => removeOcorrencia(item.id)} className="text-[#94A3B8] hover:text-red-500 transition-colors"><X size={14} /></button>
+              onAdd={(vals) => addOcorrencia(vals.descricao.trim())}
+              valoresDe={item => ({ descricao: item.descricao })}
+              onEdit={(item, vals) => editarItem<RDOOcorrencia>('rdo_ocorrencias', item.id, { descricao: vals.descricao.trim() }, setOcorrencias, 'Não foi possível salvar a ocorrência')}
+              renderItem={(item, editar) => (
+                <div key={item.id} className="flex items-start gap-2 p-2.5 bg-amber-50 rounded-lg border border-amber-100">
+                  <p className="flex-1 min-w-0 text-sm text-[#374151] pt-0.5">{item.descricao}</p>
+                  <button onClick={editar} aria-label="Editar ocorrência" title="Editar" className="p-2 -mt-1.5 text-[#94A3B8] hover:text-[#4F7CFF] transition-colors shrink-0"><Pencil size={14} /></button>
+                  <button onClick={() => excluirItem('rdo_ocorrencias', item.id, 'esta ocorrência', setOcorrencias)} aria-label="Excluir ocorrência" title="Excluir" className="p-2 -mt-1.5 text-[#94A3B8] hover:text-red-500 transition-colors shrink-0"><X size={14} /></button>
                 </div>
               )}
             />
@@ -442,14 +504,17 @@ export default function RDOPage() {
                 { key: 'autor', label: 'Autor', placeholder: 'Nome do autor' },
                 { key: 'texto', label: 'Comentário', placeholder: 'Digite o comentário...' },
               ]}
-              onAdd={(vals) => addComentario(vals.autor, vals.texto)}
-              renderItem={(item) => (
+              onAdd={(vals) => addComentario(vals.autor.trim(), (vals.texto ?? '').trim())}
+              valoresDe={item => ({ autor: item.autor, texto: item.texto })}
+              onEdit={(item, vals) => editarItem<RDOComentario>('rdo_comentarios', item.id, { autor: vals.autor.trim(), texto: (vals.texto ?? '').trim() }, setComentarios, 'Não foi possível salvar o comentário')}
+              renderItem={(item, editar) => (
                 <div key={item.id} className="p-3 bg-[#F8FAFC] rounded-lg border border-[#F1F5F9]">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-semibold text-[#0F172A]">{item.autor}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-[#94A3B8]">{new Date(item.created_at).toLocaleString('pt-BR')}</span>
-                      <button onClick={() => removeComentario(item.id)} className="text-[#94A3B8] hover:text-red-500 transition-colors"><X size={13} /></button>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-[#94A3B8] mr-1">{new Date(item.created_at).toLocaleString('pt-BR')}</span>
+                      <button onClick={editar} aria-label="Editar comentário" title="Editar" className="p-2 text-[#94A3B8] hover:text-[#4F7CFF] transition-colors"><Pencil size={13} /></button>
+                      <button onClick={() => excluirItem('rdo_comentarios', item.id, 'este comentário', setComentarios)} aria-label="Excluir comentário" title="Excluir" className="p-2 text-[#94A3B8] hover:text-red-500 transition-colors"><X size={13} /></button>
                     </div>
                   </div>
                   <p className="text-sm text-[#374151]">{item.texto}</p>
@@ -461,9 +526,11 @@ export default function RDOPage() {
           {/* Fotos */}
           <Section id="fotos" title="Fotos" count={fotos.length}>
             <div className="space-y-3">
-              <label className="flex items-center gap-2 w-fit cursor-pointer px-3 py-2 border border-dashed border-[#CBD5E1] rounded-lg hover:bg-[#EEF2FF] hover:border-[#4F7CFF] transition-colors text-sm text-[#64748B]">
-                <Upload size={15} /> Adicionar fotos
-                <input type="file" multiple accept="image/*,.heic,.heif" className="hidden" onChange={e => { if (e.target.files) uploadFotos(e.target.files); e.target.value = '' }} />
+              <label className={`flex items-center gap-2 w-fit px-3 py-2 border border-dashed border-[#CBD5E1] rounded-lg transition-colors text-sm text-[#64748B] ${enviandoFotos > 0 ? 'opacity-70 cursor-wait' : 'cursor-pointer hover:bg-[#EEF2FF] hover:border-[#4F7CFF]'}`}>
+                {enviandoFotos > 0
+                  ? <><Loader2 size={15} className="animate-spin" /> Enviando {enviandoFotos} {enviandoFotos === 1 ? 'foto' : 'fotos'}…</>
+                  : <><Upload size={15} /> Adicionar fotos</>}
+                <input type="file" multiple accept="image/*,.heic,.heif" className="hidden" disabled={enviandoFotos > 0} onChange={e => { if (e.target.files) uploadFotos(e.target.files); e.target.value = '' }} />
               </label>
               {fotos.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -472,8 +539,8 @@ export default function RDOPage() {
                       <div className="relative w-full aspect-square rounded-lg border border-[#E2E8F0] overflow-hidden">
                         <Image src={f.url} alt="" fill sizes="(max-width: 640px) 50vw, 33vw" className="object-cover" />
                       </div>
-                      <button onClick={() => removeFoto(f)} className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <X size={12} />
+                      <button onClick={() => removeFoto(f)} aria-label="Excluir foto" title="Excluir foto" className="absolute top-1 right-1 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100 transition-opacity">
+                        <X size={14} />
                       </button>
                       <input defaultValue={f.legenda ?? ''} placeholder="Legenda..."
                         onBlur={e => updateLegenda(f.id, e.target.value)}
@@ -491,7 +558,7 @@ export default function RDOPage() {
               {[{ tipo: 'marv', label: 'Assinatura — MARV' }, { tipo: 'cliente', label: 'Assinatura — Cliente' }, { tipo: 'fiscal', label: 'Assinatura — Fiscal' }].map(({ tipo, label }) => {
                 const ass = assinaturas.find(a => a.tipo === tipo)
                 return <PadAssinatura key={tipo} tipo={tipo} label={label} assinatura={ass}
-                  onSalvar={salvarAssinatura} onSalvarBlob={salvarAssinaturaBlob} onRemover={removerAssinatura} saving={saving} />
+                  onSalvar={salvarAssinatura} onSalvarBlob={salvarAssinaturaBlob} onSalvarNome={salvarNomeAssinante} onRemover={removerAssinatura} saving={saving} />
               })}
             </div>
           </Section>
@@ -541,46 +608,71 @@ function Section({ id, title, count, children }: { id: string; title: string; co
 // ── Componente GenericAdd ─────────────────────────────
 type FieldDef = { key: string; label: string; placeholder?: string; type?: 'text' | 'number' | 'select'; options?: { value: string; label: string }[] }
 
-function ListaComAdd<T extends { id: string }>({ items, fields, onAdd, renderItem }: {
-  items: T[]; fields: FieldDef[]; onAdd: (vals: Record<string, string>) => void; renderItem: (item: T) => React.ReactNode
+function ListaComAdd<T extends { id: string }>({ items, fields, onAdd, onEdit, valoresDe, renderItem }: {
+  items: T[]; fields: FieldDef[]
+  onAdd: (vals: Record<string, string>) => Promise<boolean>
+  // Edição inline do item (regra do projeto: todo cadastro pode ser editado)
+  onEdit?: (item: T, vals: Record<string, string>) => Promise<boolean>
+  valoresDe?: (item: T) => Record<string, string>
+  renderItem: (item: T, editar: () => void) => React.ReactNode
 }) {
   const [show, setShow] = useState(false)
   const [vals, setVals] = useState<Record<string, string>>({})
+  const [editId, setEditId] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
 
-  function handleAdd() {
+  function fechar() { setShow(false); setEditId(null); setVals({}) }
+
+  async function handleSalvar() {
     const main = fields[0]
-    if (!vals[main.key]?.trim()) return
-    onAdd(vals)
-    setVals({})
-    setShow(false)
+    if (!vals[main.key]?.trim() || salvando) return
+    setSalvando(true)
+    const item = editId ? items.find(i => i.id === editId) : null
+    // Só fecha o formulário se gravou — em caso de erro o texto digitado fica
+    const ok = item && onEdit ? await onEdit(item, vals) : await onAdd(vals)
+    setSalvando(false)
+    if (ok) fechar()
   }
+
+  function abrirEdicao(item: T) {
+    setShow(false)
+    setEditId(item.id)
+    setVals(valoresDe ? valoresDe(item) : {})
+  }
+
+  const formulario = (
+    <div className="p-3 border border-[#E2E8F0] rounded-lg bg-white space-y-2">
+      {fields.map(f => (
+        <div key={f.key}>
+          <label className="text-xs text-[#64748B] mb-1 block">{f.label}</label>
+          {f.type === 'select' ? (
+            <select className="field text-sm" value={vals[f.key] ?? ''} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}>
+              {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          ) : (
+            <input type={f.type ?? 'text'} className="field text-sm" placeholder={f.placeholder}
+              {...(f.type === 'number' ? { inputMode: 'numeric' as const, min: 0, max: 100 } : {})}
+              value={vals[f.key] ?? ''} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleSalvar()} autoFocus={f === fields[0]} />
+          )}
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <button onClick={handleSalvar} disabled={salvando} className="btn-primary text-sm py-1.5 px-3">
+          {salvando ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {salvando ? 'Salvando…' : editId ? 'Salvar' : 'Adicionar'}
+        </button>
+        <button onClick={fechar} disabled={salvando} className="text-sm text-[#64748B] hover:text-[#374151] px-2">Cancelar</button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="space-y-2">
-      {items.map(renderItem)}
-      {show ? (
-        <div className="p-3 border border-[#E2E8F0] rounded-lg bg-white space-y-2">
-          {fields.map(f => (
-            <div key={f.key}>
-              <label className="text-xs text-[#64748B] mb-1 block">{f.label}</label>
-              {f.type === 'select' ? (
-                <select className="field text-sm" value={vals[f.key] ?? ''} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}>
-                  {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              ) : (
-                <input type={f.type ?? 'text'} className="field text-sm" placeholder={f.placeholder}
-                  value={vals[f.key] ?? ''} onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
-                  onKeyDown={e => e.key === 'Enter' && handleAdd()} autoFocus={f === fields[0]} />
-              )}
-            </div>
-          ))}
-          <div className="flex gap-2">
-            <button onClick={handleAdd} className="btn-primary text-sm py-1.5 px-3"><Check size={13} /> Adicionar</button>
-            <button onClick={() => { setShow(false); setVals({}) }} className="text-sm text-[#64748B] hover:text-[#374151] px-2">Cancelar</button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={() => setShow(true)} className="flex items-center gap-1.5 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] px-2 py-1.5 rounded-lg transition-colors">
+      {items.map(item => item.id === editId
+        ? <div key={item.id}>{formulario}</div>
+        : renderItem(item, () => abrirEdicao(item)))}
+      {show ? formulario : (
+        <button onClick={() => { setEditId(null); setVals({}); setShow(true) }} className="flex items-center gap-1.5 text-sm text-[#4F7CFF] hover:bg-[#EEF2FF] px-2 py-1.5 rounded-lg transition-colors">
           <Plus size={14} /> Adicionar
         </button>
       )}
@@ -589,11 +681,12 @@ function ListaComAdd<T extends { id: string }>({ items, fields, onAdd, renderIte
 }
 
 // ── Pad de Assinatura ─────────────────────────────────
-function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemover, saving }: {
+function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onSalvarNome, onRemover, saving }: {
   tipo: string; label: string; assinatura?: RDOAssinatura
-  onSalvar: (tipo: string, nome: string, ref: React.RefObject<HTMLCanvasElement>) => void
-  onSalvarBlob: (tipo: string, nome: string, blob: Blob) => void
-  onRemover: (tipo: string) => void
+  onSalvar: (tipo: string, nome: string, ref: React.RefObject<HTMLCanvasElement>) => Promise<boolean>
+  onSalvarBlob: (tipo: string, nome: string, blob: Blob) => Promise<boolean>
+  onSalvarNome: (tipo: string, nome: string) => Promise<void>
+  onRemover: (tipo: string) => Promise<boolean>
   saving: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -633,10 +726,19 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemo
   }
 
   async function handleImagem(fileOriginal: File) {
-    const file = await converterSeForHeic(fileOriginal)
-    const blob = new Blob([await file.arrayBuffer()], { type: file.type })
-    await onSalvarBlob(tipo, nome, blob)
     setShowMenu(false)
+    try {
+      const file = await converterSeForHeic(fileOriginal)
+      const blob = new Blob([await file.arrayBuffer()], { type: file.type })
+      if (await onSalvarBlob(tipo, nome, blob)) setModo('idle')
+    } catch (e) {
+      alert(mensagemErro(e as Error, 'Não foi possível ler a imagem'))
+    }
+  }
+
+  async function salvarTela() {
+    // Depois de salvar volta a mostrar a assinatura gravada
+    if (await onSalvar(tipo, nome, canvasRef)) { setModo('idle'); setTemDesenho(false) }
   }
 
   const assinado = !!assinatura?.assinatura_url
@@ -661,7 +763,8 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemo
         </div>
       )}
 
-      <input className="field text-xs" placeholder="Nome do assinante" value={nome} onChange={e => setNome(e.target.value)} />
+      <input className="field text-xs" placeholder="Nome do assinante" value={nome} onChange={e => setNome(e.target.value)}
+        onBlur={() => { if (assinado && modo === 'idle') onSalvarNome(tipo, nome.trim()) }} />
 
       <div className="flex gap-2">
         <div className="relative flex-1">
@@ -678,7 +781,7 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemo
                 <input type="file" accept="image/*,.heic,.heif" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImagem(f) }} />
               </label>
               {assinado && (
-                <button onClick={() => { onRemover(tipo); setModo('idle'); setShowMenu(false) }}
+                <button onClick={async () => { setShowMenu(false); if (await onRemover(tipo)) setModo('idle') }}
                   className="w-full text-left px-3 py-2 hover:bg-[#F8FAFC] text-red-500">🗑️ Remover assinatura</button>
               )}
             </div>
@@ -687,12 +790,12 @@ function PadAssinatura({ tipo, label, assinatura, onSalvar, onSalvarBlob, onRemo
         {modo === 'tela' && (
           <>
             {temDesenho && (
-              <button onClick={() => onSalvar(tipo, nome, canvasRef)} disabled={saving}
-                className="text-xs font-medium px-2.5 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-1">
-                <Check size={11} /> Salvar
+              <button onClick={salvarTela} disabled={saving}
+                className="text-xs font-medium px-2.5 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-1 disabled:opacity-60">
+                {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} {saving ? 'Salvando…' : 'Salvar'}
               </button>
             )}
-            <button onClick={() => { limpar(); setModo('idle') }} className="text-xs text-[#64748B] hover:text-red-500 px-2"><X size={13} /></button>
+            <button onClick={() => { limpar(); setModo('idle') }} aria-label="Cancelar assinatura" title="Cancelar" className="text-xs text-[#64748B] hover:text-red-500 p-2"><X size={13} /></button>
           </>
         )}
       </div>

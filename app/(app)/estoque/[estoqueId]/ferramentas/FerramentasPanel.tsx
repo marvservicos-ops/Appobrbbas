@@ -9,6 +9,8 @@ import ModalNovaFerramenta from './ModalNovaFerramenta'
 import ModalNovoEmprestimo from './ModalNovoEmprestimo'
 import FerramentaDetalheModal from './FerramentaDetalheModal'
 import ModalEmprestimos from './ModalEmprestimos'
+import { mensagemErro } from '@/lib/erros'
+import { hojeLocal } from '@/lib/datas'
 
 function statusLabelMap(modoPatrimonio: boolean): Record<string, string> {
   return modoPatrimonio
@@ -28,6 +30,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
   const [ferramentas, setFerramentas] = useState<Ferramenta[]>([])
   const [custodiaAtual, setCustodiaAtual] = useState<Record<string, FerramentaEmprestimoItem>>({})
   const [loading, setLoading] = useState(true)
+  const [erroCarga, setErroCarga] = useState('')
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState<string>('todos')
   const [ordenarPor, setOrdenarPor] = useState<'nome' | 'codigo_interno'>('nome')
@@ -38,20 +41,28 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
 
   async function load() {
     const supabase = createClient()
-    const { data: ferrs } = await supabase
+    const { data: ferrs, error } = await supabase
       .from('ferramentas')
       .select('*, responsavel_atual:funcionarios(id, nome)')
       .eq('estoque_id', estoqueId)
       .order('nome')
+    // Falha de carga não pode virar "Nenhuma ferramenta" / "R$ 0,00"
+    if (error) {
+      setErroCarga(mensagemErro(error, 'Erro ao carregar ferramentas'))
+      setLoading(false)
+      return
+    }
+    setErroCarga('')
     setFerramentas((ferrs ?? []) as unknown as Ferramenta[])
 
     const emprestadas = (ferrs ?? []).filter(f => f.status === 'emprestada').map(f => f.id)
     if (emprestadas.length > 0) {
-      const { data: itens } = await supabase
+      const { data: itens, error: errItens } = await supabase
         .from('ferramenta_emprestimo_itens')
         .select('*, emprestimo:ferramenta_emprestimos(*, funcionario:funcionarios(id, nome))')
         .in('ferramenta_id', emprestadas)
         .is('data_devolucao', null)
+      if (errItens) console.error('Erro ao carregar empréstimos em aberto', errItens)
       const map: Record<string, FerramentaEmprestimoItem> = {}
       for (const it of itens ?? []) map[it.ferramenta_id] = it as unknown as FerramentaEmprestimoItem
       setCustodiaAtual(map)
@@ -89,13 +100,18 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
   }, [topLevel, filtroStatus, busca, ordenarPor])
 
   const STATUS_LABEL = statusLabelMap(modoPatrimonio)
+  // Patrimônio soma tudo (inclusive o que está dentro das malas); as contagens
+  // seguem a grade: só o nível de cima, sem as malas (que não têm status próprio)
   const valorTotal = ferramentas.filter(f => f.status !== 'baixada').reduce((s, f) => s + (f.valor_aquisicao ?? 0), 0)
+  const itensGrade = topLevel.filter(f => !f.eh_mala)
   const contagem = {
-    disponivel: ferramentas.filter(f => f.status === 'disponivel').length,
-    emprestada: ferramentas.filter(f => f.status === 'emprestada').length,
-    em_manutencao: ferramentas.filter(f => f.status === 'em_manutencao').length,
-    baixada: ferramentas.filter(f => f.status === 'baixada').length,
+    disponivel: itensGrade.filter(f => f.status === 'disponivel').length,
+    emprestada: itensGrade.filter(f => f.status === 'emprestada').length,
+    em_manutencao: itensGrade.filter(f => f.status === 'em_manutencao').length,
+    baixada: itensGrade.filter(f => f.status === 'baixada').length,
   }
+  const temItensEmMalas = ferramentas.some(f => f.mala_id)
+  const filtrando = busca.trim() !== '' || filtroStatus !== 'todos'
 
   function exportarCsv() {
     const headers = ['Nome', 'Código interno', 'Marca', 'Modelo', 'Nº de série', 'Categoria', 'Status', 'Valor de aquisição', 'Data de aquisição', 'Observações']
@@ -117,7 +133,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `ferramentas-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `ferramentas-${hojeLocal()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -128,8 +144,18 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
     </div>
   )
 
+  if (erroCarga && ferramentas.length === 0) return (
+    <div className="card flex flex-col items-center justify-center py-16 gap-3 text-center">
+      <p className="text-sm text-red-600">{erroCarga}</p>
+      <button onClick={() => { setLoading(true); load() }} className="text-sm font-medium text-[#4F7CFF] hover:underline">Tentar de novo</button>
+    </div>
+  )
+
   return (
     <div className="space-y-5">
+      {erroCarga && (
+        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{erroCarga} A lista abaixo pode estar desatualizada.</p>
+      )}
       {/* Cards de resumo */}
       <div className={`grid grid-cols-2 gap-3 ${modoPatrimonio ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
         <div className="card flex items-center gap-3">
@@ -137,6 +163,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
           <div>
             <p className="text-xs text-[#64748B]">Patrimônio total</p>
             <p className="font-syne font-bold text-[#0F172A]">{moeda(valorTotal)}</p>
+            {temItensEmMalas && <p className="text-[10px] text-[#94A3B8]">inclui itens das malas</p>}
           </div>
         </div>
         <div className="card flex items-center gap-3">
@@ -209,8 +236,21 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
           <div className="w-14 h-14 rounded-2xl bg-[#F1F5F9] flex items-center justify-center">
             {modoPatrimonio ? <Building2 size={24} className="text-[#94A3B8]" /> : <Wrench size={24} className="text-[#94A3B8]" />}
           </div>
-          <p className="font-medium text-[#374151]">{modoPatrimonio ? 'Nenhum item cadastrado' : 'Nenhuma ferramenta encontrada'}</p>
-          <p className="text-sm text-[#94A3B8]">Clique em &quot;{modoPatrimonio ? 'Novo Item' : 'Nova Ferramenta'}&quot; para cadastrar o patrimônio</p>
+          {filtrando ? (
+            <>
+              <p className="font-medium text-[#374151]">Nenhum resultado</p>
+              <p className="text-sm text-[#94A3B8]">Nada corresponde à busca ou ao filtro de status.</p>
+              <button onClick={() => { setBusca(''); setFiltroStatus('todos') }}
+                className="text-sm font-medium text-[#4F7CFF] hover:bg-[#EEF2FF] px-3 py-1.5 rounded-lg transition-colors">
+                Limpar filtros
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="font-medium text-[#374151]">{modoPatrimonio ? 'Nenhum item cadastrado' : 'Nenhuma ferramenta cadastrada'}</p>
+              <p className="text-sm text-[#94A3B8]">Clique em &quot;{modoPatrimonio ? 'Novo Item' : 'Nova Ferramenta'}&quot; para cadastrar o patrimônio</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -268,7 +308,7 @@ export default function FerramentasPanel({ estoqueId, modoPatrimonio = false }: 
           onChanged={() => { load() }}
         />
       )}
-      {showEmprestimos && <ModalEmprestimos estoqueId={estoqueId} onClose={() => setShowEmprestimos(false)} />}
+      {showEmprestimos && <ModalEmprestimos estoqueId={estoqueId} onClose={() => setShowEmprestimos(false)} onChanged={() => { load() }} />}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
 import { ArrowLeft, Plus, Pencil, Trash2, X, Loader2, Shirt } from 'lucide-react'
+import { mensagemErro } from '@/lib/erros'
 
 interface Categoria {
   id: string
@@ -28,14 +29,16 @@ export default function UniformesConfigPage() {
   const [pecas, setPecas] = useState<Peca[]>([])
   const [categoriaPecas, setCategoriaPecas] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
+  const [erroLoad, setErroLoad] = useState('')
 
   async function load() {
     const supabase = createClient()
-    const [{ data: cats }, { data: ps }, { data: rels }] = await Promise.all([
+    const [{ data: cats, error: e1 }, { data: ps, error: e2 }, { data: rels, error: e3 }] = await Promise.all([
       supabase.from('uniforme_categorias').select('id, nome, cor').order('nome'),
       supabase.from('uniforme_pecas').select('id, nome').order('nome'),
       supabase.from('uniforme_categoria_pecas').select('categoria_id, peca_id'),
     ])
+    setErroLoad(e1 || e2 || e3 ? mensagemErro(e1 || e2 || e3, 'Falha ao carregar uniformes') : '')
     setCategorias(cats ?? [])
     setPecas(ps ?? [])
     const map: Record<string, string[]> = {}
@@ -54,7 +57,7 @@ export default function UniformesConfigPage() {
       <Topbar />
       <div className="p-4 md:p-6 flex-1 overflow-y-auto max-w-2xl mx-auto w-full">
         <div className="flex items-center gap-3 mb-6">
-          <Link href="/funcionarios" className="text-[#64748B] hover:text-[#0F172A]"><ArrowLeft size={18} /></Link>
+          <Link href="/funcionarios" aria-label="Voltar para Funcionários" title="Voltar" className="p-2 -ml-2 text-[#64748B] hover:text-[#0F172A]"><ArrowLeft size={18} /></Link>
           <div>
             <h1 className="font-syne font-bold text-xl md:text-2xl text-[#0F172A]">Uniformes</h1>
             <p className="text-sm text-[#64748B] mt-1">Categorias de funcionário (ex: Chão de Fábrica, Corpo Técnico) e as peças de uniforme de cada uma.</p>
@@ -69,6 +72,13 @@ export default function UniformesConfigPage() {
             </button>
           ))}
         </div>
+
+        {erroLoad && (
+          <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-4 py-3 mb-4">
+            <span className="flex-1">{erroLoad}</span>
+            <button onClick={load} className="font-semibold underline shrink-0">Tentar de novo</button>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center h-40">
@@ -93,9 +103,23 @@ function GerenciarCategorias({ categorias, pecas, categoriaPecas, onChanged }: {
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState<Categoria | null>(null)
 
-  async function deletar(id: string) {
-    if (!confirm('Remover esta categoria? Funcionários vinculados ficarão sem categoria de uniforme.')) return
-    await createClient().from('uniforme_categorias').delete().eq('id', id)
+  async function deletar(cat: Categoria) {
+    const supabase = createClient()
+    // Conta antes: a FK funcionarios.categoria_uniforme_id impede excluir categoria em uso
+    const { count, error: errCount } = await supabase
+      .from('funcionarios').select('id', { count: 'exact', head: true }).eq('categoria_uniforme_id', cat.id)
+    if (errCount) { alert(mensagemErro(errCount, 'Falha ao verificar a categoria')); return }
+    const emUso = count ?? 0
+    const msg = emUso > 0
+      ? `A categoria "${cat.nome}" está em uso por ${emUso} funcionário${emUso > 1 ? 's' : ''}. Remover mesmo assim? Eles ficarão sem categoria de uniforme.`
+      : `Remover a categoria "${cat.nome}"?`
+    if (!confirm(msg)) return
+    if (emUso > 0) {
+      const { error } = await supabase.from('funcionarios').update({ categoria_uniforme_id: null }).eq('categoria_uniforme_id', cat.id)
+      if (error) { alert(mensagemErro(error, 'Falha ao desvincular os funcionários')); return }
+    }
+    const { error } = await supabase.from('uniforme_categorias').delete().eq('id', cat.id)
+    if (error) { alert(mensagemErro(error, 'Falha ao remover categoria')); return }
     onChanged()
   }
 
@@ -123,13 +147,13 @@ function GerenciarCategorias({ categorias, pecas, categoriaPecas, onChanged }: {
                     {pecasCat.length > 0 ? pecasCat.map(p => p.nome).join(', ') : 'Nenhuma peça vinculada'}
                   </p>
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => { setEditando(cat); setShowModal(true) }}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
+                <div className="flex gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => { setEditando(cat); setShowModal(true) }} aria-label={`Editar ${cat.nome}`} title="Editar"
+                    className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
                     <Pencil size={12} className="text-[#4F7CFF]" />
                   </button>
-                  <button onClick={() => deletar(cat.id)}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50">
+                  <button onClick={() => deletar(cat)} aria-label={`Remover ${cat.nome}`} title="Remover"
+                    className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50">
                     <Trash2 size={12} className="text-red-400" />
                   </button>
                 </div>
@@ -176,16 +200,26 @@ function ModalCategoria({ categoria, pecas, pecasSelecionadas, onClose, onSaved 
     const supabase = createClient()
     let categoriaId = categoria?.id
     if (categoria) {
-      await supabase.from('uniforme_categorias').update({ nome: nome.trim(), cor }).eq('id', categoria.id)
+      const { error: err } = await supabase.from('uniforme_categorias').update({ nome: nome.trim(), cor }).eq('id', categoria.id)
+      if (err) { setSaving(false); setError(mensagemErro(err, 'Falha ao salvar categoria')); return }
     } else {
       const { data, error: err } = await supabase.from('uniforme_categorias').insert({ nome: nome.trim(), cor }).select('id').single()
-      if (err || !data) { setSaving(false); setError(err?.message ?? 'Erro ao criar categoria'); return }
+      if (err || !data) { setSaving(false); setError(mensagemErro(err, 'Falha ao criar categoria')); return }
       categoriaId = data.id
     }
     if (categoriaId) {
-      await supabase.from('uniforme_categoria_pecas').delete().eq('categoria_id', categoriaId)
-      if (selecionadas.length > 0) {
-        await supabase.from('uniforme_categoria_pecas').insert(selecionadas.map(peca_id => ({ categoria_id: categoriaId, peca_id })))
+      // Insere os vínculos novos antes de apagar os removidos (falha no meio não esvazia a categoria)
+      const anteriores = categoria ? pecasSelecionadas : []
+      const novas = selecionadas.filter(id => !anteriores.includes(id))
+      const removidas = anteriores.filter(id => !selecionadas.includes(id))
+      if (novas.length > 0) {
+        const { error: err } = await supabase.from('uniforme_categoria_pecas')
+          .upsert(novas.map(peca_id => ({ categoria_id: categoriaId, peca_id })), { onConflict: 'categoria_id,peca_id', ignoreDuplicates: true })
+        if (err) { setSaving(false); setError(mensagemErro(err, 'Falha ao vincular as peças')); return }
+      }
+      if (removidas.length > 0) {
+        const { error: err } = await supabase.from('uniforme_categoria_pecas').delete().eq('categoria_id', categoriaId).in('peca_id', removidas)
+        if (err) { setSaving(false); setError(mensagemErro(err, 'Falha ao desvincular as peças')); return }
       }
     }
     setSaving(false)
@@ -197,7 +231,7 @@ function ModalCategoria({ categoria, pecas, pecasSelecionadas, onClose, onSaved 
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <h2 className="font-syne font-semibold text-[#0F172A]">{categoria ? 'Editar categoria' : 'Nova categoria'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-5">
           <div>
@@ -244,7 +278,7 @@ function ModalCategoria({ categoria, pecas, pecasSelecionadas, onClose, onSaved 
             <button onClick={salvar} disabled={saving || !nome.trim()}
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
               {saving ? <Loader2 size={15} className="animate-spin" /> : null}
-              {saving ? 'Salvando...' : 'Salvar'}
+              {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>
         </div>
@@ -257,9 +291,30 @@ function GerenciarPecas({ pecas, onChanged }: { pecas: Peca[]; onChanged: () => 
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState<Peca | null>(null)
 
-  async function deletar(id: string) {
-    if (!confirm('Remover esta peça? Ela será desvinculada de todas as categorias e funcionários.')) return
-    await createClient().from('uniforme_pecas').delete().eq('id', id)
+  async function deletar(peca: Peca) {
+    const supabase = createClient()
+    // Conta antes: a FK estoque_produtos.peca_uniforme_id impede excluir peça em uso
+    const [{ count: nProd, error: e1 }, { count: nFunc, error: e2 }] = await Promise.all([
+      supabase.from('estoque_produtos').select('id', { count: 'exact', head: true }).eq('peca_uniforme_id', peca.id),
+      supabase.from('funcionario_uniforme_tamanhos').select('id', { count: 'exact', head: true }).eq('peca_id', peca.id),
+    ])
+    if (e1 || e2) { alert(mensagemErro(e1 || e2, 'Falha ao verificar a peça')); return }
+    const produtos = nProd ?? 0
+    const funcs = nFunc ?? 0
+    const usos = [
+      funcs > 0 && `${funcs} funcionário${funcs > 1 ? 's' : ''}`,
+      produtos > 0 && `${produtos} produto${produtos > 1 ? 's' : ''} do estoque`,
+    ].filter(Boolean).join(' e ')
+    const msg = usos
+      ? `A peça "${peca.nome}" está em uso por ${usos}. Remover mesmo assim? Ela será desvinculada das categorias, dos tamanhos dos funcionários e dos produtos.`
+      : `Remover a peça "${peca.nome}"? Ela será desvinculada de todas as categorias.`
+    if (!confirm(msg)) return
+    if (produtos > 0) {
+      const { error } = await supabase.from('estoque_produtos').update({ peca_uniforme_id: null }).eq('peca_uniforme_id', peca.id)
+      if (error) { alert(mensagemErro(error, 'Falha ao desvincular os produtos')); return }
+    }
+    const { error } = await supabase.from('uniforme_pecas').delete().eq('id', peca.id)
+    if (error) { alert(mensagemErro(error, 'Falha ao remover peça')); return }
     onChanged()
   }
 
@@ -278,13 +333,13 @@ function GerenciarPecas({ pecas, onChanged }: { pecas: Peca[]; onChanged: () => 
             <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#FAFAFA] group transition-colors">
               <Shirt size={15} className="text-[#94A3B8] shrink-0" />
               <p className="flex-1 text-sm font-medium text-[#0F172A]">{p.nome}</p>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => { setEditando(p); setShowModal(true) }}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
+              <div className="flex gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity">
+                <button onClick={() => { setEditando(p); setShowModal(true) }} aria-label={`Editar ${p.nome}`} title="Editar"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#EEF2FF]">
                   <Pencil size={12} className="text-[#4F7CFF]" />
                 </button>
-                <button onClick={() => deletar(p.id)}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50">
+                <button onClick={() => deletar(p)} aria-label={`Remover ${p.nome}`} title="Remover"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50">
                   <Trash2 size={12} className="text-red-400" />
                 </button>
               </div>
@@ -314,7 +369,7 @@ function ModalPeca({ peca, onClose, onSaved }: { peca: Peca | null; onClose: () 
       ? await supabase.from('uniforme_pecas').update({ nome: nome.trim() }).eq('id', peca.id)
       : await supabase.from('uniforme_pecas').insert({ nome: nome.trim() })
     setSaving(false)
-    if (err) { setError(err.message); return }
+    if (err) { setError(mensagemErro(err, 'Falha ao salvar peça')); return }
     onSaved()
   }
 
@@ -323,7 +378,7 @@ function ModalPeca({ peca, onClose, onSaved }: { peca: Peca | null; onClose: () 
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-sm">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">{peca ? 'Editar peça' : 'Nova peça'}</h2>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -mr-2"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-5">
           <div>
@@ -338,7 +393,7 @@ function ModalPeca({ peca, onClose, onSaved }: { peca: Peca | null; onClose: () 
             <button onClick={salvar} disabled={saving || !nome.trim()}
               className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
               {saving ? <Loader2 size={15} className="animate-spin" /> : null}
-              {saving ? 'Salvando...' : 'Salvar'}
+              {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>
         </div>

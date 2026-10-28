@@ -6,6 +6,10 @@ import { ArrowLeft, Upload, Check, AlertCircle, Loader2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Estoque, EstoqueCampo, EstoqueProduto } from '@/lib/types'
 import Link from 'next/link'
+import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
+import { hojeLocal } from '@/lib/datas'
+import { parseNumeroBR } from '@/lib/numero'
+import { mensagemErro } from '@/lib/erros'
 
 type CsvRow = Record<string, string>
 
@@ -20,19 +24,84 @@ const CAMPOS_FIXOS = [
   { key: '__ignorar__', label: '— Ignorar coluna —' },
 ]
 
-function parseCSV(text: string): { headers: string[]; rows: CsvRow[] } {
-  const lines = text.trim().split(/\r?\n/)
-  // detect separator
-  const firstLine = lines[0]
-  const sep = firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : firstLine.includes('|') ? '|' : ','
-  const headers = firstLine.split(sep).map(h => h.trim().replace(/^"|"$/g, ''))
-  const rows = lines.slice(1).map(line => {
-    const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''))
+// Separador mais frequente na 1ª linha (fora de aspas); empate segue a ordem ; tab | ,
+function detectarSeparador(texto: string): string {
+  const primeira: string[] = []
+  let aspas = false
+  for (const ch of texto) {
+    if (ch === '"') aspas = !aspas
+    else if (!aspas && (ch === '\n' || ch === '\r')) break
+    else if (!aspas) primeira.push(ch)
+  }
+  let melhor = ','
+  let max = 0
+  for (const sep of [';', '\t', '|', ',']) {
+    const n = primeira.filter(c => c === sep).length
+    if (n > max) { max = n; melhor = sep }
+  }
+  return melhor
+}
+
+// CSV com aspas: "a;b" fica numa coluna, "" é aspa literal e quebra de linha dentro de aspas é mantida
+function parseCSV(textoOriginal: string): { headers: string[]; rows: CsvRow[] } {
+  const texto = textoOriginal.replace(/^\uFEFF/, '')
+  const sep = detectarSeparador(texto)
+  const linhas: string[][] = []
+  let linha: string[] = []
+  let campo = ''
+  let aspas = false
+  for (let i = 0; i < texto.length; i++) {
+    const ch = texto[i]
+    if (aspas) {
+      if (ch === '"') {
+        if (texto[i + 1] === '"') { campo += '"'; i++ } else aspas = false
+      } else campo += ch
+    } else if (ch === '"') aspas = true
+    else if (ch === sep) { linha.push(campo); campo = '' }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && texto[i + 1] === '\n') i++
+      linha.push(campo); linhas.push(linha); linha = []; campo = ''
+    } else campo += ch
+  }
+  if (campo !== '' || linha.length > 0) { linha.push(campo); linhas.push(linha) }
+
+  const [cab = [], ...resto] = linhas
+  const headers = cab.map(h => h.trim())
+  const rows = resto.map(vals => {
     const row: CsvRow = {}
-    headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
+    headers.forEach((h, i) => { row[h] = (vals[i] ?? '').trim() })
     return row
   }).filter(r => Object.values(r).some(v => v))
   return { headers, rows }
+}
+
+const normalizar = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+// Nomes de coluna reconhecidos automaticamente (comparados sem acento/maiúscula)
+const SINONIMOS: Record<string, string[]> = {
+  data: ['data', 'dia', 'data movimento', 'data movimentacao'],
+  produto_nome: ['produto', 'nome', 'nome do produto', 'descricao', 'item', 'material'],
+  quantidade: ['quantidade', 'qtd', 'qtde', 'quant', 'qtd atual', 'quantidade atual', 'saldo', 'estoque'],
+  qtd_min: ['qtd minima', 'qtd min', 'quantidade minima', 'estoque minimo', 'minimo', 'min'],
+  unidade: ['unidade', 'un', 'und', 'unid', 'unidade de medida', 'medida'],
+  codigo: ['codigo', 'cod', 'cod produto', 'codigo do produto', 'n ca', 'no ca', 'ca', 'referencia', 'ref'],
+  responsavel: ['responsavel', 'quem', 'funcionario', 'usuario'],
+  tipo: ['tipo', 'movimento', 'movimentacao', 'entrada saida', 'operacao'],
+  observacoes: ['observacoes', 'observacao', 'obs'],
+}
+
+function autoMapear(headers: string[], destinos: { key: string; label: string }[]): Record<string, string> {
+  const mapa: Record<string, string> = {}
+  const usados = new Set<string>()
+  for (const h of headers) {
+    const hn = normalizar(h)
+    const match = destinos.find(d => d.key !== '__ignorar__' && !usados.has(d.key) && (
+      (SINONIMOS[d.key] ?? []).includes(hn) || normalizar(d.label) === hn
+    ))
+    mapa[h] = match?.key ?? '__ignorar__'
+    if (match) usados.add(match.key)
+  }
+  return mapa
 }
 
 function parseDate(str: string): string | null {
@@ -57,8 +126,11 @@ export default function ImportarPage() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([])
   const [mapeamento, setMapeamento] = useState<Record<string, string>>({})
   const [cadastrarProdutos, setCadastrarProdutos] = useState(true)
+  const [atualizarSaldo, setAtualizarSaldo] = useState(true)
+  // Tipo usado quando não há coluna "Tipo" mapeada (ou a linha não diz entrada/saída)
+  const [tipoPadrao, setTipoPadrao] = useState<'' | 'entrada' | 'saida'>('')
   const [importing, setImporting] = useState(false)
-  const [resultado, setResultado] = useState<{ ok: number; produtosCriados: number; erros: string[] } | null>(null)
+  const [resultado, setResultado] = useState<{ tipo: 'registros' | 'produtos'; ok: number; produtosCriados: number; erros: string[]; avisos: string[] } | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -85,17 +157,8 @@ export default function ImportarPage() {
       const { headers, rows } = parseCSV(text)
       setCsvHeaders(headers)
       setCsvRows(rows)
-      const autoMap: Record<string, string> = {}
-      const destinos = [...CAMPOS_FIXOS, ...campos.map(c => ({ key: `campo_${c.id}`, label: c.nome }))]
-      headers.forEach(h => {
-        const hl = h.toLowerCase().trim()
-        const match = destinos.find(d =>
-          d.label.toLowerCase().includes(hl) || hl.includes(d.label.toLowerCase()) ||
-          d.key.toLowerCase().includes(hl)
-        )
-        autoMap[h] = match?.key ?? '__ignorar__'
-      })
-      setMapeamento(autoMap)
+      // Usa os campos do tipo de importação escolhido (produtos ou registros)
+      setMapeamento(autoMapear(headers, todasDestinos))
       setResultado(null)
     }
     reader.readAsText(file, 'UTF-8')
@@ -119,16 +182,20 @@ export default function ImportarPage() {
         const nome = get('produto_nome')
         if (!nome) { erros.push(`Linha ${i + 2}: nome vazio`); continue }
         if (produtosExistentes.has(nome.toLowerCase())) { erros.push(`Linha ${i + 2}: "${nome}" já existe`); continue }
+        const qtdAtual = get('quantidade') ? parseNumeroBR(get('quantidade')) : 0
+        const qtdMin = get('qtd_min') ? parseNumeroBR(get('qtd_min')) : 0
+        if (Number.isNaN(qtdAtual)) { erros.push(`Linha ${i + 2}: quantidade inválida ("${get('quantidade')}")`); continue }
+        if (Number.isNaN(qtdMin)) { erros.push(`Linha ${i + 2}: qtd mínima inválida ("${get('qtd_min')}")`); continue }
 
         const { error: err } = await supabase.from('estoque_produtos').insert({
           estoque_id: estoqueId,
           nome,
           codigo: get('codigo') || null,
           unidade: get('unidade') || 'un',
-          quantidade_atual: parseFloat(get('quantidade').replace(',', '.')) || 0,
-          quantidade_minima: parseFloat(get('qtd_min').replace(',', '.')) || 0,
+          quantidade_atual: qtdAtual,
+          quantidade_minima: qtdMin,
         })
-        if (err) { erros.push(`Linha ${i + 2}: ${err.message}`); continue }
+        if (err) { erros.push(`Linha ${i + 2}: ${mensagemErro(err)}`); continue }
         produtosExistentes.add(nome.toLowerCase())
         ok++
       } catch {
@@ -136,21 +203,25 @@ export default function ImportarPage() {
       }
     }
 
-    setResultado({ ok, produtosCriados: 0, erros })
+    setResultado({ tipo: 'produtos', ok, produtosCriados: 0, erros, avisos: [] })
     setImporting(false)
   }
 
   async function importar() {
     if (tipoImport === 'produtos') { await importarProdutos(); return }
+    const temColunaTipo = Object.values(mapeamento).includes('tipo')
+    if (!temColunaTipo && !tipoPadrao) { alert('Nenhuma coluna está mapeada como "Tipo". Escolha se os registros são entradas ou saídas.'); return }
     setImporting(true)
     const supabase = createClient()
     const erros: string[] = []
+    const avisos: string[] = []
     let ok = 0
     let produtosCriados = 0
 
     // Mapa de produtos existentes
     const produtoMap: Record<string, string> = {}
     for (const p of produtos) produtoMap[p.nome.toLowerCase().trim()] = p.id
+    const prodPorId = new Map(produtos.map(p => [p.id, p]))
 
     for (let i = 0; i < csvRows.length; i++) {
       const row = csvRows[i]
@@ -163,26 +234,31 @@ export default function ImportarPage() {
         const produto_nome = get('produto_nome')
         if (!produto_nome) { erros.push(`Linha ${i + 2}: produto vazio`); continue }
 
-        const qtdStr = get('quantidade').replace(',', '.')
-        const quantidade = parseFloat(qtdStr)
+        const qtdStr = get('quantidade')
+        const quantidade = qtdStr ? parseNumeroBR(qtdStr) : 0
         // Aceita 0 e vazios (considera 0)
         if (isNaN(quantidade)) { erros.push(`Linha ${i + 2}: quantidade inválida ("${qtdStr}")`); continue }
 
         const responsavel = get('responsavel') || 'Importado'
-        const dataStr = parseDate(get('data')) ?? new Date().toISOString().split('T')[0]
-        const tipo = get('tipo')?.toLowerCase().includes('entrada') ? 'entrada' : 'saida'
+        const dataStr = parseDate(get('data')) ?? hojeLocal()
+        const tipoTxt = normalizar(get('tipo'))
+        const tipo = tipoTxt.startsWith('e') ? 'entrada' : tipoTxt.startsWith('s') ? 'saida' : tipoPadrao
+        if (!tipo) { erros.push(`Linha ${i + 2}: tipo não reconhecido ("${get('tipo')}") — use entrada ou saída`); continue }
         const unidade = get('unidade') || 'un'
         const observacoes = get('observacoes') || null
 
         // Criar produto se não existir e opção ligada
         let produto_id = produtoMap[produto_nome.toLowerCase().trim()] ?? null
         if (!produto_id && cadastrarProdutos) {
-          const { data: novoProd } = await supabase.from('estoque_produtos').insert({
+          const { data: novoProd, error: errProd } = await supabase.from('estoque_produtos').insert({
             estoque_id: estoqueId, nome: produto_nome, unidade,
           }).select().single()
-          if (novoProd) {
+          if (errProd || !novoProd) {
+            avisos.push(`Linha ${i + 2}: produto "${produto_nome}" não foi cadastrado (${mensagemErro(errProd)}); registro importado sem vínculo e sem mexer em saldo`)
+          } else {
             produto_id = novoProd.id
             produtoMap[produto_nome.toLowerCase().trim()] = novoProd.id
+            prodPorId.set(novoProd.id, novoProd as EstoqueProduto)
             produtosCriados++
           }
         }
@@ -192,7 +268,7 @@ export default function ImportarPage() {
           responsavel, data: dataStr, observacoes,
         }).select().single()
 
-        if (regErr) { erros.push(`Linha ${i + 2}: ${regErr.message}`); continue }
+        if (regErr) { erros.push(`Linha ${i + 2}: ${mensagemErro(regErr)}`); continue }
 
         const valores = campos.map(c => {
           const col = Object.entries(mapeamento).find(([, v]) => v === `campo_${c.id}`)?.[0]
@@ -201,7 +277,14 @@ export default function ImportarPage() {
         }).filter((v): v is { registro_id: string; campo_id: string; valor: string } => v !== null)
 
         if (valores.length > 0) {
-          await supabase.from('estoque_registro_valores').insert(valores)
+          const { error: errVal } = await supabase.from('estoque_registro_valores').insert(valores)
+          if (errVal) avisos.push(`Linha ${i + 2}: campos extras não gravados (${mensagemErro(errVal)})`)
+        }
+
+        if (atualizarSaldo && produto_id && quantidade !== 0) {
+          const prod = prodPorId.get(produto_id)
+          const { error: errSaldo } = await ajustarSaldo(supabase, produto_id, tipo === 'entrada' ? quantidade : -quantidade, { pisoZero: !controlaSaldo(prod) })
+          if (errSaldo) avisos.push(`Linha ${i + 2}: saldo de "${produto_nome}" não atualizado (${mensagemErro(errSaldo)})`)
         }
 
         ok++
@@ -210,7 +293,7 @@ export default function ImportarPage() {
       }
     }
 
-    setResultado({ ok, produtosCriados, erros })
+    setResultado({ tipo: 'registros', ok, produtosCriados, erros, avisos })
     setImporting(false)
   }
 
@@ -251,6 +334,7 @@ export default function ImportarPage() {
           <li>Exporte a planilha do seu sistema atual como CSV</li>
           <li>O sistema detecta automaticamente as colunas — você pode ajustar o mapeamento</li>
           <li>Datas aceitas: DD/MM/AAAA ou AAAA-MM-DD</li>
+          <li>Números no formato brasileiro (1.234,56) ou com ponto (1234.56)</li>
           <li>Linhas com quantidade 0 são aceitas normalmente</li>
         </ul>
       </div>
@@ -297,6 +381,36 @@ export default function ImportarPage() {
               <p className="text-xs text-[#94A3B8]">Cria os produtos na aba Produtos para cada nome único encontrado no CSV</p>
             </div>
           </label>
+
+          {tipoImport === 'registros' && (
+            <label className="flex items-center gap-3 px-4 py-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] cursor-pointer">
+              <input type="checkbox" checked={atualizarSaldo} onChange={e => setAtualizarSaldo(e.target.checked)} className="w-4 h-4 accent-[#4F7CFF]" />
+              <div>
+                <p className="text-sm font-medium text-[#374151]">Atualizar o saldo dos produtos</p>
+                <p className="text-xs text-[#94A3B8]">
+                  {atualizarSaldo
+                    ? 'Cada entrada soma e cada saída desconta do saldo do produto.'
+                    : 'O saldo dos produtos NÃO muda (use para histórico antigo, quando o saldo atual já está certo).'}
+                </p>
+              </div>
+            </label>
+          )}
+
+          {tipoImport === 'registros' && (
+            <div className="px-4 py-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] space-y-1.5">
+              <label className="block text-sm font-medium text-[#374151]">
+                {Object.values(mapeamento).includes('tipo') ? 'Tipo quando a linha não disser entrada/saída' : 'Tipo dos registros *'}
+              </label>
+              <select className="field text-sm" value={tipoPadrao} onChange={e => setTipoPadrao(e.target.value as typeof tipoPadrao)}>
+                <option value="">{Object.values(mapeamento).includes('tipo') ? 'Nenhum (linha vira erro)' : 'Selecione...'}</option>
+                <option value="entrada">Entrada</option>
+                <option value="saida">Saída</option>
+              </select>
+              {!Object.values(mapeamento).includes('tipo') && (
+                <p className="text-xs text-amber-700">Nenhuma coluna está mapeada como &quot;Tipo&quot;: escolha se o arquivo é de entradas ou de saídas.</p>
+              )}
+            </div>
+          )}
 
           <div className="card p-0 overflow-x-auto">
             <table className="w-full min-w-[620px]">
@@ -354,7 +468,7 @@ export default function ImportarPage() {
             <Link href={`/estoque/${estoqueId}`} className="px-5 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9] transition-colors">
               Cancelar
             </Link>
-            <button onClick={importar} disabled={importing} className="btn-primary flex items-center gap-2 px-6 w-full sm:w-auto">
+            <button onClick={importar} disabled={importing || (tipoImport === 'registros' && !Object.values(mapeamento).includes('tipo') && !tipoPadrao)} className="btn-primary flex items-center gap-2 px-6 w-full sm:w-auto">
               {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
               {importing ? 'Importando...' : `Importar ${csvRows.length} ${tipoImport === 'produtos' ? 'produtos' : 'registros'}`}
             </button>
@@ -369,7 +483,7 @@ export default function ImportarPage() {
               {resultado.erros.length === 0 ? <Check size={20} className="text-green-600" /> : <AlertCircle size={20} className="text-yellow-600" />}
               <div>
                 <p className="font-semibold text-[#0F172A]">
-                  {resultado.ok} registro{resultado.ok !== 1 ? 's' : ''} importado{resultado.ok !== 1 ? 's' : ''}
+                  {resultado.ok} {resultado.tipo === 'produtos' ? 'produto' : 'registro'}{resultado.ok !== 1 ? 's' : ''} importado{resultado.ok !== 1 ? 's' : ''}
                   {resultado.erros.length > 0 ? `, ${resultado.erros.length} com erro` : ' com sucesso'}
                 </p>
                 {resultado.produtosCriados > 0 && (
@@ -383,6 +497,15 @@ export default function ImportarPage() {
                 {resultado.erros.length > 10 && <li>...e mais {resultado.erros.length - 10} erros</li>}
               </ul>
             )}
+            {resultado.avisos.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold text-amber-800">Avisos ({resultado.avisos.length}):</p>
+                <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside mt-1">
+                  {resultado.avisos.slice(0, 10).map((e, i) => <li key={i}>{e}</li>)}
+                  {resultado.avisos.length > 10 && <li>...e mais {resultado.avisos.length - 10} avisos</li>}
+                </ul>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
             <button onClick={() => { setResultado(null); setCsvRows([]); setCsvHeaders([]); if (fileRef.current) fileRef.current.value = '' }}
@@ -390,7 +513,7 @@ export default function ImportarPage() {
               Importar outro arquivo
             </button>
             <Link href={`/estoque/${estoqueId}`} className="btn-primary flex items-center gap-2 px-6">
-              Ver registros importados
+              {resultado.tipo === 'produtos' ? 'Ver produtos' : 'Ver registros importados'}
             </Link>
           </div>
         </div>

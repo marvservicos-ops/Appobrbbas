@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Plus, Trash2, Eraser, AlertTriangle, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueCampo, EstoqueProduto } from '@/lib/types'
+import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
+import { hojeLocal } from '@/lib/datas'
+import { arred, numeroOuPadrao } from '@/lib/numero'
+import { mensagemErro } from '@/lib/erros'
+import { lancarCustoAdministrativo, reporEstoqueManutencao } from '../registroVinculos'
 
 interface ItemCarrinho {
   key: string
@@ -22,7 +27,7 @@ const isCAField = (c: EstoqueCampo) => {
   return n === 'ca' || n === 'nºca' || n === 'noca' || n.includes('nºca') || n.includes('numeroca')
 }
 
-export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos, campos, obras, manutencoes, responsaveis }: {
+export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos: produtosIniciais, campos, obras, manutencoes, responsaveis }: {
   estoqueId: string
   estoqueNome: string
   produtos: EstoqueProduto[]
@@ -34,7 +39,9 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
   const router = useRouter()
   const [respModoLivre, setRespModoLivre] = useState(false)
 
-  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(hojeLocal())
+  // Cópia local: o saldo é atualizado com o que o banco devolve, sem mexer nas props
+  const [produtos, setProdutos] = useState<EstoqueProduto[]>(produtosIniciais)
   const [responsavel, setResponsavel] = useState('')
   const [destinoTipo, setDestinoTipo] = useState<DestinoTipo>('obra')
   const [obraId, setObraId] = useState('')
@@ -54,6 +61,9 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
   const isDrawing = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
   const [temAssinatura, setTemAssinatura] = useState(false)
+  // Reenvio depois de falha parcial: mesmo lote e mesma assinatura já enviada
+  const loteRef = useRef<string | null>(null)
+  const assinaturaRef = useRef<string | null>(null)
 
   function getPos(e: React.MouseEvent | React.TouchEvent) {
     const canvas = canvasRef.current!
@@ -63,7 +73,7 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
     if ('touches' in e) return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY }
     return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
   }
-  function startDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = true; lastPos.current = getPos(e); setTemAssinatura(true) }
+  function startDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = true; lastPos.current = getPos(e); setTemAssinatura(true); assinaturaRef.current = null }
   function draw(e: React.MouseEvent | React.TouchEvent) {
     e.preventDefault(); if (!isDrawing.current) return
     const canvas = canvasRef.current!; const ctx = canvas.getContext('2d')!
@@ -73,7 +83,7 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
     lastPos.current = pos
   }
   function stopDraw(e: React.MouseEvent | React.TouchEvent) { e.preventDefault(); isDrawing.current = false }
-  function limparCanvas() { const canvas = canvasRef.current!; canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height); setTemAssinatura(false) }
+  function limparCanvas() { const canvas = canvasRef.current!; canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height); setTemAssinatura(false); assinaturaRef.current = null }
 
   function selecionarProduto(id: string) {
     setProdutoId(id)
@@ -93,12 +103,12 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
     setError('')
     if (!produtoId || (produtoId === '__outro__' && !produtoNome.trim())) { setError('Selecione o produto.'); return }
     if (destinoTipo === 'manutencao' && (!produtoId || produtoId === '__outro__')) { setError('Para destino Manutenção, selecione um produto do catálogo.'); return }
-    const qtd = parseFloat(quantidade)
+    const qtd = numeroOuPadrao(quantidade, 0)
     if (!qtd || qtd <= 0) { setError('Informe a quantidade.'); return }
     if (produtoId !== '__outro__') {
       const prod = produtos.find(p => p.id === produtoId)
       const jaNoCarrinho = itens.filter(i => i.produtoId === produtoId).reduce((s, i) => s + parseFloat(i.quantidade), 0)
-      if (prod && prod.quantidade_atual - jaNoCarrinho - qtd < 0) {
+      if (prod && controlaSaldo(prod) && prod.quantidade_atual - jaNoCarrinho - qtd < 0) {
         setError(`Saldo insuficiente! Estoque atual: ${prod.quantidade_atual} ${prod.unidade}.`); return
       }
     }
@@ -127,21 +137,25 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
     setSaving(true)
     const supabase = createClient()
 
-    let assinatura_url: string | null = null
-    if (temAssinatura && canvasRef.current) {
+    let assinatura_url: string | null = assinaturaRef.current
+    if (!assinatura_url && temAssinatura && canvasRef.current) {
       const blob = await new Promise<Blob | null>(res => canvasRef.current!.toBlob(res, 'image/png'))
       if (blob) {
         const path = `${estoqueId}/${Date.now()}.png`
         const { error: upErr } = await supabase.storage.from('assinaturas').upload(path, blob)
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('assinaturas').getPublicUrl(path)
-          assinatura_url = urlData.publicUrl
-        }
+        if (upErr) { setError(mensagemErro(upErr, 'Não foi possível enviar a assinatura')); setSaving(false); return }
+        const { data: urlData } = supabase.storage.from('assinaturas').getPublicUrl(path)
+        assinatura_url = urlData.publicUrl
+        assinaturaRef.current = assinatura_url
       }
     }
 
-    const loteId = crypto.randomUUID()
+    const loteId = loteRef.current ??= crypto.randomUUID()
     let categoriaLimpezaId: string | null = null
+    // Itens não são gravados numa transação: o que já foi gravado sai do carrinho, para um reenvio não duplicar
+    const gravados = new Set<string>()
+    const avisos: string[] = []
+    let falha: { item: ItemCarrinho; msg: string } | null = null
 
     for (const item of itens) {
       const prod = produtos.find(p => p.id === item.produtoId)
@@ -159,7 +173,8 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
         preco_unitario_custo: cmpAtual || null, valor_total: valor_total || null,
       }).select().single()
 
-      if (regErr) { setError(regErr.message); setSaving(false); return }
+      if (regErr) { falha = { item, msg: mensagemErro(regErr) }; break }
+      gravados.add(item.key)
 
       const valores = campos
         .map(c => {
@@ -167,69 +182,57 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
           return v ? { registro_id: reg.id, campo_id: c.id, valor: v } : null
         })
         .filter(Boolean) as { registro_id: string; campo_id: string; valor: string }[]
-      if (valores.length > 0) await supabase.from('estoque_registro_valores').insert(valores)
+      if (valores.length > 0) {
+        const { error: errVal } = await supabase.from('estoque_registro_valores').insert(valores)
+        if (errVal) avisos.push(`campos extras de ${item.produtoNome} (${mensagemErro(errVal)})`)
+      }
 
       if (item.produtoId !== '__outro__' && prod) {
-        const quantidadeAnterior = prod.quantidade_atual
-        const novaQtd = quantidadeAnterior - qtd
-        await supabase.from('estoque_produtos').update({ quantidade_atual: novaQtd }).eq('id', item.produtoId)
-        prod.quantidade_atual = novaQtd
-
-        if (prod.quantidade_minima > 0) {
-          fetch('/api/estoque/alerta-critico', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              produtoNome: prod.nome, estoqueNome,
-              quantidadeAnterior, quantidadeNova: novaQtd,
-              quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
-            }),
-          }).catch(() => {})
+        const { saldo, error: errSaldo } = await ajustarSaldo(supabase, item.produtoId, -qtd, { pisoZero: !controlaSaldo(prod) })
+        if (errSaldo || saldo === null) avisos.push(`saldo de ${item.produtoNome} (${mensagemErro(errSaldo)})`)
+        else {
+          setProdutos(prev => prev.map(p => p.id === prod.id ? { ...p, quantidade_atual: saldo } : p))
+          if (controlaSaldo(prod) && prod.quantidade_minima > 0) {
+            fetch('/api/estoque/alerta-critico', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                produtoNome: prod.nome, estoqueNome,
+                quantidadeAnterior: arred(saldo + qtd), quantidadeNova: saldo,
+                quantidadeMinima: prod.quantidade_minima, unidade: prod.unidade,
+              }),
+            }).catch(() => {})
+          }
         }
       }
 
       // Destino Manutenção repõe o estoque local do contrato
       if (destinoTipo === 'manutencao' && manutencaoId && item.produtoId !== '__outro__') {
-        const { data: existente } = await supabase.from('manutencao_estoque_produtos')
-          .select('id, quantidade_atual').eq('contrato_id', manutencaoId).eq('produto_id', item.produtoId).maybeSingle()
-        if (existente) {
-          await supabase.from('manutencao_estoque_produtos').update({ quantidade_atual: existente.quantidade_atual + qtd }).eq('id', existente.id)
-        } else {
-          await supabase.from('manutencao_estoque_produtos').insert({ contrato_id: manutencaoId, produto_id: item.produtoId, quantidade_atual: qtd })
-        }
-        await supabase.from('manutencao_estoque_registros').insert({
-          contrato_id: manutencaoId, produto_id: item.produtoId, tipo: 'entrada', quantidade: qtd,
-          responsavel: responsavel.trim(), data, origem_estoque_registro_id: reg.id,
+        const errMan = await reporEstoqueManutencao(supabase, {
+          contratoId: manutencaoId, produtoId: item.produtoId, qtd, responsavel: responsavel.trim(), data, registroId: reg.id,
         })
+        if (errMan) avisos.push(`estoque do contrato de manutenção para ${item.produtoNome} (${mensagemErro(errMan)})`)
       }
 
       // Destino Uso Interno vira gasto administrativo do mês
       if (destinoTipo === 'uso_interno' && valor_total > 0) {
-        if (!categoriaLimpezaId) {
-          const { data: categoria } = await supabase.from('categorias_administrativas').select('id').eq('nome', 'Material de Limpeza').maybeSingle()
-          if (categoria) {
-            categoriaLimpezaId = categoria.id
-          } else {
-            const { data: novaCategoria } = await supabase.from('categorias_administrativas')
-              .insert({ nome: 'Material de Limpeza', icone: 'Sparkles', cor: '#2DD4BF' })
-              .select('id').single()
-            categoriaLimpezaId = novaCategoria?.id ?? null
-          }
-        }
-        if (categoriaLimpezaId) {
-          await supabase.from('custos_administrativos').insert({
-            descricao: `${item.produtoNome} (${qtd} ${item.unidade})`,
-            categoria_id: categoriaLimpezaId,
-            valor: valor_total,
-            data,
-            recorrencia: 'unico',
-            ativo: true,
-            observacao: 'Gerado automaticamente a partir de saída de estoque (uso interno).',
-          })
-        }
+        const { categoriaId, error: errCusto } = await lancarCustoAdministrativo(supabase, {
+          categoria: { nome: 'Material de Limpeza', icone: 'Sparkles', cor: '#2DD4BF' },
+          categoriaId: categoriaLimpezaId,
+          descricao: `${item.produtoNome} (${qtd} ${item.unidade})`, valor: valor_total, data,
+          observacao: 'Gerado automaticamente a partir de saída de estoque (uso interno).', registroId: reg.id,
+        })
+        categoriaLimpezaId = categoriaId
+        if (errCusto) avisos.push(`custo administrativo de ${item.produtoNome} (${mensagemErro(errCusto)})`)
       }
     }
 
     setSaving(false)
+    if (avisos.length > 0) alert(`Saída registrada, mas não foi possível atualizar:\n• ${avisos.join('\n• ')}\n\nConfira e ajuste manualmente.`)
+    if (falha) {
+      setItens(prev => prev.filter(i => !gravados.has(i.key)))
+      setError(`${gravados.size} item(ns) gravado(s) e retirado(s) da lista. Falhou em "${falha.item.produtoNome}": ${falha.msg} Os itens que faltam continuam na lista — toque em Registrar de novo para enviar só eles.`)
+      return
+    }
     router.push(`/estoque/${estoqueId}`)
   }
 
@@ -298,7 +301,7 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
             {itens.map(item => (
               <div key={item.key} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2 border border-[#E2E8F0]">
                 <span className="text-[#0F172A] font-medium">{item.produtoNome} <span className="text-[#94A3B8] font-normal">· {item.quantidade} {item.unidade}</span></span>
-                <button type="button" onClick={() => removerItem(item.key)} className="text-[#94A3B8] hover:text-red-500">
+                <button type="button" onClick={() => removerItem(item.key)} aria-label={`Remover ${item.produtoNome}`} title="Remover item" className="p-2 -m-1 text-[#94A3B8] hover:text-red-500">
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -324,7 +327,7 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
           </div>
           <div className="w-20">
             <label className="block text-xs font-medium text-[#64748B] mb-1">Qtd</label>
-            <input type="number" min="0" step="any" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
+            <input type="number" min="0" step="any" inputMode="decimal" className="field text-sm" value={quantidade} onChange={e => setQuantidade(e.target.value)} />
           </div>
         </div>
 
@@ -355,8 +358,8 @@ export default function FormSaidaLoteLimpeza({ estoqueId, estoqueNome, produtos,
             </button>
           )}
         </div>
-        <div className="border-2 border-dashed border-[#E2E8F0] rounded-xl overflow-hidden bg-white">
-          <canvas ref={canvasRef} width={600} height={160} className="w-full"
+        <div className="border-2 border-dashed border-[#E2E8F0] rounded-xl overflow-hidden bg-white touch-none">
+          <canvas ref={canvasRef} width={600} height={160} className="w-full touch-none"
             onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
             onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
         </div>

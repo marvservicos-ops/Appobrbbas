@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react'
 import { Scale, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { EstoqueProduto } from '@/lib/types'
+import { hojeLocal } from '@/lib/datas'
+import { mensagemErro } from '@/lib/erros'
+import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
 
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -22,7 +25,7 @@ export default function ModalSobraMista({ obraId, produtosSobra, onClose, onSave
   const [kg, setKg] = useState('')
   const [precoKg, setPrecoKg] = useState(produtosSobra?.[0]?.preco_unitario ? String(produtosSobra[0].preco_unitario) : '')
   const [responsavel, setResponsavel] = useState('')
-  const [data, setData] = useState(new Date().toISOString().split('T')[0])
+  const [data, setData] = useState(hojeLocal())
   const [loading, setLoading] = useState(!produtosSobra || !obraId)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -67,7 +70,7 @@ export default function ModalSobraMista({ obraId, produtosSobra, onClose, onSave
     setSaving(true); setError('')
     const supabase = createClient()
 
-    const { error: regErr } = await supabase.from('estoque_registros').insert({
+    const { data: reg, error: regErr } = await supabase.from('estoque_registros').insert({
       estoque_id: produto.estoque_id,
       produto_id: produto.id,
       produto_nome: produto.nome,
@@ -80,12 +83,21 @@ export default function ModalSobraMista({ obraId, produtosSobra, onClose, onSave
       preco_unitario_custo: precoNum,
       valor_total: credito,
       observacoes: 'Sobra mista devolvida da obra (pesada)',
-    })
-    if (regErr) { setError(regErr.message); setSaving(false); return }
+    }).select('id').single()
+    if (regErr) { setError(mensagemErro(regErr, 'Não foi possível registrar a sobra')); setSaving(false); return }
 
-    const upd: Record<string, unknown> = { quantidade_atual: produto.quantidade_atual + kgNum }
-    if (precoNum !== (produto.preco_unitario ?? 0)) upd.preco_unitario = precoNum
-    await supabase.from('estoque_produtos').update(upd).eq('id', produto.id)
+    // Soma no banco (sem sobrescrever outra movimentação feita ao mesmo tempo)
+    const { error: saldoErr } = await ajustarSaldo(supabase, produto.id, kgNum, { pisoZero: !controlaSaldo(produto) })
+    if (saldoErr) {
+      await supabase.from('estoque_registros').delete().eq('id', reg.id)
+      setError(mensagemErro(saldoErr, 'Não foi possível atualizar o saldo do item de sobra'))
+      setSaving(false)
+      return
+    }
+    if (precoNum !== (produto.preco_unitario ?? 0)) {
+      const { error: precoErr } = await supabase.from('estoque_produtos').update({ preco_unitario: precoNum }).eq('id', produto.id)
+      if (precoErr) alert(mensagemErro(precoErr, 'Sobra registrada, mas o valor do kg não foi atualizado'))
+    }
 
     setSaving(false)
     onSaved()
@@ -99,7 +111,7 @@ export default function ModalSobraMista({ obraId, produtosSobra, onClose, onSave
             <h3 className="font-syne font-semibold text-[#0F172A]">Devolver sobra mista</h3>
             <p className="text-xs text-[#94A3B8] mt-0.5">Pese o balde de sobra misturada da obra. Não precisa separar.</p>
           </div>
-          <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className="p-2 -m-2 rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-[#4F7CFF]" /></div>
@@ -130,11 +142,11 @@ export default function ModalSobraMista({ obraId, produtosSobra, onClose, onSave
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">Peso (kg) *</label>
-                <input type="number" step="0.001" min="0" className="field" autoFocus value={kg} onChange={e => setKg(e.target.value)} placeholder="0,000" />
+                <input type="number" inputMode="decimal" step="0.001" min="0" className="field" autoFocus value={kg} onChange={e => setKg(e.target.value)} placeholder="0,000" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#374151] mb-1.5">R$ por kg *</label>
-                <input type="number" step="0.01" min="0" className="field" value={precoKg} onChange={e => setPrecoKg(e.target.value)} placeholder="0,00" />
+                <input type="number" inputMode="decimal" step="0.01" min="0" className="field" value={precoKg} onChange={e => setPrecoKg(e.target.value)} placeholder="0,00" />
               </div>
             </div>
             {produto && precoNum > 0 && precoNum !== (produto.preco_unitario ?? 0) && (
