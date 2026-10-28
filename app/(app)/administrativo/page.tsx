@@ -174,7 +174,7 @@ export default function AdministrativoPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="font-syne text-xl font-bold text-[#0F172A]">Custos Administrativos</h1>
+            <h1 className="font-syne text-xl font-bold text-[#0F172A]">Custos da empresa</h1>
             <p className="text-sm text-[#64748B] mt-0.5">Controle de despesas fixas e variáveis da empresa</p>
           </div>
           <div className="flex items-center gap-2">
