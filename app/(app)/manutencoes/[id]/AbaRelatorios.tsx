@@ -27,6 +27,7 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
   const [mesAberto, setMesAberto] = useState(mesLocal())
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [enviando, setEnviando] = useState(false)
+  const [marcando, setMarcando] = useState(false)
 
   const atual = mesLocal()
   const meses = useMemo(() => Array.from({ length: MESES_NA_GRADE }, (_, i) => somarMeses(atual, i - (MESES_NA_GRADE - 1))), [atual])
@@ -93,6 +94,20 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
     .filter(r => (r.data ?? '').startsWith(mesAberto) && tiposAtivos.some(t => t.diario_obra_id === r.diario_obra_id_externo))
     .sort((a, b) => nomeTipo(a).localeCompare(nomeTipo(b)) || (a.data ?? '').localeCompare(b.data ?? ''))
   const naoEnviadosDoMes = doMes.filter(r => r.drive_file_id && !r.email_enviado_em)
+
+  // Para relatórios que já foram enviados por fora do app (antes desta aba existir)
+  async function marcarComoEnviados() {
+    const ids = Array.from(selecionados)
+    if (!confirm(`Marcar ${ids.length} relatório(s) como já enviado(s) ao cliente?\n\nNenhum e-mail será enviado — use para o que já foi mandado por fora do app.`)) return
+    setMarcando(true)
+    const { error } = await createClient().from('diario_obra_relatorios')
+      .update({ email_enviado_em: new Date().toISOString(), email_enviado_por: 'Marcado manualmente' })
+      .in('id', ids)
+    setMarcando(false)
+    if (error) { setAviso({ tipo: 'erro', texto: mensagemErro(error, 'Erro ao marcar como enviado') }); return }
+    setSelecionados(new Set())
+    load()
+  }
 
   function abrirMes(c: string) { setMesAberto(c); setSelecionados(new Set()) }
   function alternar(id: string) {
@@ -222,6 +237,11 @@ export default function AbaRelatorios({ contratoId, contratoNome, dataInicio }: 
                   Selecionar não enviados ({naoEnviadosDoMes.length})
                 </button>
               )}
+              <button onClick={marcarComoEnviados} disabled={selecionados.size === 0 || marcando}
+                title="Para relatórios já enviados por fora do app"
+                className="px-3 py-2 border border-[#E2E8F0] text-xs font-medium text-[#374151] rounded-xl hover:bg-[#F1F5F9] disabled:opacity-50">
+                {marcando ? 'Marcando…' : 'Marcar como enviado'}
+              </button>
               <button onClick={() => setEnviando(true)} disabled={selecionados.size === 0}
                 className="flex items-center gap-1.5 px-3 py-2 bg-[#4F7CFF] text-white text-xs font-medium rounded-xl hover:bg-[#3D6AE8] disabled:opacity-50">
                 <Send size={13} /> Enviar{selecionados.size > 0 ? ` (${selecionados.size})` : ''}

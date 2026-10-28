@@ -42,10 +42,12 @@ export function devidoNoMes(tipo: Pick<ContratoRelatorioTipo, 'periodicidade' | 
   return dif >= 0 && dif % passo === 0
 }
 
+const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
+// 'curto' → "out/26" · 'longo' → "outubro de 2026"
 export function nomeCompetencia(competencia: string, formato: 'curto' | 'longo' = 'curto'): string {
   const [a, m] = competencia.split('-').map(Number)
-  const d = new Date(a, m - 1, 15)
   return formato === 'longo'
-    ? d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-    : d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '')
+    ? new Date(a, m - 1, 15).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    : `${MESES_CURTOS[m - 1]}/${String(a).slice(2)}`
 }
