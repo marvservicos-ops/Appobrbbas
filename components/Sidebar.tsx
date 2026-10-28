@@ -18,7 +18,6 @@ const navItemsBase = [
   { href: '/funcionarios/alocacao', label: 'Alocação', icon: CalendarDays },
   { href: '/notas', label: 'Notas', icon: StickyNote },
   { href: '/documentos', label: 'Documentos', icon: FileText },
-  { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
   { href: '/clientes', label: 'Clientes', icon: Users },
 ]
 

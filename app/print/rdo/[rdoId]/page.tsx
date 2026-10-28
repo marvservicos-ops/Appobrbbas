@@ -75,7 +75,7 @@ export default function RDOPrintPage() {
   }, [loading, rdo, obra])
 
   if (loading) return <PrintCarregando texto="Preparando relatório..." />
-  if (!rdo || !obra) return <PrintNaoEncontrado texto="Relatório (RDO) não encontrado." voltarHref="/relatorios" voltarTexto="Voltar aos relatórios" />
+  if (!rdo || !obra) return <PrintNaoEncontrado texto="Relatório (RDO) não encontrado." voltarHref="/obras" voltarTexto="Voltar às obras" />
 
   const dataRdo = parseData(rdo.data)
   const diaSemana = DIAS_SEMANA[dataRdo.getDay()]
