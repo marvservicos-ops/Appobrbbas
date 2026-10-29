@@ -14,6 +14,7 @@ import { formatarData, hojeLocal } from '@/lib/datas'
 import { arred, numeroOuPadrao, parseNumeroBR } from '@/lib/numero'
 import { mensagemErro } from '@/lib/erros'
 import ModalSobraMista from '@/components/ModalSobraMista'
+import { CampoPesoPeca, PesoParaQuantidade } from '@/components/PesoBalanca'
 import Link from 'next/link'
 import FerramentasPanel from './ferramentas/FerramentasPanel'
 import ModalEditarRegistro from './ModalEditarRegistro'
@@ -807,6 +808,7 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
   const [categoriaId, setCategoriaId] = useState(produto.categoria_id ?? '')
   const [controla, setControla] = useState(controlaSaldo(produto))
   const [sobraMista, setSobraMista] = useState(!!produto.sobra_mista)
+  const [pesoPeca, setPesoPeca] = useState(produto.peso_unitario_g ? String(produto.peso_unitario_g) : '')
   const qtdOriginal = produto.quantidade_atual
   const ligandoControle = controla && !controlaSaldo(produto)
 
@@ -848,6 +850,8 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
       categoria_id: categoriaId || null,
       controla_saldo: controla,
       sobra_mista: sobraMista,
+      // Só manda o peso quando mexido — assim salvar continua funcionando antes da migração do campo
+      ...(numeroOuPadrao(pesoPeca, 0) !== (produto.peso_unitario_g ?? 0) ? { peso_unitario_g: numeroOuPadrao(pesoPeca, 0) || null } : {}),
     }).eq('id', produto.id)
     if (error) { setLoading(false); alert(mensagemErro(error, 'Erro ao salvar o produto')); return }
 
@@ -904,6 +908,7 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
             </div>
           </div>
           <ControleSaldoOpcoes controla={controla} setControla={setControla} sobraMista={sobraMista} setSobraMista={setSobraMista} />
+          {!sobraMista && <CampoPesoPeca value={pesoPeca} onChange={setPesoPeca} />}
           {ligandoControle && (
             <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded-lg">
               Informe em <strong>Qtd Atual</strong> a quantidade contada no inventário. A partir de agora a saída passa a exigir saldo.
@@ -1099,6 +1104,7 @@ function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
               className="field" placeholder="0" autoFocus
               value={qtd} onChange={e => setQtd(e.target.value)}
             />
+            {!!produto?.peso_unitario_g && <div className="mt-2"><PesoParaQuantidade pesoUnitarioG={produto.peso_unitario_g} unidade={registro.unidade} onQuantidade={setQtd} /></div>}
             {qtdNum > 0 && precoAtual > 0 && (
               <p className="text-xs text-emerald-600 mt-1">
                 Crédito à obra: {valorCredito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
@@ -1220,6 +1226,7 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
   const [categoriaId, setCategoriaId] = useState('')
   const [controla, setControla] = useState(true)
   const [sobraMista, setSobraMista] = useState(false)
+  const [pesoPeca, setPesoPeca] = useState('')
   const [loading, setLoading] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
 
@@ -1239,6 +1246,7 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
       categoria_id: categoriaId || null,
       controla_saldo: controla,
       sobra_mista: sobraMista,
+      ...(!sobraMista && numeroOuPadrao(pesoPeca, 0) > 0 ? { peso_unitario_g: numeroOuPadrao(pesoPeca, 0) } : {}),
     }).select('id').single()
     if (error) { setLoading(false); alert(mensagemErro(error, 'Erro ao cadastrar o produto')); return }
     if (novo && qtd !== 0) {
@@ -1249,7 +1257,7 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
       if (errLog) alert(mensagemErro(errLog, 'Produto cadastrado, mas o histórico do inventário inicial não foi gravado'))
     }
     setNome(''); setCodigo(''); setCodigoBarras(''); setTamanho(''); setUnidade('un'); setQtdMin('0')
-    setQtdInicial(''); setPreco(''); setSobraMista(false)
+    setQtdInicial(''); setPreco(''); setSobraMista(false); setPesoPeca('')
     setShow(false); setLoading(false)
     onAdded()
   }
@@ -1306,6 +1314,11 @@ function AddProdutoInline({ estoqueId, estoqueIcone, categorias, onAdded }: { es
         )}
       </div>
       <ControleSaldoOpcoes controla={controla} setControla={setControla} sobraMista={sobraMista} setSobraMista={setSobraMista} />
+      {!sobraMista && (
+        <div className="max-w-xs">
+          <CampoPesoPeca compacto value={pesoPeca} onChange={setPesoPeca} />
+        </div>
+      )}
       <div className="flex gap-3 items-end">
         <div className="flex-1">
           <label className="block text-xs font-medium text-[#64748B] mb-1">Código de Barras / QR Code</label>

@@ -207,6 +207,8 @@ export interface EstoqueProduto {
   controla_saldo?: boolean
   // item em kg que recebe a sobra misturada que volta da obra; preco_unitario é o R$/kg
   sobra_mista?: boolean
+  // peso de 1 peça em gramas: permite lançar a quantidade pelo peso na balança
+  peso_unitario_g?: number | null
   created_at: string
 }
 

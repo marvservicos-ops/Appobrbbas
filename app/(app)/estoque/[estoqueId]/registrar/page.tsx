@@ -12,6 +12,7 @@ import { mensagemErro } from '@/lib/erros'
 import Link from 'next/link'
 import { lancarCustoAdministrativo, reporEstoqueManutencao } from '../registroVinculos'
 import BarcodeScannerModal from '@/components/BarcodeScannerModal'
+import { PesoParaQuantidade } from '@/components/PesoBalanca'
 import FormSaidaEpiLote from './FormSaidaEpiLote'
 import FormSaidaLoteLimpeza from './FormSaidaLoteLimpeza'
 import FormSaidaLoteMateriais from './FormSaidaLoteMateriais'
@@ -639,6 +640,12 @@ function FormSaida({ produtos, campos, obras, funcionarios, responsaveis, manute
           <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
         </div>
       </div>
+      {(() => {
+        const prod = produtos.find((p: EstoqueProduto) => p.id === produtoId)
+        return prod?.peso_unitario_g
+          ? <PesoParaQuantidade key={prod.id} pesoUnitarioG={prod.peso_unitario_g} unidade={prod.unidade} onQuantidade={setQuantidade} />
+          : null
+      })()}
 
       {(() => {
         const prod = produtos.find((p: EstoqueProduto) => p.id === produtoId)
@@ -849,6 +856,12 @@ function FormEntradaUnica({ produtos, campos, produtoId, setProdutoId, produtoNo
           <input className="field" value={unidade} onChange={e => setUnidade(e.target.value)} placeholder="un" />
         </div>
       </div>
+      {(() => {
+        const prod = produtos.find((p: EstoqueProduto) => p.id === produtoId)
+        return prod?.peso_unitario_g
+          ? <PesoParaQuantidade key={prod.id} pesoUnitarioG={prod.peso_unitario_g} unidade={prod.unidade} onQuantidade={setQuantidade} />
+          : null
+      })()}
 
       <div>
         <label className="block text-sm font-medium text-[#374151] mb-1.5">Preço Unitário (R$) *</label>

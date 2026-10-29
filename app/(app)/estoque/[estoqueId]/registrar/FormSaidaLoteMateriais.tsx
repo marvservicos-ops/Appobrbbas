@@ -10,6 +10,7 @@ import { hojeLocal } from '@/lib/datas'
 import { arred, numeroOuPadrao } from '@/lib/numero'
 import { mensagemErro } from '@/lib/erros'
 import { reporEstoqueManutencao } from '../registroVinculos'
+import { PesoParaQuantidade } from '@/components/PesoBalanca'
 
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const normalizar = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -436,6 +437,11 @@ export default function FormSaidaLoteMateriais({ estoqueId, estoqueNome, produto
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionarItem() } }} />
           </div>
         </div>
+
+        {!!prodSel?.peso_unitario_g && (
+          <PesoParaQuantidade key={prodSel.id} compacto pesoUnitarioG={prodSel.peso_unitario_g} unidade={prodSel.unidade}
+            onQuantidade={setQuantidade} onEnter={adicionarItem} />
+        )}
 
         {prodSel && !prodSel.preco_unitario && (
           <p className="text-xs text-amber-700">Este produto está sem preço: vai sem custo para a obra. Defina o preço em Produtos.</p>
