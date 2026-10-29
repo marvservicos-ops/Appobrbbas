@@ -12,6 +12,7 @@ import { useAccess } from '@/lib/useAccess'
 import { hojeLocal, diasEntre } from '@/lib/datas'
 import { mensagemErro } from '@/lib/erros'
 import ModalNovaObra from '@/components/ModalNovaObra'
+import { StatusMaterialBadge, StatusMaterialPicker } from '@/components/StatusMaterial'
 
 type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais' | 'equipe'
 
@@ -71,7 +72,7 @@ interface ObraMaterial {
   valor_venda_total?: number
   numero_oc?: string
   oc_id?: string | null
-  status: 'pendente' | 'orcado' | 'comprado' | 'em_transito' | 'recebido' | 'instalado'
+  status: string // chave em obra_material_status
   nota_fiscal_url?: string
   nota_fiscal_path?: string
   nf_pagamento_url?: string
@@ -1517,7 +1518,7 @@ export default function ObraDetailPage() {
                   { label: 'Total', val: materiais.length, color: 'text-[#0F172A]', bg: 'bg-[#F1F5F9]' },
                   { label: 'Pendente/Orçado', val: materiais.filter(m => m.status === 'pendente' || m.status === 'orcado').length, color: 'text-slate-600', bg: 'bg-slate-100' },
                   { label: 'Comprado/Trânsito', val: materiais.filter(m => m.status === 'comprado' || m.status === 'em_transito').length, color: 'text-blue-700', bg: 'bg-blue-50' },
-                  { label: 'Recebido/Instalado', val: materiais.filter(m => m.status === 'recebido' || m.status === 'instalado').length, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                  { label: 'Recebido/Em obra/Instalado', val: materiais.filter(m => m.status === 'recebido' || m.status === 'em_obra' || m.status === 'instalado').length, color: 'text-emerald-700', bg: 'bg-emerald-50' },
                 ].map(s => (
                   <div key={s.label} className={`card py-3 text-center ${s.bg}`}>
                     <div className={`text-2xl font-syne font-bold ${s.color}`}>{s.val}</div>
@@ -2584,16 +2585,6 @@ function ModalEditarDoc({ doc, pastaAtualId, pastas, onClose, onSaved }: {
   )
 }
 
-// ── STATUS CONFIG MATERIAL ────────────────────────────
-const STATUS_MATERIAL: Record<string, { label: string; cls: string }> = {
-  pendente:    { label: 'Pendente',    cls: 'bg-slate-100 text-slate-600' },
-  orcado:      { label: 'Orçado',      cls: 'bg-amber-50 text-amber-700' },
-  comprado:    { label: 'Comprado',    cls: 'bg-orange-50 text-orange-700' },
-  em_transito: { label: 'Em trânsito', cls: 'bg-blue-50 text-blue-700' },
-  recebido:    { label: 'Recebido',    cls: 'bg-teal-50 text-teal-700' },
-  instalado:   { label: 'Instalado',   cls: 'bg-emerald-50 text-emerald-700' },
-}
-
 // ── MateriaisLista ────────────────────────────────────
 function MateriaisLista({ materiais, onEdit, onDelete, onEditGrupo }: {
   materiais: ObraMaterial[]
@@ -2706,13 +2697,12 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
         <>
           <div className="divide-y divide-[#E2E8F0] md:hidden">
             {itens.map(m => {
-              const st = STATUS_MATERIAL[m.status] ?? STATUS_MATERIAL.pendente
               return (
                 <article key={m.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-semibold leading-5 text-[#0F172A] break-words">{m.descricao}</h3>
-                      <span className={`inline-flex mt-2 text-[11px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                      <StatusMaterialBadge chave={m.status} className="inline-flex mt-2 text-[11px]" />
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button aria-label={`Editar ${m.descricao}`} onClick={() => onEdit(m)} className="w-10 h-10 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF]"><Pencil size={14} /></button>
@@ -2743,12 +2733,11 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
           </thead>
           <tbody>
             {itens.map(m => {
-              const st = STATUS_MATERIAL[m.status] ?? STATUS_MATERIAL.pendente
               return (
                 <tr key={m.id} className="border-b border-[#F8FAFC] hover:bg-[#F8FAFC] transition-colors group">
                   <td className="px-4 py-2.5 text-sm font-medium text-[#0F172A] max-w-xs">{m.descricao}</td>
                   <td className="px-3 py-2.5">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                    <StatusMaterialBadge chave={m.status} className="text-[10px]" />
                   </td>
                   <td className="px-3 py-2.5 text-sm text-[#374151]">{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</td>
                   <td className="px-3 py-2.5 text-sm text-[#374151]">{m.valor_unitario != null ? fmtMoeda(m.valor_unitario) : '—'}</td>
@@ -3062,7 +3051,6 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
 
 // ── MaterialCard ──────────────────────────────────────
 function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMaterial; onEdit: () => void; onDelete: () => void }) {
-  const st = STATUS_MATERIAL[m.status] ?? STATUS_MATERIAL.pendente
   const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
   const fmtMoeda = (v?: number) => v != null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : null
 
@@ -3079,7 +3067,7 @@ function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMateria
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.tipo_compra === 'cliente' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
                 {m.tipo_compra === 'cliente' ? 'Compra Cliente' : 'Compra Interna'}
               </span>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+              <StatusMaterialBadge chave={m.status} className="text-[10px]" />
             </div>
             {m.fornecedor && <p className="text-xs text-[#64748B] mt-0.5">Fornecedor: {m.fornecedor}</p>}
           </div>
@@ -3363,14 +3351,7 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
 
           {/* Status */}
           <F label="Status">
-            <div className="flex gap-2 flex-wrap">
-              {(Object.entries(STATUS_MATERIAL) as [ObraMaterial['status'], { label: string; cls: string }][]).map(([key, cfg]) => (
-                <button key={key} type="button" onClick={() => setStatus(key)}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border-2 transition-all ${status === key ? cfg.cls + ' border-current' : 'border-[#E2E8F0] text-[#64748B]'}`}>
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
+            <StatusMaterialPicker value={status} onChange={setStatus} />
           </F>
 
           {/* Descrição */}
@@ -4074,14 +4055,7 @@ function ModalNFManual({ obraId, onClose, onSaved }: {
 
           {/* Status padrão para todos os itens */}
           <F label="Status dos itens">
-            <div className="flex gap-2 flex-wrap">
-              {(Object.entries(STATUS_MATERIAL) as [ObraMaterial['status'], { label: string; cls: string }][]).map(([key, cfg]) => (
-                <button key={key} type="button" onClick={() => setStatusPadrao(key)}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border-2 transition-all ${statusPadrao === key ? cfg.cls + ' border-current' : 'border-[#E2E8F0] text-[#64748B]'}`}>
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
+            <StatusMaterialPicker value={statusPadrao} onChange={setStatusPadrao} />
           </F>
 
           {/* Cabeçalho da NF */}
