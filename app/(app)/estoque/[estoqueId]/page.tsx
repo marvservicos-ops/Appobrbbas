@@ -874,7 +874,7 @@ function ModalEditarProduto({ produto, categorias, estoqueIcone, onClose, onSave
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">Editar Produto</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
@@ -1078,7 +1078,7 @@ function ModalDevolucao({ registro, produtos, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[420px]">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-[420px] max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
           <div>
             <h3 className="font-syne font-semibold text-[#0F172A]">Registrar Devolução</h3>
@@ -1160,7 +1160,7 @@ function ModalEditarEstoque({ estoque, onClose, onSaved }: { estoque: Estoque; o
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#E2E8F0]">
           <h2 className="font-syne font-semibold text-[#0F172A]">Editar Estoque</h2>
           <button onClick={onClose}><X size={16} className="text-[#64748B]" /></button>
