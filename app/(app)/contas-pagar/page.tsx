@@ -146,7 +146,7 @@ export default function ContasPagarPage() {
       <Topbar />
       <div className="p-4 md:p-6 flex-1 overflow-y-auto">
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-5">
           <div>
             <h1 className="font-syne text-xl font-bold text-[#0F172A]">Contas a pagar</h1>
             <p className="text-sm text-[#64748B] mt-0.5">Notas de compra, boletos e conferência com o DDA</p>
