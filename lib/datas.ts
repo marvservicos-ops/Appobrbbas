@@ -34,3 +34,15 @@ export function formatarCompetencia(v: string | null | undefined): string {
 export function diasEntre(a: string, b: string): number {
   return Math.round((parseData(b).getTime() - parseData(a).getTime()) / 86400000)
 }
+
+// 'aaaa-mm-dd' somando n dias (n pode ser negativo)
+export function somarDias(v: string, n: number): string {
+  const d = parseData(v)
+  d.setDate(d.getDate() + n)
+  return dataLocal(d)
+}
+
+// Segunda-feira da semana (segunda a domingo) que contém a data
+export function segundaDaSemana(v: string): string {
+  return somarDias(v, -((parseData(v).getDay() + 6) % 7))
+}

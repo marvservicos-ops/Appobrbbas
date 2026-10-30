@@ -190,6 +190,21 @@ Existem três telas financeiras distintas:
    - Aba **Centro de Custos**: detalhamento de custos da obra (componente `ObraCentroCustos`).
 3. **`/admin`** (financeiro administrativo agregado — ver seção 10).
 
+### Contas a pagar e conciliação DDA (`/contas-pagar`)
+
+Exige a permissão **Contas a pagar** (admin sempre tem). Migração: `supabase/migrations/contas_pagar.sql`.
+
+- **Modelo**: a NF de compra (`notas_compra`) é só o cabeçalho; cada boleto/parcela é uma linha em `contas_pagar` — é o boleto que aparece no DDA, então a conferência é por parcela. Uma conta pode existir sem nota (boleto avulso, ou boleto que apareceu no DDA sem registro).
+- **Lançar nota**: fornecedor (busca por nome/CNPJ, com cadastro rápido), nº da NF, emissão, entrada, valor total, obra (opcional, centro de custo) e as parcelas. "Dividir em parcelas" gera N boletos a cada X dias; a última parcela absorve os centavos. Se a soma das parcelas não bate com o total, o sistema avisa antes de salvar. Ao editar a nota, a situação de cada parcela (conferida, paga) é mantida.
+- **Vencimentos da semana** (aba padrão): segunda a domingo, agrupado por dia, com navegação entre semanas. Acima, o bloco **Vencidos e não pagos** traz tudo que venceu antes da semana e ainda está em aberto, para nada se perder de uma semana para outra.
+- **Conferência (toda segunda)**: abrir o DDA do banco ao lado e, para cada boleto, clicar **Conferido** (bate fornecedor/CNPJ, valor e vencimento), **Divergente** (pede o motivo) ou **Pago** (pede a data). Boleto no DDA que não está no sistema → botão **Boleto do DDA sem registro** (já entra como Divergente).
+- **Situações**: Pendente → Conferido DDA → Pago; Divergente e Cancelado à parte. Qualquer situação pode ser trocada no "Editar". O banco grava quem mudou a situação e quando (`status_atualizado_por/em`).
+- **Todas por mês**: mesma lista filtrada por mês; os cards de resumo e os chips filtram por situação.
+
+### Fornecedores (`/fornecedores`)
+
+Cadastro com razão social, nome fantasia e CNPJ (o DDA identifica o beneficiário pelo CNPJ). Aberto a todos os usuários. Fornecedor com nota ou conta lançada não pode ser excluído — só inativado.
+
 ## 8. Manutenções
 
 Módulo de contratos de manutenção preventiva (ar-condicionado).
@@ -236,7 +251,7 @@ Botão no topo da página ESG (`ModalImportarEsgIA`): envia uma foto ou PDF de n
 Rotas sob `/admin/*` são protegidas — exigem `role = admin` e `active = true`, senão redirecionam para `/obras`.
 
 - **`/admin`**: financeiro administrativo agregado — soma de todas as medições de todas as obras (Planejado/Faturado/Recebido/Em aberto), lista de obras com progresso de faturamento, etapas vencidas sem recebimento.
-- **`/admin/usuarios`**: lista de todos os perfis (`app_profiles`). Por usuário: trocar perfil (usuário/admin), marcar permissão "Financeiro e medições", ativar/bloquear acesso. Criação de novo usuário (nome, e-mail, senha inicial ≥8 caracteres, perfil, permissão) via `POST /api/admin/users`.
+- **`/admin/usuarios`**: lista de todos os perfis (`app_profiles`). Por usuário: trocar perfil (usuário/admin), marcar permissões "Financeiro e medições" e "Contas a pagar" (lista em `lib/permissoes.ts`), ativar/bloquear acesso. Criação de novo usuário (nome, e-mail, senha inicial ≥8 caracteres, perfil, permissão) via `POST /api/admin/users`.
 - **`/admin/manual`**: este manual, renderizado dentro do app a partir do `MANUAL.md` do repositório.
 
 ## 11. APIs internas
@@ -294,6 +309,7 @@ Acessíveis sem login (liberadas no middleware):
 - **Manutenções**: `contratos_manutencao`, `manutencao_aditivos`, `manutencao_nfs`, `manutencao_funcionarios`, `equipamentos`, `grupos_equipamentos`, `campos_tecnicos`, `equipamento_dados`, `manutencao_historico`, `manutencao_estoque_produtos`, `manutencao_estoque_registros` (mini-estoque local por contrato; `estoque_registros` ganhou `manutencao_id`).
 - **Funcionários**: `funcionarios`, `funcionario_alocacoes`, `veiculos`.
 - **Obras/Clientes**: `obras`, `clientes`, `empresas`, `cronograma_etapas`, `obra_materiais` (ganhou `oc_id`), `obra_notas_material` (ganhou `oc_id`).
+- **Contas a pagar**: `fornecedores`, `notas_compra`, `contas_pagar`.
 - **Administrativo**: `categorias_administrativas`, `custos_administrativos`, `configuracoes_empresa`, `email_templates`.
 - **ESG**: `esg_combustivel` (liga a `veiculos`), `esg_investimentos`, `esg_destinacao_materiais`, `esg_reciclagem_gas` (liga opcionalmente a `contratos_manutencao`).
 

@@ -5,8 +5,7 @@ import { Check, Eye, EyeOff, KeyRound, Loader2, Pencil, Plus, ShieldCheck, UserR
 import { createClient } from '@/lib/supabase/client'
 import type { AppProfile, AppRole } from '@/lib/access'
 import { mensagemErro } from '@/lib/erros'
-
-const PERMISSOES = [{ id: 'financeiro', label: 'Financeiro e medições' }]
+import { PERMISSOES } from '@/lib/permissoes'
 
 export default function AdminUsuariosPage() {
   const [profiles, setProfiles] = useState<AppProfile[]>([])
@@ -16,7 +15,7 @@ export default function AdminUsuariosPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
-  const [newUser, setNewUser] = useState({ nome: '', email: '', password: '', role: 'usuario' as AppRole, financeiro: false })
+  const [newUser, setNewUser] = useState({ nome: '', email: '', password: '', role: 'usuario' as AppRole, permissions: [] as string[] })
   const [loadError, setLoadError] = useState('')
   // Edição de nome/e-mail e definição de senha (um usuário por vez)
   const [editando, setEditando] = useState<{ id: string; nome: string; email: string } | null>(null)
@@ -109,14 +108,14 @@ export default function AdminUsuariosPage() {
         email: newUser.email,
         password: newUser.password,
         role: newUser.role,
-        permissions: newUser.financeiro ? ['financeiro'] : [],
+        permissions: newUser.permissions,
       }),
     })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) setCreateError(result.error || 'Não foi possível criar o usuário.')
     else {
       setShowNew(false)
-      setNewUser({ nome: '', email: '', password: '', role: 'usuario', financeiro: false })
+      setNewUser({ nome: '', email: '', password: '', role: 'usuario', permissions: [] })
       await load()
     }
     setCreating(false)
@@ -148,7 +147,11 @@ export default function AdminUsuariosPage() {
             </label>
             <label className="text-xs text-[#64748B]">Perfil<select className="field mt-1" value={newUser.role} onChange={e => setNewUser(x => ({ ...x, role: e.target.value as AppRole }))}><option value="usuario">Usuário</option><option value="admin">Administrador</option></select></label>
           </div>
-          <label className="mt-4 flex items-center gap-2 text-sm text-[#374151]"><input type="checkbox" disabled={newUser.role === 'admin'} checked={newUser.role === 'admin' || newUser.financeiro} onChange={e => setNewUser(x => ({ ...x, financeiro: e.target.checked }))} className="w-4 h-4 accent-[#4F7CFF]" />Permitir acesso ao financeiro e medições</label>
+          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+            {PERMISSOES.map(p => (
+              <label key={p.id} className="flex items-center gap-2 text-sm text-[#374151]"><input type="checkbox" disabled={newUser.role === 'admin'} checked={newUser.role === 'admin' || newUser.permissions.includes(p.id)} onChange={e => setNewUser(x => ({ ...x, permissions: e.target.checked ? [...x.permissions, p.id] : x.permissions.filter(id => id !== p.id) }))} className="w-4 h-4 accent-[#4F7CFF]" />Permitir acesso a {p.label.toLowerCase()}</label>
+            ))}
+          </div>
           {createError && <p className="mt-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{createError}</p>}
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-5 pt-4 border-t border-[#E2E8F0]"><button type="button" onClick={() => setShowNew(false)} className="btn-secondary">Cancelar</button><button type="submit" disabled={creating} className="btn-primary">{creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} {creating ? 'Criando…' : 'Criar usuário'}</button></div>
         </form>
@@ -180,7 +183,7 @@ export default function AdminUsuariosPage() {
                   </select>
                 </label>
                 <div className="text-xs text-[#64748B]">Permissões
-                  <div className="mt-1 min-h-11 flex items-center gap-2">
+                  <div className="mt-1 min-h-11 flex flex-wrap items-center gap-x-4 gap-y-1">
                     {PERMISSOES.map(p => {
                       const checked = profile.role === 'admin' || profile.permissions.includes(p.id)
                       return <label key={p.id} className="flex items-center gap-2 text-sm text-[#374151]"><input type="checkbox" checked={checked} disabled={profile.role === 'admin'} onChange={() => update(profile, { permissions: checked ? profile.permissions.filter(x => x !== p.id) : [...profile.permissions, p.id] })} className="w-4 h-4 accent-[#4F7CFF]" />{p.label}</label>

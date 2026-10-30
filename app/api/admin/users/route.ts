@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { exigirUsuarioAtivo } from '@/lib/apiAuth'
 import { createServiceClient } from '@/lib/supabase/service'
 import { mensagemErro } from '@/lib/erros'
+import { PERMISSOES_IDS } from '@/lib/permissoes'
 
 const ADMIN_PRINCIPAL = 'joaovictor@marvservicos.com.br'
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   const email = String(body.email ?? '').trim().toLowerCase()
   const password = String(body.password ?? '')
   const role = body.role === 'admin' ? 'admin' : 'usuario'
-  const permissions = Array.isArray(body.permissions) ? body.permissions.filter((p: unknown) => p === 'financeiro') : []
+  const permissions = Array.isArray(body.permissions) ? body.permissions.filter((p: unknown) => typeof p === 'string' && PERMISSOES_IDS.includes(p)) : []
 
   if (!nome || !email || password.length < 8) {
     return NextResponse.json({ error: 'Informe nome, e-mail e uma senha com pelo menos 8 caracteres.' }, { status: 400 })

@@ -2,11 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis } from 'lucide-react'
+import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis, Truck, CalendarCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 
-type NavItem = { href: string; label: string; icon: any; adminOnly?: boolean }
+type NavItem = { href: string; label: string; icon: any; adminOnly?: boolean; permissao?: string }
 
 // Menu agrupado pelo uso do dia a dia. Notas fica só no botão flutuante e
 // Perfil no menu do avatar (Topbar).
@@ -26,6 +26,7 @@ const secoesBase: { titulo: string; itens: NavItem[] }[] = [
     itens: [
       { href: '/funcionarios', label: 'Funcionários', icon: HardHat, adminOnly: true },
       { href: '/clientes', label: 'Clientes', icon: Building2 },
+      { href: '/fornecedores', label: 'Fornecedores', icon: Truck },
     ],
   },
   {
@@ -39,6 +40,7 @@ const secoesBase: { titulo: string; itens: NavItem[] }[] = [
     titulo: 'Gestão',
     itens: [
       { href: '/financeiro', label: 'Financeiro', icon: DollarSign, adminOnly: true },
+      { href: '/contas-pagar', label: 'Contas a pagar', icon: CalendarCheck, permissao: 'contas_pagar' },
       { href: '/administrativo', label: 'Custos da empresa', icon: Receipt, adminOnly: true },
     ],
   },
@@ -58,9 +60,9 @@ const estaAtivo = (pathname: string, href: string) =>
 export default function Sidebar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { isAdmin } = useAccess()
+  const { isAdmin, can } = useAccess()
   const secoes = secoesBase
-    .map(s => ({ ...s, itens: s.itens.filter(i => !i.adminOnly || isAdmin) }))
+    .map(s => ({ ...s, itens: s.itens.filter(i => (!i.adminOnly || isAdmin) && (!i.permissao || can(i.permissao))) }))
     .filter(s => s.itens.length > 0)
   const accountItems = isAdmin
     ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }, ...contaItens]
