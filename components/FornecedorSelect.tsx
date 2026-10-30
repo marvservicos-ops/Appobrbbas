@@ -6,14 +6,15 @@ import ModalFornecedor from '@/components/ModalFornecedor'
 import { type Fornecedor, fornecedorCombina, formatarDocumento, nomeFornecedor } from '@/lib/fornecedores'
 
 // Busca de fornecedor por nome ou CNPJ, com cadastro rápido do que não existe.
-export default function FornecedorSelect({ fornecedores, value, onChange, onCriado, disabled }: {
+export default function FornecedorSelect({ fornecedores, value, onChange, onCriado, disabled, buscaInicial }: {
   fornecedores: Fornecedor[]
   value: string
   onChange: (id: string) => void
   onCriado: (f: Fornecedor) => void
   disabled?: boolean
+  buscaInicial?: string
 }) {
-  const [busca, setBusca] = useState('')
+  const [busca, setBusca] = useState(buscaInicial ?? '')
   const [aberto, setAberto] = useState(false)
   const [novo, setNovo] = useState(false)
   const caixa = useRef<HTMLDivElement>(null)

@@ -200,6 +200,8 @@ Exige a permissão **Contas a pagar** (admin sempre tem). Migração: `supabase/
 - **Conferência (toda segunda)**: abrir o DDA do banco ao lado e, para cada boleto, clicar **Conferido** (bate fornecedor/CNPJ, valor e vencimento), **Divergente** (pede o motivo) ou **Pago** (pede a data). Boleto no DDA que não está no sistema → botão **Boleto do DDA sem registro** (já entra como Divergente).
 - **Situações**: Pendente → Conferido DDA → Pago; Divergente e Cancelado à parte. Qualquer situação pode ser trocada no "Editar". O banco grava quem mudou a situação e quando (`status_atualizado_por/em`).
 - **Todas por mês**: mesma lista filtrada por mês; os cards de resumo e os chips filtram por situação.
+- **Ler NF (PDF ou XML)** (ao lançar nota): o XML da NF-e é lido sem IA (`lib/nfeXml.ts`); o PDF (DANFE) vai para o Gemini em `/api/parse-nfe`. Preenche fornecedor (pelo CNPJ — cadastra se não existir), nº, emissão, total e um boleto por duplicata (quadro "Fatura/Duplicatas"). Sem duplicatas, vira um boleto com o valor total e o vencimento fica para preencher. Ao salvar, avisa se a mesma NF do mesmo fornecedor já foi lançada.
+- **A partir do estoque**: depois de "Importar NF" ou "Lançar NF" na entrada do estoque, quem tem a permissão Contas a pagar já cai no lançamento da nota preenchido (botão "Pular" volta para o estoque). A importação de NF no estoque também aceita o XML.
 
 ### Fornecedores (`/fornecedores`)
 

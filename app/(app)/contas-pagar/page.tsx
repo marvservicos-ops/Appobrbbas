@@ -12,8 +12,8 @@ import { mensagemErro } from '@/lib/erros'
 import { formatarData, hojeLocal, mesLocal, parseData, segundaDaSemana, somarDias } from '@/lib/datas'
 import { formatarMoeda } from '@/lib/numero'
 import { type Fornecedor, formatarDocumento, nomeFornecedor, somenteDigitos } from '@/lib/fornecedores'
-import { emAberto, SELECT_CONTA, STATUS_ABERTOS, STATUS_CONTA, STATUS_ORDEM, type Conta, type StatusConta } from './tipos'
-import ModalNota from './ModalNota'
+import { emAberto, SELECT_CONTA, STATUS_ABERTOS, STATUS_CONTA, STATUS_ORDEM, type Conta, type StatusConta } from '@/lib/contasPagar'
+import ModalNota from '@/components/ModalNotaCompra'
 import ModalConta from './ModalConta'
 import ModalStatus from './ModalStatus'
 
@@ -84,6 +84,7 @@ export default function ContasPagarPage() {
   }
 
   const fornecedorDe = (id: string) => fornecedores.find(f => f.id === id)
+  const adicionarFornecedor = (f: Fornecedor) => setFornecedores(fs => fs.some(x => x.id === f.id) ? fs : [...fs, f])
 
   const combina = (c: Conta) => {
     if (filtroStatus === 'abertos' ? !emAberto(c.status) : filtroStatus !== 'todos' && c.status !== filtroStatus) return false
@@ -284,13 +285,13 @@ export default function ContasPagarPage() {
 
       {modalNota && (
         <ModalNota notaId={modalNota.id} fornecedores={fornecedores}
-          onFornecedorCriado={f => setFornecedores(fs => [...fs, f])}
+          onFornecedorCriado={adicionarFornecedor}
           onClose={() => setModalNota(null)}
           onSaved={() => { setModalNota(null); load() }} />
       )}
       {modalConta && (
         <ModalConta conta={modalConta.conta} doDda={modalConta.doDda} fornecedores={fornecedores}
-          onFornecedorCriado={f => setFornecedores(fs => [...fs, f])}
+          onFornecedorCriado={adicionarFornecedor}
           onEditarNota={id => { setModalConta(null); setModalNota({ id }) }}
           onClose={() => setModalConta(null)}
           onSaved={() => { setModalConta(null); load() }} />

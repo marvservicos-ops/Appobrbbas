@@ -8,7 +8,7 @@ import { mensagemErro } from '@/lib/erros'
 import { hojeLocal } from '@/lib/datas'
 import { parseNumeroBR } from '@/lib/numero'
 import type { Fornecedor } from '@/lib/fornecedores'
-import { MOTIVOS_DIVERGENCIA, STATUS_CONTA, STATUS_ORDEM, type Conta, type StatusConta } from './tipos'
+import { MOTIVOS_DIVERGENCIA, STATUS_CONTA, STATUS_ORDEM, type Conta, type StatusConta } from '@/lib/contasPagar'
 
 // Edita um boleto/parcela. Sem `conta`, lança um boleto avulso; com
 // `doDda`, é o boleto que apareceu no DDA sem registro (entra Divergente).

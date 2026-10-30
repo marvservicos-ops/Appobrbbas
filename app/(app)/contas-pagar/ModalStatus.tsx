@@ -5,7 +5,7 @@ import { Loader2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { mensagemErro } from '@/lib/erros'
 import { hojeLocal } from '@/lib/datas'
-import { MOTIVOS_DIVERGENCIA, type Conta } from './tipos'
+import { MOTIVOS_DIVERGENCIA, type Conta } from '@/lib/contasPagar'
 
 // Marcar como Divergente (pede o motivo) ou Pago (pede a data)
 export default function ModalStatus({ conta, para, onClose, onSaved }: {

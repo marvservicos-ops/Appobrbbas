@@ -16,13 +16,17 @@ import { PesoParaQuantidade } from '@/components/PesoBalanca'
 import FormSaidaEpiLote from './FormSaidaEpiLote'
 import FormSaidaLoteLimpeza from './FormSaidaLoteLimpeza'
 import FormSaidaLoteMateriais from './FormSaidaLoteMateriais'
+import ModalNotaCompra from '@/components/ModalNotaCompra'
+import { useAccess } from '@/lib/useAccess'
+import type { Fornecedor } from '@/lib/fornecedores'
+import type { NotaLida } from '@/lib/contasPagar'
 
 // ── Tipos ─────────────────────────────────────────────
 type ItemNF = { produtoId: string; produtoNome: string; quantidade: string; unidade: string; precoUnitario: string; valorTotal: string }
 const ITEM_VAZIO = (): ItemNF => ({ produtoId: '', produtoNome: '', quantidade: '1', unidade: 'UN', precoUnitario: '', valorTotal: '' })
 
 type NfItem = { codigo: string; descricao: string; quantidade: number; valorUnitario: number; valorTotal: number; unidade: string }
-type NfData = { emitente?: string; nfNumero?: string; dataEmissao?: string; valorTotal?: number; produtos?: NfItem[] }
+type NfData = NotaLida & { produtos?: NfItem[] }
 
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -43,6 +47,10 @@ export default function RegistrarPage() {
   const [showLancarNF, setShowLancarNF] = useState(false)
   const [importandoNF, setImportandoNF] = useState(false)
   const [parsedNF, setParsedNF] = useState<NfData | null>(null)
+  // Depois da entrada da NF, oferece lançar os boletos em Contas a pagar
+  const { can } = useAccess()
+  const [notaParaContas, setNotaParaContas] = useState<NotaLida | null>(null)
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
 
   // Estado do formulário único (saída e novo-registro)
   const [saving, setSaving] = useState(false)
@@ -336,6 +344,13 @@ export default function RegistrarPage() {
     router.push(`/estoque/${estoqueId}`)
   }
 
+  async function seguirParaContas(nota: NotaLida) {
+    if (!can('contas_pagar')) { router.push(`/estoque/${estoqueId}`); return }
+    const { data } = await createClient().from('fornecedores').select('*').order('nome')
+    setFornecedores((data ?? []) as Fornecedor[])
+    setNotaParaContas(nota)
+  }
+
   async function handleImportarNF(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return
     setImportandoNF(true)
@@ -467,9 +482,9 @@ export default function RegistrarPage() {
             </div>
             <div>
               <p className="font-syne font-semibold text-sm text-[#4F7CFF]">{importandoNF ? 'Lendo NF...' : 'Importar NF'}</p>
-              <p className="text-xs text-[#94A3B8] mt-0.5">Faça upload do PDF da nota e importe os itens automaticamente</p>
+              <p className="text-xs text-[#94A3B8] mt-0.5">Faça upload do PDF ou do XML da nota e importe os itens automaticamente</p>
             </div>
-            <input type="file" accept=".pdf" className="hidden" disabled={importandoNF} onChange={handleImportarNF} />
+            <input type="file" accept=".pdf,.xml,application/pdf,text/xml,application/xml" className="hidden" disabled={importandoNF} onChange={handleImportarNF} />
           </label>
 
           {/* Novo Registro (item único) */}
@@ -515,7 +530,7 @@ export default function RegistrarPage() {
           estoqueId={estoqueId}
           produtos={produtos}
           onClose={() => setShowLancarNF(false)}
-          onSaved={() => { setShowLancarNF(false); router.push(`/estoque/${estoqueId}`) }}
+          onSaved={nota => { setShowLancarNF(false); seguirParaContas(nota) }}
         />
       )}
 
@@ -526,8 +541,18 @@ export default function RegistrarPage() {
           produtos={produtos}
           nf={parsedNF}
           onClose={() => setParsedNF(null)}
-          onSaved={() => { setParsedNF(null); router.push(`/estoque/${estoqueId}`) }}
+          onSaved={() => { const nota = parsedNF; setParsedNF(null); seguirParaContas(nota) }}
         />
+      )}
+
+      {/* Boletos da NF em Contas a pagar */}
+      {notaParaContas && (
+        <ModalNotaCompra notaId={null} inicial={notaParaContas} fornecedores={fornecedores}
+          aviso="Entrada no estoque registrada. Agora lance os boletos desta nota em Contas a pagar."
+          rotuloCancelar="Pular"
+          onFornecedorCriado={f => setFornecedores(fs => fs.some(x => x.id === f.id) ? fs : [...fs, f])}
+          onClose={() => router.push(`/estoque/${estoqueId}`)}
+          onSaved={() => router.push(`/estoque/${estoqueId}`)} />
       )}
     </div>
   )
@@ -926,7 +951,7 @@ function FormEntradaUnica({ produtos, campos, produtoId, setProdutoId, produtoNo
 
 // ── Modal Lançar NF (multi-item entrada) ─────────────
 function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
-  estoqueId: string; produtos: EstoqueProduto[]; onClose: () => void; onSaved: () => void
+  estoqueId: string; produtos: EstoqueProduto[]; onClose: () => void; onSaved: (nota: NotaLida) => void
 }) {
   const [nfNumero, setNfNumero] = useState('')
   const [fornecedor, setFornecedor] = useState('')
@@ -1020,7 +1045,7 @@ function ModalLancarNF({ estoqueId, produtos, onClose, onSaved }: {
       setError(`${gravados.size} item(ns) gravado(s) e retirado(s) da lista. Falhou em "${nomeFalha}": ${falha.msg} Os itens que faltam continuam na lista — toque em Salvar de novo para enviar só eles.`)
       return
     }
-    onSaved()
+    onSaved({ emitente: fornecedor.trim() || null, nfNumero: nfNumero.trim() || null, valorTotal: totalNF })
   }
 
   return (

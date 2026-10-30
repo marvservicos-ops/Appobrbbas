@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Trash2, Wand2, X } from 'lucide-react'
+import { FileUp, Loader2, Plus, Trash2, Wand2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import FornecedorSelect from '@/components/FornecedorSelect'
 import { mensagemErro } from '@/lib/erros'
 import { hojeLocal, somarDias } from '@/lib/datas'
 import { formatarMoeda, parseNumeroBR } from '@/lib/numero'
-import type { Fornecedor } from '@/lib/fornecedores'
-import { STATUS_CONTA, type StatusConta } from './tipos'
+import { type Fornecedor, somenteDigitos } from '@/lib/fornecedores'
+import { normalizarNumeroNf, STATUS_CONTA, type NotaLida, type StatusConta } from '@/lib/contasPagar'
 
 interface ParcelaForm {
   id?: string
@@ -21,12 +21,16 @@ const valorCampo = (n: number) => n.toFixed(2).replace('.', ',')
 
 // Lança ou edita uma NF de compra e seus boletos (parcelas).
 // A situação de cada parcela (conferida, paga...) é mantida ao editar.
-export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, onClose, onSaved }: {
+// `inicial` vem de uma NF já lida (ex.: entrada no estoque) e preenche o formulário.
+export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, onClose, onSaved, inicial, aviso, rotuloCancelar }: {
   notaId: string | null
   fornecedores: Fornecedor[]
   onFornecedorCriado: (f: Fornecedor) => void
   onClose: () => void
   onSaved: () => void
+  inicial?: NotaLida
+  aviso?: string
+  rotuloCancelar?: string
 }) {
   const [carregando, setCarregando] = useState(Boolean(notaId))
   const [obras, setObras] = useState<{ id: string; titulo: string }[]>([])
@@ -41,6 +45,14 @@ export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, on
   const [removidas, setRemovidas] = useState<string[]>([])
   const [gerador, setGerador] = useState<{ qtd: string; primeiro: string; intervalo: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [lendo, setLendo] = useState(false)
+  const [avisoLeitura, setAvisoLeitura] = useState('')
+  // Nome lido da NF quando não deu para achar/cadastrar o fornecedor pelo CNPJ
+  const [buscaFornecedor, setBuscaFornecedor] = useState('')
+
+  useEffect(() => {
+    if (inicial && !notaId) aplicarLeitura(inicial)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const sb = createClient()
@@ -62,6 +74,64 @@ export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, on
       setCarregando(false)
     })
   }, [notaId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Acha o fornecedor pelo CNPJ da NF; se não existir, cadastra com os dados da nota
+  async function resolverFornecedor(n: NotaLida): Promise<Fornecedor | null> {
+    const cnpj = somenteDigitos(n.emitenteCnpj)
+    const nome = (n.emitente || n.emitenteFantasia || '').trim()
+    if (cnpj) {
+      const existente = fornecedores.find(f => f.cnpj === cnpj)
+      if (existente) return existente
+      if (!nome) return null
+      const sb = createClient()
+      const { data, error } = await sb.from('fornecedores')
+        .insert({ nome, nome_fantasia: n.emitenteFantasia?.trim() || null, cnpj })
+        .select().single()
+      if (!error && data) { onFornecedorCriado(data as Fornecedor); return data as Fornecedor }
+      // Cadastrado por outra pessoa desde que a lista foi carregada
+      const { data: achado } = await sb.from('fornecedores').select('*').eq('cnpj', cnpj).maybeSingle()
+      if (achado) { onFornecedorCriado(achado as Fornecedor); return achado as Fornecedor }
+      return null
+    }
+    const q = nome.toLowerCase()
+    return fornecedores.find(f => f.ativo && (f.nome.toLowerCase() === q || f.nome_fantasia?.toLowerCase() === q)) ?? null
+  }
+
+  async function aplicarLeitura(n: NotaLida) {
+    const f = await resolverFornecedor(n)
+    if (f) setFornecedorId(f.id)
+    else setBuscaFornecedor((n.emitente || n.emitenteFantasia || '').trim())
+    if (n.nfNumero) setNumeroNf(normalizarNumeroNf(n.nfNumero))
+    if (n.dataEmissao) setDataEmissao(n.dataEmissao.slice(0, 10))
+    const total = Number(n.valorTotal) || 0
+    if (total > 0) setValorTotal(valorCampo(total))
+    const dups = (n.duplicatas ?? []).filter(d => d.vencimento && Number(d.valor) > 0)
+    setRemovidas([])
+    setParcelas(dups.length
+      ? dups.map(d => ({ vencimento: d.vencimento.slice(0, 10), valor: valorCampo(Number(d.valor)), status: 'pendente' as const }))
+      : [{ vencimento: '', valor: total > 0 ? valorCampo(total) : '', status: 'pendente' }])
+    setAvisoLeitura(dups.length
+      ? `${dups.length} boleto${dups.length > 1 ? 's' : ''} lido${dups.length > 1 ? 's' : ''} da nota. Confira com o DDA.`
+      : 'A nota não traz o quadro de duplicatas — informe o vencimento do boleto.')
+  }
+
+  async function lerArquivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!arquivo) return
+    setLendo(true)
+    try {
+      const fd = new FormData(); fd.append('file', arquivo)
+      const res = await fetch('/api/parse-nfe', { method: 'POST', body: fd })
+      const lida = await res.json()
+      if (!res.ok || !lida || !(lida.emitente || lida.valorTotal)) { alert(lida?.error ?? 'Não foi possível ler esta NF.'); return }
+      await aplicarLeitura(lida as NotaLida)
+    } catch (err) {
+      alert(mensagemErro(err as Error, 'Erro ao ler a NF'))
+    } finally {
+      setLendo(false)
+    }
+  }
 
   const totalNum = parseNumeroBR(valorTotal)
   const somaParcelas = parcelas.reduce((s, p) => s + (parseNumeroBR(p.valor) || 0), 0)
@@ -111,6 +181,11 @@ export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, on
     if (parcelas.length === 0) { alert('Adicione pelo menos um boleto/parcela.'); return }
     const incompleta = parcelas.findIndex(p => { const v = parseNumeroBR(p.valor); return !p.vencimento || Number.isNaN(v) || v <= 0 })
     if (incompleta >= 0) { alert(`Preencha vencimento e valor da parcela ${incompleta + 1}.`); return }
+    if (!notaId && numeroNf.trim()) {
+      const { data: repetida } = await createClient().from('notas_compra').select('id')
+        .eq('fornecedor_id', fornecedorId).eq('numero_nf', numeroNf.trim()).limit(1)
+      if (repetida?.length && !confirm(`A NF ${numeroNf.trim()} deste fornecedor já foi lançada. Lançar de novo?`)) return
+    }
     if (Math.abs(diferenca) >= 0.01 &&
       !confirm(`A soma das parcelas (${formatarMoeda(somaParcelas)}) é diferente do valor da nota (${formatarMoeda(totalNum)}). Salvar assim?`)) return
 
@@ -172,9 +247,23 @@ export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, on
           <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-[#4F7CFF]" /></div>
         ) : (
           <div className="p-6 space-y-4">
+            {aviso && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5">{aviso}</p>}
+
+            {!notaId && (
+              <label className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-dashed border-[#C7D2FE] hover:bg-[#EEF2FF] cursor-pointer ${lendo ? 'opacity-60 pointer-events-none' : ''}`}>
+                {lendo ? <Loader2 size={18} className="text-[#4F7CFF] animate-spin shrink-0" /> : <FileUp size={18} className="text-[#4F7CFF] shrink-0" />}
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-medium text-[#4F7CFF]">{lendo ? 'Lendo a nota...' : 'Ler NF (PDF ou XML)'}</span>
+                  <span className="block text-[11px] text-[#94A3B8]">Preenche fornecedor, número, valor e os boletos. O XML é mais preciso.</span>
+                </span>
+                <input type="file" accept=".pdf,.xml,application/pdf,text/xml,application/xml" className="hidden" disabled={lendo} onChange={lerArquivo} />
+              </label>
+            )}
+            {avisoLeitura && <p className="text-xs text-[#4F7CFF] bg-[#EEF2FF] rounded-lg px-3 py-2">{avisoLeitura}</p>}
+
             <div>
               <label className="block text-xs font-medium text-[#374151] mb-1.5">Fornecedor *</label>
-              <FornecedorSelect fornecedores={fornecedores} value={fornecedorId} onChange={setFornecedorId} onCriado={onFornecedorCriado} />
+              <FornecedorSelect key={buscaFornecedor} buscaInicial={buscaFornecedor} fornecedores={fornecedores} value={fornecedorId} onChange={setFornecedorId} onCriado={onFornecedorCriado} />
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -273,7 +362,7 @@ export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, on
                   <Trash2 size={15} className="text-red-400" />
                 </button>
               )}
-              <button onClick={onClose} className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9]">Cancelar</button>
+              <button onClick={onClose} className="flex-1 py-2.5 text-sm font-medium text-[#64748B] border border-[#E2E8F0] rounded-xl hover:bg-[#F1F5F9]">{rotuloCancelar ?? 'Cancelar'}</button>
               <button onClick={salvar} disabled={saving}
                 className="flex-1 btn-primary flex items-center justify-center gap-2 py-2.5 disabled:opacity-50">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : null}

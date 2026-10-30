@@ -37,3 +37,27 @@ export const MOTIVOS_DIVERGENCIA = [
   'Boleto não apareceu no DDA',
   'Boleto no DDA sem registro no sistema',
 ]
+
+// Dados lidos de uma NF (PDF pelo Gemini ou XML da NF-e) — /api/parse-nfe
+export interface DuplicataLida {
+  numero?: string | null
+  vencimento: string
+  valor: number
+}
+
+export interface NotaLida {
+  emitente?: string | null
+  emitenteFantasia?: string | null
+  emitenteCnpj?: string | null
+  nfNumero?: string | null
+  dataEmissao?: string | null
+  valorTotal?: number | null
+  duplicatas?: DuplicataLida[]
+}
+
+// "NF 000.086.191" → "86191"; o que não for número fica como veio
+export function normalizarNumeroNf(v: string | null | undefined): string {
+  const s = (v ?? '').trim()
+  const d = s.replace(/\D/g, '')
+  return d && /^(nf|n[ºo°]?\.?)?\s*[\d.\s-]+$/i.test(s) ? String(Number(d)) : s
+}
