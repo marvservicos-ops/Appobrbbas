@@ -127,7 +127,7 @@ function EmitirDocumento() {
   return (
     <div>
       <Topbar />
-      <div className="p-4 md:p-6 max-w-4xl space-y-4">
+      <div className="p-4 md:p-6 pb-28 max-w-4xl space-y-4">
         <Link href="/funcionarios/documentos" className="inline-flex items-center gap-1.5 text-sm text-[#64748B] hover:text-[#0F172A]">
           <ArrowLeft size={15} /> Documentos dos funcionários
         </Link>
@@ -203,7 +203,7 @@ function EmitirDocumento() {
               <ul className="space-y-1">
                 {faltasCadastro.map(p => (
                   <li key={p.funcionario.id} className="flex flex-wrap items-center gap-x-2">
-                    <span><strong>{p.funcionario.nome}</strong>: sem {p.faltando.join(', ').toLowerCase()}</span>
+                    <span><strong>{p.funcionario.nome}</strong>: sem {p.faltando.join(', ')}</span>
                     <Link href={`/funcionarios/${p.funcionario.id}`} target="_blank" className="text-xs underline">corrigir cadastro</Link>
                     <button onClick={() => alternar(p.funcionario.id)} className="text-xs underline">tirar da emissão</button>
                   </li>

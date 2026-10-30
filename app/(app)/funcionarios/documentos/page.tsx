@@ -63,10 +63,10 @@ export default function DocumentosFuncionariosPage() {
           </div>
           <div className="flex items-center gap-2">
             <Link href="/funcionarios/documentos/modelo/novo"
-              className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] transition-colors font-medium">
+              className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] transition-colors font-medium whitespace-nowrap">
               <Plus size={15} /> Novo modelo
             </Link>
-            <Link href="/funcionarios/documentos/emitir" className="btn-primary flex items-center gap-2 text-sm">
+            <Link href="/funcionarios/documentos/emitir" className="btn-primary flex items-center gap-2 text-sm whitespace-nowrap">
               <Send size={15} /> Emitir documento
             </Link>
           </div>

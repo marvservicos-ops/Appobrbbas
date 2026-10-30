@@ -175,14 +175,18 @@ export function statusInicial(modelo: Pick<DocModelo, 'exige_assinatura' | 'cole
   return modelo.exige_assinatura || modelo.coletivo ? 'pendente' : 'entregue'
 }
 
-// CSS do documento impresso — usado na impressão e na pré-visualização
+// CSS do documento impresso — usado na impressão e na pré-visualização. O reset do
+// Tailwind tira peso dos títulos e marcadores das listas: por isso vai tudo explícito.
 export const CSS_DOCUMENTO = `
 .doc-funcionario { font-family: Arial, sans-serif; font-size: 12px; line-height: 1.55; color: #1a1a1a; }
-.doc-funcionario h1 { font-size: 17px; text-align: center; margin: 0 0 12px; }
-.doc-funcionario h2 { font-size: 13px; margin: 18px 0 6px; }
-.doc-funcionario h3 { font-size: 12px; margin: 14px 0 4px; }
+.doc-funcionario h1 { font-size: 17px; font-weight: 700; text-align: center; margin: 0 0 12px; }
+.doc-funcionario h2 { font-size: 13px; font-weight: 700; margin: 18px 0 6px; }
+.doc-funcionario h3 { font-size: 12px; font-weight: 700; margin: 14px 0 4px; }
+.doc-funcionario strong, .doc-funcionario b { font-weight: 700; }
 .doc-funcionario p { margin: 0 0 8px; }
 .doc-funcionario ul, .doc-funcionario ol { margin: 0 0 8px; padding-left: 22px; }
+.doc-funcionario ul { list-style: disc; }
+.doc-funcionario ol { list-style: decimal; }
 .doc-funcionario li p { margin: 0 0 3px; }
 .doc-funcionario table { border-collapse: collapse; width: 100%; margin: 6px 0 10px; }
 .doc-funcionario th, .doc-funcionario td { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }

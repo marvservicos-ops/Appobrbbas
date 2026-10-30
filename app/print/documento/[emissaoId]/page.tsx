@@ -73,6 +73,7 @@ function DocumentoPrint() {
         }
         * { box-sizing: border-box; }
         body { margin: 0; background: white; }
+        @media screen { body { padding-top: 56px; } }
         .pagina { max-width: 720px; margin: 0 auto; padding: 32px 8px; }
         .pagina + .pagina { break-before: page; page-break-before: always; }
         ${CSS_DOCUMENTO}
