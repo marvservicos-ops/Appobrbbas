@@ -78,3 +78,16 @@ h1, h2, h3, h4, h5, h6 {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Editor de texto no modo completo (modelos de documento): títulos, listas e tabelas */
+.rte-completo h1 { font-size: 1.25rem; font-weight: 700; margin: 0.75rem 0 0.5rem; color: #0F172A; }
+.rte-completo h2 { font-size: 1.05rem; font-weight: 700; margin: 0.75rem 0 0.4rem; color: #0F172A; }
+.rte-completo h3 { font-weight: 700; margin: 0.5rem 0 0.3rem; }
+.rte-completo p { margin: 0 0 0.5rem; }
+.rte-completo ul { list-style: disc; padding-left: 1.4rem; margin: 0 0 0.5rem; }
+.rte-completo ol { list-style: decimal; padding-left: 1.4rem; margin: 0 0 0.5rem; }
+.rte-completo table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; table-layout: fixed; }
+.rte-completo th, .rte-completo td { border: 1px solid #CBD5E1; padding: 4px 6px; vertical-align: top; }
+.rte-completo th { background: #F1F5F9; font-weight: 600; }
+.rte-completo th p, .rte-completo td p { margin: 0; }
+.rte-completo .selectedCell { background: #EEF2FF; }

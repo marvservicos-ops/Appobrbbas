@@ -649,7 +649,9 @@ const EMPRESA_PADRAO = {
   razao_social: 'Marv Manutenção e Serviços Ltda.',
   cnpj: '03.709.796/0001-44',
   telefone: '(21) 3327-7621',
-  endereco: 'Rua Cândido Benício, nº 2326, Loja — Praça Seca, Jacarepaguá — RJ, CEP 22733-001',
+  endereco: 'Estrada do Rio Grande, 268 – Taquara, Rio de Janeiro/RJ',
+  responsavel_nome: 'Marcelo Lopes Leal',
+  responsavel_cargo: 'Sócio-Proprietário',
 }
 
 function assinaturaPadrao(nome: string, cargo: string) {
@@ -830,8 +832,18 @@ export default function ConfiguracoesPage() {
                 <input className="field" value={empresa.endereco} onChange={e => setEmpresa(p => ({ ...p, endereco: e.target.value }))} placeholder="Rua, número, cidade" />
               </div>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#374151] mb-1.5">Responsável (assina pela empresa)</label>
+                <input className="field" value={empresa.responsavel_nome} onChange={e => setEmpresa(p => ({ ...p, responsavel_nome: e.target.value }))} placeholder="Nome do responsável" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#374151] mb-1.5">Cargo do responsável</label>
+                <input className="field" value={empresa.responsavel_cargo} onChange={e => setEmpresa(p => ({ ...p, responsavel_cargo: e.target.value }))} placeholder="Sócio-Proprietário" />
+              </div>
+            </div>
             <div className="flex items-center justify-between">
-              <p className="text-xs text-[#94A3B8]">Esses dados aparecem nas fichas de EPI/ferramentas impressas e nos relatórios exportados.</p>
+              <p className="text-xs text-[#94A3B8]">Esses dados aparecem nas fichas de EPI/ferramentas impressas, nos documentos dos funcionários e nos relatórios exportados.</p>
               <button onClick={salvarEmpresa} disabled={salvandoEmpresa} className="btn-primary flex items-center gap-2 shrink-0">
                 {salvandoEmpresa ? <Loader2 size={14} className="animate-spin" /> : savedEmpresa ? <Check size={14} /> : <Save size={14} />}
                 {salvandoEmpresa ? 'Salvando...' : savedEmpresa ? 'Salvo!' : 'Salvar'}

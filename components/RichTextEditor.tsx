@@ -5,8 +5,9 @@ import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
+import { TableKit } from '@tiptap/extension-table'
 import { useEffect, useRef } from 'react'
-import { Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Undo, Redo } from 'lucide-react'
+import { Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Undo, Redo, Heading1, Heading2, Table as TableIcon, Rows3, Columns3, Trash2 } from 'lucide-react'
 
 const COLORS = ['#0F172A', '#4F7CFF', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#64748B']
 
@@ -15,6 +16,9 @@ interface Props {
   onChange: (html: string) => void
   insertRef?: React.MutableRefObject<((text: string) => void) | null>
   placeholder?: string
+  // Títulos e tabelas (documentos longos, ex.: modelos de documento dos funcionários)
+  completo?: boolean
+  minHeight?: string
 }
 
 function ToolbarBtn({ active, onClick, children }: { active?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -30,13 +34,15 @@ function ToolbarBtn({ active, onClick, children }: { active?: boolean; onClick: 
   )
 }
 
-export default function RichTextEditor({ value, onChange, insertRef, placeholder }: Props) {
+export default function RichTextEditor({ value, onChange, insertRef, placeholder, completo = false, minHeight = '140px' }: Props) {
   const internalChange = useRef(false)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
 
   const editor = useEditor({
-    extensions: [StarterKit, Underline, TextStyle, Color],
+    extensions: completo
+      ? [StarterKit, Underline, TextStyle, Color, TableKit.configure({ table: { resizable: false } })]
+      : [StarterKit, Underline, TextStyle, Color],
     content: value || '',
     onUpdate: ({ editor }) => {
       internalChange.current = true
@@ -51,7 +57,8 @@ export default function RichTextEditor({ value, onChange, insertRef, placeholder
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[140px] px-3 py-2 text-sm text-[#374151] leading-relaxed',
+        class: `prose prose-sm max-w-none focus:outline-none px-3 py-2 text-sm text-[#374151] leading-relaxed${completo ? ' rte-completo' : ''}`,
+        style: `min-height: ${minHeight}`,
       },
     },
   })
@@ -87,6 +94,16 @@ export default function RichTextEditor({ value, onChange, insertRef, placeholder
 
         <div className="w-px h-5 bg-[#E2E8F0] mx-1" />
 
+        {completo && <>
+          <ToolbarBtn active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+            <Heading1 size={14} />
+          </ToolbarBtn>
+          <ToolbarBtn active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+            <Heading2 size={14} />
+          </ToolbarBtn>
+          <div className="w-px h-5 bg-[#E2E8F0] mx-1" />
+        </>}
+
         <ToolbarBtn active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}>
           <List size={13} />
         </ToolbarBtn>
@@ -120,6 +137,18 @@ export default function RichTextEditor({ value, onChange, insertRef, placeholder
         </div>
 
         <div className="w-px h-5 bg-[#E2E8F0] mx-1" />
+
+        {completo && <>
+          <ToolbarBtn onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
+            <TableIcon size={13} />
+          </ToolbarBtn>
+          {editor.isActive('table') && <>
+            <ToolbarBtn onClick={() => editor.chain().focus().addRowAfter().run()}><Rows3 size={13} /></ToolbarBtn>
+            <ToolbarBtn onClick={() => editor.chain().focus().addColumnAfter().run()}><Columns3 size={13} /></ToolbarBtn>
+            <ToolbarBtn onClick={() => editor.chain().focus().deleteTable().run()}><Trash2 size={13} /></ToolbarBtn>
+          </>}
+          <div className="w-px h-5 bg-[#E2E8F0] mx-1" />
+        </>}
 
         <ToolbarBtn onClick={() => editor.chain().focus().undo().run()}>
           <Undo size={13} />

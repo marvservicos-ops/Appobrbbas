@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis, Truck, CalendarCheck } from 'lucide-react'
+import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis, Truck, CalendarCheck, FileSignature } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -25,6 +25,7 @@ const secoesBase: { titulo: string; itens: NavItem[] }[] = [
     titulo: 'Cadastros',
     itens: [
       { href: '/funcionarios', label: 'Funcionários', icon: HardHat, adminOnly: true },
+      { href: '/funcionarios/documentos', label: 'Documentos RH', icon: FileSignature, adminOnly: true },
       { href: '/clientes', label: 'Clientes', icon: Building2 },
       { href: '/fornecedores', label: 'Fornecedores', icon: Truck },
     ],

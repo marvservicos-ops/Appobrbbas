@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
-import { Plus, Pencil, Users, DollarSign, CheckCircle2, XCircle, Clock, TrendingUp, LayoutGrid, Shirt } from 'lucide-react'
+import { Plus, Pencil, Users, DollarSign, CheckCircle2, XCircle, Clock, TrendingUp, LayoutGrid, Shirt, FileSignature } from 'lucide-react'
 import { useAccess } from '@/lib/useAccess'
 import ModalFuncionario, { type Funcionario, type RegraExtra } from './ModalFuncionario'
 
@@ -88,6 +88,10 @@ export default function FuncionariosPage() {
             <button onClick={() => router.push('/funcionarios/uniformes')}
               className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] transition-colors font-medium">
               <Shirt size={15} /> Uniformes
+            </button>
+            <button onClick={() => router.push('/funcionarios/documentos')}
+              className="flex items-center gap-2 text-sm px-3 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-[#F1F5F9] transition-colors font-medium">
+              <FileSignature size={15} /> Documentos
             </button>
             <button onClick={() => { setEditando(null); setShowModal(true) }}
               className="btn-primary flex items-center gap-2 text-sm">

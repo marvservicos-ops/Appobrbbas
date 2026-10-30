@@ -36,7 +36,7 @@ export default function EpiPrintPage() {
   const [empresa, setEmpresa] = useState({
     razao_social: 'Marv Manutenção e Serviços Ltda.',
     cnpj: '03.709.796/0001-44',
-    endereco: 'Rua Cândido Benício, nº 2326, Loja — Praça Seca, Jacarepaguá — RJ, CEP 22733-001',
+    endereco: 'Estrada do Rio Grande, 268 – Taquara, Rio de Janeiro/RJ',
   })
   const [loading, setLoading] = useState(true)
 
