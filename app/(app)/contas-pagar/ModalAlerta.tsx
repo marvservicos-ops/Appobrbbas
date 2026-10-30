@@ -100,7 +100,7 @@ export default function ModalAlerta({ isAdmin, onClose }: { isAdmin: boolean; on
                 </button>
               )}
             </div>
-            <p className="text-[11px] text-[#94A3B8]">"Enviar agora" usa os destinatários já salvos.</p>
+            <p className="text-[11px] text-[#94A3B8]">“Enviar agora” usa os destinatários já salvos.</p>
           </div>
         )}
       </div>
