@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import {
-  AlertTriangle, Banknote, CheckCheck, ChevronLeft, ChevronRight, FilePlus2, Loader2,
+  AlertTriangle, Banknote, BellRing, CheckCheck, FileSearch, ChevronLeft, ChevronRight, FilePlus2, Loader2,
   Pencil, Plus, RefreshCw, ScanSearch, Search,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -16,6 +16,8 @@ import { emAberto, SELECT_CONTA, STATUS_ABERTOS, STATUS_CONTA, STATUS_ORDEM, typ
 import ModalNota from '@/components/ModalNotaCompra'
 import ModalConta from './ModalConta'
 import ModalStatus from './ModalStatus'
+import ModalConciliarDda from './ModalConciliarDda'
+import ModalAlerta from './ModalAlerta'
 
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 const diaMes = (d: string) => formatarData(d).slice(0, 5)
@@ -28,7 +30,7 @@ function ultimoDiaMes(mes: string) {
 }
 
 export default function ContasPagarPage() {
-  const { can, loading: accessLoading } = useAccess()
+  const { can, isAdmin, loading: accessLoading } = useAccess()
   const permitido = can('contas_pagar')
   const hoje = hojeLocal()
 
@@ -47,6 +49,8 @@ export default function ContasPagarPage() {
   const [modalNota, setModalNota] = useState<{ id: string | null } | null>(null)
   const [modalConta, setModalConta] = useState<{ conta: Conta | null; doDda?: boolean } | null>(null)
   const [modalStatus, setModalStatus] = useState<{ conta: Conta; para: 'divergente' | 'pago' } | null>(null)
+  const [modalDda, setModalDda] = useState(false)
+  const [modalAlerta, setModalAlerta] = useState(false)
 
   const domingo = somarDias(segunda, 6)
 
@@ -155,6 +159,13 @@ export default function ContasPagarPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={load} aria-label="Atualizar" title="Atualizar" className="w-9 h-9 flex items-center justify-center rounded-lg border border-[#E2E8F0] hover:bg-[#F1F5F9]">
               <RefreshCw size={14} className="text-[#94A3B8]" />
+            </button>
+            <button onClick={() => setModalAlerta(true)} aria-label="Alerta semanal por e-mail" title="Alerta semanal por e-mail" className="w-9 h-9 flex items-center justify-center rounded-lg border border-[#E2E8F0] hover:bg-[#F1F5F9]">
+              <BellRing size={14} className="text-[#64748B]" />
+            </button>
+            <button onClick={() => setModalDda(true)} title="Importar o extrato do DDA e conferir automaticamente"
+              className="btn-secondary flex items-center gap-2 text-sm">
+              <FileSearch size={15} /> Conferir extrato DDA
             </button>
             <button onClick={() => setModalConta({ conta: null, doDda: true })} title="Boleto que apareceu no DDA e não está lançado"
               className="btn-secondary flex items-center gap-2 text-sm">
@@ -296,6 +307,12 @@ export default function ContasPagarPage() {
           onClose={() => setModalConta(null)}
           onSaved={() => { setModalConta(null); load() }} />
       )}
+      {modalDda && (
+        <ModalConciliarDda fornecedores={fornecedores} onFornecedorCriado={adicionarFornecedor}
+          onClose={() => setModalDda(false)}
+          onDone={() => { setModalDda(false); load() }} />
+      )}
+      {modalAlerta && <ModalAlerta isAdmin={isAdmin} onClose={() => setModalAlerta(false)} />}
       {modalStatus && (
         <ModalStatus conta={modalStatus.conta} para={modalStatus.para}
           onClose={() => setModalStatus(null)}

@@ -7,7 +7,7 @@ import FornecedorSelect from '@/components/FornecedorSelect'
 import { mensagemErro } from '@/lib/erros'
 import { hojeLocal, somarDias } from '@/lib/datas'
 import { formatarMoeda, parseNumeroBR } from '@/lib/numero'
-import { type Fornecedor, somenteDigitos } from '@/lib/fornecedores'
+import { type Fornecedor, garantirFornecedor } from '@/lib/fornecedores'
 import { normalizarNumeroNf, STATUS_CONTA, type NotaLida, type StatusConta } from '@/lib/contasPagar'
 
 interface ParcelaForm {
@@ -75,30 +75,10 @@ export default function ModalNota({ notaId, fornecedores, onFornecedorCriado, on
     })
   }, [notaId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Acha o fornecedor pelo CNPJ da NF; se não existir, cadastra com os dados da nota
-  async function resolverFornecedor(n: NotaLida): Promise<Fornecedor | null> {
-    const cnpj = somenteDigitos(n.emitenteCnpj)
-    const nome = (n.emitente || n.emitenteFantasia || '').trim()
-    if (cnpj) {
-      const existente = fornecedores.find(f => f.cnpj === cnpj)
-      if (existente) return existente
-      if (!nome) return null
-      const sb = createClient()
-      const { data, error } = await sb.from('fornecedores')
-        .insert({ nome, nome_fantasia: n.emitenteFantasia?.trim() || null, cnpj })
-        .select().single()
-      if (!error && data) { onFornecedorCriado(data as Fornecedor); return data as Fornecedor }
-      // Cadastrado por outra pessoa desde que a lista foi carregada
-      const { data: achado } = await sb.from('fornecedores').select('*').eq('cnpj', cnpj).maybeSingle()
-      if (achado) { onFornecedorCriado(achado as Fornecedor); return achado as Fornecedor }
-      return null
-    }
-    const q = nome.toLowerCase()
-    return fornecedores.find(f => f.ativo && (f.nome.toLowerCase() === q || f.nome_fantasia?.toLowerCase() === q)) ?? null
-  }
-
   async function aplicarLeitura(n: NotaLida) {
-    const f = await resolverFornecedor(n)
+    const { fornecedor: f, criado } = await garantirFornecedor(createClient(),
+      { nome: n.emitente, fantasia: n.emitenteFantasia, cnpj: n.emitenteCnpj }, fornecedores)
+    if (f && criado) onFornecedorCriado(f)
     if (f) setFornecedorId(f.id)
     else setBuscaFornecedor((n.emitente || n.emitenteFantasia || '').trim())
     if (n.nfNumero) setNumeroNf(normalizarNumeroNf(n.nfNumero))
