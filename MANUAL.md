@@ -205,6 +205,18 @@ Exige a permissão **Contas a pagar** (admin sempre tem). Migração: `supabase/
 - **Conferir extrato DDA**: envie o extrato do banco em PDF, imagem (print) ou planilha (XLSX/XLS/CSV); o Gemini extrai os boletos (`/api/contas-pagar/ler-dda`) e `conciliarDda` (`lib/contasPagar.ts`) cruza com as contas: CNPJ pela raiz (8 dígitos, para aceitar filial) ou nome, valor e vencimento. Resultado em grupos — Conferem (marca Conferido DDA), Divergentes (valor, vencimento ou beneficiário diferente; marca Divergente com o motivo), No DDA mas não lançados (lança como Divergente, cadastrando o fornecedor pelo CNPJ) e Lançados mas fora do extrato (desmarcado por padrão). Nada é gravado antes de "Aplicar".
 - **Alerta semanal** (sino no topo): toda segunda às 08:00 (cron `/api/cron/contas-pagar-semana`, `0 11 * * 1` UTC) vai por e-mail a lista de boletos em aberto da semana e os vencidos. Destinatários em `configuracoes_empresa` (chave `contas_pagar_alerta`, só admin altera); sem configuração, vai para `PENDENCIAS_EMAIL_TO`. "Enviar agora" manda na hora (`POST /api/contas-pagar/alerta-semana`).
 
+### Cartão corporativo (`/cartao-corporativo`)
+
+Só admin. Prestação de contas mensal do cartão da empresa: cada gasto com o comprovante e para onde vai o custo. Migração: `supabase/migrations/2026_11_03_cartao_corporativo.sql` (tabelas `cartao_lancamentos`, `cartao_comprovantes`, `cartao_fechamentos` e bucket privado `cartao-comprovantes`). Regras em `lib/cartao.ts`.
+
+- **Mês da fatura**: a tela trabalha por mês da fatura (competência), com setas para navegar.
+- **Importar fatura**: OFX é lido sem IA (`lerOfx`); planilha (CSV/XLSX), PDF ou print vão para o Gemini (`/api/cartao/ler-fatura`). O pagamento da fatura anterior fica de fora; estornos entram negativos. Antes de gravar, cada linha mostra o que vai acontecer: **nova**; **já importada** (reimportar não duplica); **junta com gasto já lançado** (gasto avulso lançado antes da fatura, mesmo valor e até 4 dias de diferença); parcela 2/5 em diante **herda a nota e a classificação** da parcela anterior; mesmo estabelecimento de um gasto da empresa repete a categoria; IOF, anuidade, juros, tarifa e estorno já entram sem exigir comprovante.
+- **Enviar comprovantes**: várias fotos/PDFs/prints de uma vez (foto grande é reduzida e HEIC convertido). O Gemini lê data, valor, loja e o que foi comprado (`/api/cartao/ler-comprovante`) e sugere a linha da fatura que bate pelo valor (da parcela ou total da compra parcelada) e pela data; dá para trocar, criar um gasto novo (ainda fora da fatura) ou descartar.
+- **Anexar** na própria linha: anexo rápido de um comprovante; se o gasto não tem descrição, a IA preenche.
+- **Classificação**: cada gasto vai para uma **obra** (entra no Centro de Custos da obra, seção "Cartão corporativo", e no DRE/resumo financeiro) ou para a **empresa** numa categoria de Custos da empresa (soma no "Total real do mês" e no "Por categoria", pelo mês da fatura). Não lançar a mesma compra também em Materiais da obra ou em Custos da empresa, para não contar em dobro.
+- **Fechar o mês**: avisa o que falta (sem comprovante, sem classificação, fora da fatura). Mês fechado trava as edições até **Reabrir**. Botão de download exporta o mês em Excel.
+- **Acesso**: só admin grava e vê os comprovantes. Quem tem "Financeiro e medições" lê os gastos ligados a obra, para o custo da obra fechar igual para todos.
+
 ### Fornecedores (`/fornecedores`)
 
 Cadastro com razão social, nome fantasia e CNPJ (o DDA identifica o beneficiário pelo CNPJ). Aberto a todos os usuários. Fornecedor com nota ou conta lançada não pode ser excluído — só inativado.

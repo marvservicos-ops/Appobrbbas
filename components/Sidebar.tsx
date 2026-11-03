@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis, Truck, CalendarCheck, FileSignature } from 'lucide-react'
+import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis, Truck, CalendarCheck, FileSignature, CreditCard } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -43,6 +43,7 @@ const secoesBase: { titulo: string; itens: NavItem[] }[] = [
       { href: '/financeiro', label: 'Financeiro', icon: DollarSign, adminOnly: true },
       { href: '/contas-pagar', label: 'Contas a pagar', icon: CalendarCheck, permissao: 'contas_pagar' },
       { href: '/administrativo', label: 'Custos da empresa', icon: Receipt, adminOnly: true },
+      { href: '/cartao-corporativo', label: 'Cartão corporativo', icon: CreditCard, adminOnly: true },
     ],
   },
 ]

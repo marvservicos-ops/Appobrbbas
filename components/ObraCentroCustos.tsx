@@ -1,14 +1,15 @@
 'use client'
 
 import { Fragment, useEffect, useState } from 'react'
-import { AlertTriangle, Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2, Users, ShoppingCart, ArrowUpCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertTriangle, Package, TrendingDown, TrendingUp, Scale, Undo2, X, Loader2, Users, ShoppingCart, ArrowUpCircle, ChevronDown, ChevronRight, CreditCard, Paperclip } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import ModalSobraMista from '@/components/ModalSobraMista'
 import ObraMateriaisAnalise from '@/components/ObraMateriaisAnalise'
 import { hojeLocal } from '@/lib/datas'
+import { semTabelaCartao } from '@/lib/cartao'
 import { mensagemErro } from '@/lib/erros'
 import { ajustarSaldo, controlaSaldo } from '@/lib/estoque/saldo'
-import { agruparMateriais, custoMateriaisObra, custoMaoDeObraObra, lerAdicionais, totaisReceitaObra, totalExtras, type AlocacaoCusto, type FuncionarioCusto } from '@/lib/financeiroObra'
+import { agruparMateriais, custoCartaoObra, custoMateriaisObra, custoMaoDeObraObra, lerAdicionais, totaisReceitaObra, totalExtras, type AlocacaoCusto, type FuncionarioCusto } from '@/lib/financeiroObra'
 
 const moeda = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 const dataBR = (v?: string) => v ? new Date(v + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -64,6 +65,16 @@ interface AlocacaoFuncionario {
   data_fim?: string | null
 }
 
+interface GastoCartao {
+  id: string
+  data: string
+  estabelecimento: string
+  descricao: string | null
+  parcela: string | null
+  valor: number
+  comprovantes: { id: string }[]
+}
+
 interface Estoque {
   id: string
   nome: string
@@ -89,6 +100,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   const [devolucoes, setDevolucoes] = useState<RegistroEstoque[]>([])
   const [materiais, setMateriais] = useState<MaterialObra[]>([])
   const [equipe, setEquipe] = useState<AlocacaoFuncionario[]>([])
+  const [gastosCartao, setGastosCartao] = useState<GastoCartao[]>([])
   const [valorContrato, setValorContrato] = useState<number>(0)
   const [aliquotaSimples, setAliquotaSimples] = useState<number>(0)
   const [loading, setLoading] = useState(true)
@@ -102,12 +114,13 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
   const [secaoEstoque, setSecaoEstoque] = useState(true)
   const [secaoMateriais, setSecaoMateriais] = useState(true)
   const [secaoMaoDeObra, setSecaoMaoDeObra] = useState(true)
+  const [secaoCartao, setSecaoCartao] = useState(true)
 
   useEffect(() => {
     async function load() {
       setLoading(true); setErroCarregar('')
       const supabase = createClient()
-      const [regRes, matRes, alocRes, finRes, tribRes, adicRes, ocRes, aditRes, medRes] = await Promise.all([
+      const [regRes, matRes, alocRes, finRes, tribRes, adicRes, ocRes, aditRes, medRes, cartaoRes] = await Promise.all([
         supabase.from('estoque_registros').select('*, estoque:estoques(nome)').eq('obra_id', obraId).order('data', { ascending: false }),
         supabase.from('obra_materiais').select('*, oc:obra_ocs(numero_oc)').eq('obra_id', obraId).eq('tipo_compra', 'interna').order('created_at', { ascending: false }),
         supabase.from('funcionario_alocacoes').select('data, funcionario_id, percentual, noturno, tipo').eq('obra_id', obraId).in('tipo', ['obra', 'folga', 'escritorio']),
@@ -117,10 +130,12 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         supabase.from('obra_ocs').select('valor_total').eq('obra_id', obraId),
         supabase.from('obra_aditivos').select('valor').eq('obra_id', obraId),
         supabase.from('obra_medicoes').select('status, valor_previsto, valor_faturado, valor_recebido').eq('obra_id', obraId),
+        supabase.from('cartao_lancamentos').select('id, data, estabelecimento, descricao, parcela, valor, comprovantes:cartao_comprovantes(id)').eq('obra_id', obraId).eq('destino', 'obra').order('data', { ascending: false }),
       ])
 
       // Falha de leitura não pode virar "R$ 0" silencioso
       const erroLeitura = [regRes, matRes, alocRes, finRes, ocRes, aditRes, medRes].find(x => x.error)?.error
+        ?? (semTabelaCartao(cartaoRes.error) ? null : cartaoRes.error)
       if (erroLeitura) {
         setErroCarregar(mensagemErro(erroLeitura, 'Não foi possível carregar o centro de custos'))
         setLoading(false)
@@ -133,6 +148,7 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         setDevolucoes(mapped.filter((r: RegistroEstoque) => r.tipo === 'entrada'))
       }
       if (matRes.data) setMateriais(matRes.data as MaterialObra[])
+      setGastosCartao((cartaoRes.data ?? []) as GastoCartao[])
 
       if (alocRes.data && alocRes.data.length > 0) {
         const ids = Array.from(new Set(alocRes.data.map((r: any) => r.funcionario_id as string)))
@@ -203,7 +219,8 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
 
   const impostoSimples = valorContrato * (aliquotaSimples / 100)
   const receitaLiquida = valorContrato - impostoSimples
-  const custoOperacional = custoEstoque + custoMateriaisReal + custoMaoDeObra
+  const custoCartao = custoCartaoObra(gastosCartao)
+  const custoOperacional = custoEstoque + custoMateriaisReal + custoMaoDeObra + custoCartao
   const custoTotal = impostoSimples + custoOperacional
   const margemMat = vendaMateriais - custoMateriaisReal
   const resultado = receitaLiquida - custoOperacional
@@ -613,6 +630,35 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
         )}
       </Section>
 
+      {/* ── Seção 4: Cartão corporativo (só aparece se houver gasto) ── */}
+      {gastosCartao.length > 0 && (
+        <Section
+          icon={<CreditCard size={15} className="text-orange-500" />}
+          title="Cartão corporativo"
+          total={moeda(custoCartao)}
+          totalClass="text-orange-700"
+          aberto={secaoCartao}
+          onToggle={() => setSecaoCartao(a => !a)}
+        >
+          <div className="divide-y divide-[#F1F5F9]">
+            {gastosCartao.map(g => (
+              <div key={g.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-[#0F172A] truncate">{g.descricao || g.estabelecimento}{g.parcela ? <span className="text-[#94A3B8] font-normal"> · {g.parcela}</span> : null}</p>
+                  <p className="text-xs text-[#94A3B8] flex items-center gap-1.5">
+                    {dataBR(g.data)}{g.descricao ? ` · ${g.estabelecimento}` : ''}
+                    {g.comprovantes.length > 0
+                      ? <span className="inline-flex items-center gap-0.5 text-emerald-600"><Paperclip size={10} /> comprovado</span>
+                      : <span className="text-amber-600">sem comprovante</span>}
+                  </p>
+                </div>
+                <span className={`text-sm font-semibold shrink-0 ${g.valor < 0 ? 'text-green-600' : 'text-orange-700'}`}>{moeda(g.valor)}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
       {/* ── Resultado Final (DRE) ── */}
       <div className="card p-5 bg-[#F8FAFF] border-[#C7D2FE] space-y-4">
         <h3 className="font-syne font-bold text-[#0F172A] flex items-center gap-2">
@@ -663,6 +709,12 @@ export default function ObraCentroCustos({ obraId }: { obraId: string }) {
             <span className="text-xs text-[#64748B] pl-3">Mão de Obra</span>
             <span className="text-xs text-red-500">({moeda(custoMaoDeObra)})</span>
           </div>
+          {custoCartao !== 0 && (
+            <div className="flex justify-between items-center px-4 py-2 border-b border-[#F1F5F9] bg-[#F8FAFC]">
+              <span className="text-xs text-[#64748B] pl-3">Cartão corporativo</span>
+              <span className="text-xs text-red-500">({moeda(custoCartao)})</span>
+            </div>
+          )}
 
           <div className={`flex justify-between items-center px-4 py-3.5 ${resultado >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
             <div>

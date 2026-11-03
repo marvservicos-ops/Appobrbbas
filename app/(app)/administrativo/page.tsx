@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Topbar from '@/components/Topbar'
@@ -8,6 +9,7 @@ import { useAccess } from '@/lib/useAccess'
 import { mensagemErro } from '@/lib/erros'
 import { hojeLocal } from '@/lib/datas'
 import { parseNumeroBR } from '@/lib/numero'
+import { semTabelaCartao } from '@/lib/cartao'
 import {
   Plus, X, Loader2, Pencil, Trash2, RefreshCw, Settings,
   Zap, Droplets, Building2, Monitor, FileText, ShieldCheck, MoreHorizontal,
@@ -55,6 +57,17 @@ interface Custo {
   observacao: string | null
 }
 
+// Gasto do cartão corporativo classificado para a empresa
+interface GastoCartao {
+  id: string
+  competencia: string
+  data: string
+  estabelecimento: string
+  descricao: string | null
+  valor: number
+  categoria_id: string | null
+}
+
 const RECORRENCIA_LABEL: Record<string, string> = {
   mensal: 'Mensal',
   anual: 'Anual',
@@ -79,6 +92,7 @@ export default function AdministrativoPage() {
   const [erro, setErro] = useState<string | null>(null)
   const [custos, setCustos] = useState<Custo[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [gastosCartao, setGastosCartao] = useState<GastoCartao[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'custos' | 'categorias'>('custos')
   const [catFiltro, setCatFiltro] = useState<string>('todas')
@@ -99,17 +113,20 @@ export default function AdministrativoPage() {
     setLoading(true)
     setErro(null)
     const sb = createClient()
-    const [{ data: cats, error: catErr }, { data: costs, error: costErr }] = await Promise.all([
+    const [{ data: cats, error: catErr }, { data: costs, error: costErr }, { data: cartao, error: cartaoErr }] = await Promise.all([
       sb.from('categorias_administrativas').select('*').order('nome'),
       sb.from('custos_administrativos').select('*').order('data', { ascending: false }),
+      sb.from('cartao_lancamentos').select('id, competencia, data, estabelecimento, descricao, valor, categoria_id').eq('destino', 'empresa').order('data'),
     ])
-    if (catErr || costErr) {
-      setErro(mensagemErro(catErr ?? costErr, 'Erro ao carregar os custos'))
+    const erroCartao = semTabelaCartao(cartaoErr) ? null : cartaoErr
+    if (catErr || costErr || erroCartao) {
+      setErro(mensagemErro(catErr ?? costErr ?? erroCartao, 'Erro ao carregar os custos'))
       setLoading(false)
       return
     }
     setCategorias((cats ?? []) as Categoria[])
     setCustos((costs ?? []) as Custo[])
+    setGastosCartao((cartao ?? []) as GastoCartao[])
     setLoading(false)
   }
 
@@ -129,7 +146,10 @@ export default function AdministrativoPage() {
   const totalAnualRecorrente = totalMensalRecorrente * 12
   const unicosMes = custos.filter(unicoNoMes)
   const totalUnicosMes = unicosMes.reduce((s, c) => s + c.valor, 0)
-  const totalMes = totalMensalRecorrente + totalUnicosMes
+  // Cartão entra pelo mês da fatura
+  const cartaoMes = gastosCartao.filter(g => g.competencia === mesFiltro)
+  const totalCartaoMes = cartaoMes.reduce((s, g) => s + Number(g.valor), 0)
+  const totalMes = totalMensalRecorrente + totalUnicosMes + totalCartaoMes
 
   // Lista filtrada
   const lista = custos.filter(c => {
@@ -143,7 +163,8 @@ export default function AdministrativoPage() {
   const porCategoria = categorias.map(cat => ({
     ...cat,
     mensal: custos.filter(c => c.categoria_id === cat.id && c.ativo && recorrenteNoMes(c)).reduce((s, c) => s + custoMensalEquivalente(c), 0),
-    unicos: custos.filter(c => c.categoria_id === cat.id && unicoNoMes(c)).reduce((s, c) => s + c.valor, 0),
+    unicos: custos.filter(c => c.categoria_id === cat.id && unicoNoMes(c)).reduce((s, c) => s + c.valor, 0)
+      + cartaoMes.filter(g => g.categoria_id === cat.id).reduce((s, g) => s + Number(g.valor), 0),
   })).filter(cat => cat.mensal > 0 || cat.unicos > 0)
 
   async function deletarCusto(id: string) {
@@ -235,7 +256,7 @@ export default function AdministrativoPage() {
               <div className="card p-4 border-l-4 border-l-[#4F7CFF]">
                 <p className="text-xs text-[#64748B] font-medium mb-1">Total real do mês</p>
                 <p className="font-syne font-bold text-xl text-[#0F172A]">{moeda(totalMes)}</p>
-                <p className="text-[11px] text-[#94A3B8] mt-0.5">recorrente + avulsos</p>
+                <p className="text-[11px] text-[#94A3B8] mt-0.5">recorrente + avulsos{totalCartaoMes !== 0 ? ` + cartão ${moeda(totalCartaoMes)}` : ''}</p>
               </div>
             </div>
             <p className="text-[11px] text-[#94A3B8] -mt-3 mb-6">
@@ -299,6 +320,30 @@ export default function AdministrativoPage() {
                       className="px-3 py-1.5 border border-[#E2E8F0] rounded-lg text-xs text-[#374151] focus:outline-none focus:border-[#4F7CFF]" />
                   </div>
                 </div>
+
+                {!loading && cartaoMes.some(g => catFiltro === 'todas' || g.categoria_id === catFiltro) && (
+                  <div className="card p-0 overflow-hidden">
+                    <div className="px-4 py-2 bg-[#F8FAFC] border-b border-[#E2E8F0] flex items-center justify-between">
+                      <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wide">Cartão corporativo (fatura {mesFiltro.split('-').reverse().join('/')})</p>
+                      <Link href="/cartao-corporativo" className="text-[11px] font-medium text-[#4F7CFF] hover:underline">Abrir</Link>
+                    </div>
+                    {cartaoMes.filter(g => catFiltro === 'todas' || g.categoria_id === catFiltro).map(g => {
+                      const cat = catInfo(g.categoria_id)
+                      return (
+                        <div key={g.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-[#F8FAFC] last:border-b-0">
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: cat.cor + '20' }}>
+                            <CreditCard size={13} style={{ color: cat.cor }} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-[#0F172A] truncate">{g.descricao || g.estabelecimento}</p>
+                            <p className="text-[11px] text-[#94A3B8]">{cat.nome} · {dataBR(g.data)}</p>
+                          </div>
+                          <span className="text-sm font-semibold text-[#0F172A] shrink-0">{moeda(Number(g.valor))}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
 
                 {loading ? (
                   <div className="flex items-center justify-center py-16">
