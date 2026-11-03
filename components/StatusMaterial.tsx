@@ -118,6 +118,9 @@ export function StatusMaterialPicker({ value, onChange }: { value: string; onCha
   async function excluir(s: StatusMaterial) {
     const { count } = await sb.from('obra_materiais').select('id', { count: 'exact', head: true }).eq('status', s.chave)
     if (count) { alert(`${count} material(is) usam a tag "${s.label}". Mude o status deles antes de excluir.`); return }
+    const { count: movs } = await sb.from('obra_material_movimentos').select('id', { count: 'exact', head: true })
+      .or(`de_status.eq.${s.chave},para_status.eq.${s.chave}`)
+    if (movs) { alert(`${movs} movimentação(ões) de material usam a tag "${s.label}". Ajuste-as antes de excluir.`); return }
     if (!confirm(`Excluir a tag "${s.label}"?`)) return
     const { error } = await sb.from('obra_material_status').delete().eq('chave', s.chave)
     if (error) { alert('Erro ao excluir: ' + mensagemErro(error)); return }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Building2, MapPin, FileText, PlusCircle, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, Mail, Send, Cloud, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Building2, MapPin, FileText, PlusCircle, Upload, X, Wrench, Calendar, User, Hash, Clock, CheckCircle2, AlertTriangle, ExternalLink, FolderOpen, Folder, Plus, Trash2, ChevronDown, ChevronRight, FileSpreadsheet, Loader2, Settings, ShoppingCart, Pencil, Package, ArrowRightLeft, Mail, Send, Cloud, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { sanitizarNomeArquivo } from '@/lib/utils/nomeArquivo'
 import { Obra, CronogramaEtapa, Documento, CategoriaDoc, StatusEtapa, DocPasta, RDO, Empresa, DiarioObraRelatorio } from '@/lib/types'
@@ -12,7 +12,8 @@ import { useAccess } from '@/lib/useAccess'
 import { hojeLocal, diasEntre } from '@/lib/datas'
 import { mensagemErro } from '@/lib/erros'
 import ModalNovaObra from '@/components/ModalNovaObra'
-import { StatusMaterialBadge, StatusMaterialPicker } from '@/components/StatusMaterial'
+import { StatusMaterialPicker } from '@/components/StatusMaterial'
+import { DistribuicaoMaterialBadges, ModalMovimentarMaterial, MovimentoMaterial, distribuicaoMaterial, statusBaseMaterial, fmtQtd } from '@/components/MovimentosMaterial'
 
 type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais' | 'equipe'
 
@@ -267,6 +268,8 @@ export default function ObraDetailPage() {
   const [msgSincronizacao, setMsgSincronizacao] = useState('')
   const [limpandoDuplicados, setLimpandoDuplicados] = useState(false)
   const [materiais, setMateriais] = useState<ObraMaterial[]>([])
+  const [movimentos, setMovimentos] = useState<MovimentoMaterial[]>([])
+  const [movimentando, setMovimentando] = useState<ObraMaterial | null>(null)
   const [equipe] = useState<ObraFuncionario[]>([])
   const [criandoRdo, setCriandoRdo] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -387,6 +390,13 @@ export default function ObraDetailPage() {
     return true
   }
 
+  // Movimentações à parte: se a migration ainda não rodou, a tela segue sem elas
+  async function loadMovimentos() {
+    const { data } = await createClient().from('obra_material_movimentos').select('*').eq('obra_id', id)
+    setMovimentos((data ?? []) as MovimentoMaterial[])
+  }
+  const movimentosDe = (materialId: string) => movimentos.filter(mv => mv.material_id === materialId)
+
   // Spinner de tela cheia só no primeiro carregamento; recargas depois de salvar
   // acontecem em segundo plano (sem desmontar a página nem perder rolagem/filtros).
   async function load() {
@@ -408,6 +418,7 @@ export default function ObraDetailPage() {
     if (materiaisRes.data) setMateriais(materiaisRes.data as ObraMaterial[])
     if (templatesRes.data) setEmailTemplates(templatesRes.data as typeof emailTemplates)
     setLoading(false)
+    loadMovimentos()
     loadEmailsEnviados(true)
   }
 
@@ -1543,6 +1554,8 @@ export default function ObraDetailPage() {
                 onEdit={m => { setEditandoMaterial(m); setShowNovoMaterial(true) }}
                 onDelete={m => excluirMaterial(m.id)}
                 onEditGrupo={itens => setEditandoOrcamento(itens)}
+                movimentosDe={movimentosDe}
+                onMovimentar={m => setMovimentando(m)}
               />
             )}
           </div>
@@ -1648,9 +1661,19 @@ export default function ObraDetailPage() {
         </div>
       )}
 
+      {movimentando && (
+        <ModalMovimentarMaterial
+          material={movimentando}
+          movimentos={movimentosDe(movimentando.id)}
+          onClose={() => setMovimentando(null)}
+          onChanged={load}
+        />
+      )}
+
       {/* Modal Material */}
       {showNovoMaterial && (
         <ModalMaterial
+          movimentos={editandoMaterial ? movimentosDe(editandoMaterial.id) : []}
           obraId={id}
           material={editandoMaterial}
           onClose={() => { setShowNovoMaterial(false); setEditandoMaterial(null) }}
@@ -2586,11 +2609,13 @@ function ModalEditarDoc({ doc, pastaAtualId, pastas, onClose, onSaved }: {
 }
 
 // ── MateriaisLista ────────────────────────────────────
-function MateriaisLista({ materiais, onEdit, onDelete, onEditGrupo }: {
+function MateriaisLista({ materiais, onEdit, onDelete, onEditGrupo, movimentosDe, onMovimentar }: {
   materiais: ObraMaterial[]
   onEdit: (m: ObraMaterial) => void
   onDelete: (m: ObraMaterial) => void
   onEditGrupo: (itens: ObraMaterial[]) => void
+  movimentosDe: (materialId: string) => MovimentoMaterial[]
+  onMovimentar: (m: ObraMaterial) => void
 }) {
   // Agrupar itens do mesmo orçamento: pela url do arquivo; sem arquivo, pelo nº da NF
   // + fornecedor; sem nenhum dos dois, pelo lote de inserção (mesmo created_at).
@@ -2614,22 +2639,24 @@ function MateriaisLista({ materiais, onEdit, onDelete, onEditGrupo }: {
   return (
     <div className="space-y-3">
       {grupos.map(([key, itens]) => (
-        <OrcamentoCard key={key} itens={itens} orcamentoUrl={itens.find(m => m.nota_fiscal_url)?.nota_fiscal_url} onEdit={onEdit} onDelete={onDelete} onEditGrupo={onEditGrupo} />
+        <OrcamentoCard key={key} itens={itens} orcamentoUrl={itens.find(m => m.nota_fiscal_url)?.nota_fiscal_url} onEdit={onEdit} onDelete={onDelete} onEditGrupo={onEditGrupo} movimentosDe={movimentosDe} onMovimentar={onMovimentar} />
       ))}
       {semOrc.map(m => (
-        <MaterialCard key={m.id} material={m} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)} />
+        <MaterialCard key={m.id} material={m} movimentos={movimentosDe(m.id)} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)} onMovimentar={() => onMovimentar(m)} />
       ))}
     </div>
   )
 }
 
 // ── OrcamentoCard ─────────────────────────────────────
-function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
+function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo, movimentosDe, onMovimentar }: {
   itens: ObraMaterial[]
   orcamentoUrl?: string
   onEdit: (m: ObraMaterial) => void
   onDelete: (m: ObraMaterial) => void
   onEditGrupo: (itens: ObraMaterial[]) => void
+  movimentosDe: (materialId: string) => MovimentoMaterial[]
+  onMovimentar: (m: ObraMaterial) => void
 }) {
   const [aberto, setAberto] = useState(true)
   const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -2702,9 +2729,10 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-semibold leading-5 text-[#0F172A] break-words">{m.descricao}</h3>
-                      <StatusMaterialBadge chave={m.status} className="inline-flex mt-2 text-[11px]" />
+                      <DistribuicaoMaterialBadges material={m} movimentos={movimentosDe(m.id)} className="mt-2" />
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      {(m.quantidade ?? 0) > 0 && <button aria-label={`Movimentar ${m.descricao}`} onClick={() => onMovimentar(m)} className="w-10 h-10 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF]"><ArrowRightLeft size={14} /></button>}
                       <button aria-label={`Editar ${m.descricao}`} onClick={() => onEdit(m)} className="w-10 h-10 flex items-center justify-center rounded-lg bg-[#EEF2FF] text-[#4F7CFF]"><Pencil size={14} /></button>
                       <button aria-label={`Excluir ${m.descricao}`} onClick={() => onDelete(m)} className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-50 text-red-500"><Trash2 size={14} /></button>
                     </div>
@@ -2737,7 +2765,7 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
                 <tr key={m.id} className="border-b border-[#F8FAFC] hover:bg-[#F8FAFC] transition-colors group">
                   <td className="px-4 py-2.5 text-sm font-medium text-[#0F172A] max-w-xs">{m.descricao}</td>
                   <td className="px-3 py-2.5">
-                    <StatusMaterialBadge chave={m.status} className="text-[10px]" />
+                    <DistribuicaoMaterialBadges material={m} movimentos={movimentosDe(m.id)} />
                   </td>
                   <td className="px-3 py-2.5 text-sm text-[#374151]">{m.quantidade != null ? `${m.quantidade} ${m.unidade ?? ''}` : '—'}</td>
                   <td className="px-3 py-2.5 text-sm text-[#374151]">{m.valor_unitario != null ? fmtMoeda(m.valor_unitario) : '—'}</td>
@@ -2745,6 +2773,7 @@ function OrcamentoCard({ itens, orcamentoUrl, onEdit, onDelete, onEditGrupo }: {
                   <td className="px-3 py-2.5 text-xs text-[#64748B]">{m.data_chegada ? fmt(m.data_chegada) : m.data_prevista_chegada ? `prev. ${fmt(m.data_prevista_chegada)}` : '—'}</td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      {(m.quantidade ?? 0) > 0 && <button onClick={() => onMovimentar(m)} aria-label={`Movimentar ${m.descricao}`} title="Movimentar (levar parte para a obra, instalar...)" className="text-[#94A3B8] hover:text-[#4F7CFF] p-2 rounded hover:bg-[#EEF2FF] transition-colors"><ArrowRightLeft size={13} /></button>}
                       <button onClick={() => onEdit(m)} aria-label={`Editar ${m.descricao}`} title="Editar" className="text-[#94A3B8] hover:text-[#4F7CFF] p-2 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={13} /></button>
                       <button onClick={() => onDelete(m)} aria-label={`Excluir ${m.descricao}`} title="Excluir" className="text-[#94A3B8] hover:text-red-500 p-2 rounded hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
                     </div>
@@ -3050,7 +3079,7 @@ function GanttView({ etapas, onEdit, onDelete, onDeleteMany, onProgressUpdate }:
 }
 
 // ── MaterialCard ──────────────────────────────────────
-function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMaterial; onEdit: () => void; onDelete: () => void }) {
+function MaterialCard({ material: m, movimentos, onEdit, onDelete, onMovimentar }: { material: ObraMaterial; movimentos: MovimentoMaterial[]; onEdit: () => void; onDelete: () => void; onMovimentar: () => void }) {
   const fmt = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
   const fmtMoeda = (v?: number) => v != null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : null
 
@@ -3067,12 +3096,13 @@ function MaterialCard({ material: m, onEdit, onDelete }: { material: ObraMateria
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.tipo_compra === 'cliente' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
                 {m.tipo_compra === 'cliente' ? 'Compra Cliente' : 'Compra Interna'}
               </span>
-              <StatusMaterialBadge chave={m.status} className="text-[10px]" />
+              <DistribuicaoMaterialBadges material={m} movimentos={movimentos} />
             </div>
             {m.fornecedor && <p className="text-xs text-[#64748B] mt-0.5">Fornecedor: {m.fornecedor}</p>}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {(m.quantidade ?? 0) > 0 && <button onClick={onMovimentar} aria-label={`Movimentar ${m.descricao}`} title="Movimentar (levar parte para a obra, instalar...)" className="text-[#94A3B8] hover:text-[#4F7CFF] p-2 rounded hover:bg-[#EEF2FF] transition-colors"><ArrowRightLeft size={14} /></button>}
           <button onClick={onEdit} aria-label={`Editar ${m.descricao}`} title="Editar" className="text-[#94A3B8] hover:text-[#4F7CFF] p-2 rounded hover:bg-[#EEF2FF] transition-colors"><Pencil size={14} /></button>
           <button onClick={onDelete} aria-label={`Excluir ${m.descricao}`} title="Excluir" className="text-[#94A3B8] hover:text-red-500 p-2 rounded hover:bg-red-50 transition-colors"><Trash2 size={14} /></button>
         </div>
@@ -3202,8 +3232,8 @@ function SeletorOC({ obraId, ocId, onChange }: {
 }
 
 // ── ModalMaterial ─────────────────────────────────────
-function ModalMaterial({ obraId, material, onClose, onSaved }: {
-  obraId: string; material: ObraMaterial | null; onClose: () => void; onSaved: () => void
+function ModalMaterial({ obraId, material, movimentos, onClose, onSaved }: {
+  obraId: string; material: ObraMaterial | null; movimentos: MovimentoMaterial[]; onClose: () => void; onSaved: () => void
 }) {
   const [descricao, setDescricao] = useState(material?.descricao ?? '')
   const [tipCompra, setTipCompra] = useState<'interna' | 'cliente'>(material?.tipo_compra ?? 'interna')
@@ -3291,6 +3321,14 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
     if (!descricao.trim()) return
+    // Com movimentações, a quantidade não pode ficar menor que o que já foi movimentado
+    if (movimentos.length > 0) {
+      const { erro } = distribuicaoMaterial(quantidade ? parseFloat(quantidade) : 0, statusBaseMaterial(status, movimentos), movimentos)
+      if (erro) {
+        alert(`Com essa quantidade faltaria material para a movimentação de ${fmtQtd(erro.mov.quantidade)} em ${new Date(erro.mov.data + 'T00:00:00').toLocaleDateString('pt-BR')}. Ajuste ou exclua a movimentação antes.`)
+        return
+      }
+    }
     setSaving(true)
     const supabase = createClient()
     const payload = {
@@ -3351,7 +3389,14 @@ function ModalMaterial({ obraId, material, onClose, onSaved }: {
 
           {/* Status */}
           <F label="Status">
-            <StatusMaterialPicker value={status} onChange={setStatus} />
+            {movimentos.length > 0 ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <DistribuicaoMaterialBadges material={material!} movimentos={movimentos} />
+                <span className="text-xs text-[#94A3B8]">Definido pelas movimentações — use o botão Movimentar na lista.</span>
+              </div>
+            ) : (
+              <StatusMaterialPicker value={status} onChange={setStatus} />
+            )}
           </F>
 
           {/* Descrição */}
