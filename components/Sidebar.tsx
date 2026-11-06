@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis, Truck, CalendarCheck, FileSignature, CreditCard } from 'lucide-react'
+import { Wrench, Settings, Package, Menu, X, ShieldCheck, DollarSign, LayoutDashboard, Thermometer, Leaf, CalendarDays, HardHat, Building2, Receipt, ShieldPlus, Ellipsis, Truck, CalendarCheck, FileSignature, CreditCard, KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAccess } from '@/lib/useAccess'
 
@@ -18,6 +18,7 @@ const secoesBase: { titulo: string; itens: NavItem[] }[] = [
       { href: '/obras', label: 'Obras', icon: Wrench },
       { href: '/manutencoes', label: 'Manutenções', icon: Thermometer },
       { href: '/funcionarios/alocacao', label: 'Alocação', icon: CalendarDays },
+      { href: '/funcionarios/liberacoes', label: 'Liberações', icon: KeyRound, adminOnly: true },
       { href: '/estoque', label: 'Estoque', icon: Package },
     ],
   },
