@@ -7,6 +7,7 @@ import { DiarioObraRelatorio } from '@/lib/types'
 import { mensagemErro } from '@/lib/erros'
 import { formatarData, mesLocal } from '@/lib/datas'
 import { ContratoRelatorioTipo, Periodicidade, PERIODICIDADES, devidoNoMes, nomeCompetencia, somarMeses } from '@/lib/manutencaoRelatorios'
+import { ContatosEmail } from '@/components/ContatosEmail'
 
 const MESES_NA_GRADE = 6
 
@@ -504,7 +505,6 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, tipo, re
   const [assunto, setAssunto] = useState(`${tipo.nome} — ${contratoNome}`)
   const [mensagem, setMensagem] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
-  const [contatos, setContatos] = useState<{ nome: string; email: string; tipo: string | null }[]>([])
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -517,9 +517,6 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, tipo, re
         if (data?.ultimo_cc?.length) setCc(data.ultimo_cc.join(', '))
       })
     sb.auth.getUser().then(({ data }) => setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? ''))
-    sb.from('clientes').select('nome, email, tipo').not('email', 'is', null).order('nome').then(({ data }) => {
-      setContatos((data ?? []).filter(c => c.email).map(c => ({ nome: c.nome as string, email: c.email as string, tipo: (c.tipo as string) ?? null })))
-    })
   }, [contratoId, tipo.id])
 
   useEffect(() => {
@@ -529,13 +526,6 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, tipo, re
       ? `Bom dia,\n\nSegue em anexo o relatório ${tipo.nome} ${quando}.\n\nQualquer dúvida, estamos à disposição.`
       : `Bom dia,\n\nSeguem em anexo os relatórios ${tipo.nome} ${quando}.\n\nQualquer dúvida, estamos à disposição.`)
   }, [relatorios, competencia, tipo.nome])
-
-  function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
-    const valor = campo === 'destinatarios' ? destinatarios : cc
-    const setter = campo === 'destinatarios' ? setDestinatarios : setCc
-    const atuais = valor.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
-    if (!atuais.includes(email)) setter([...atuais, email].join(', '))
-  }
 
   async function enviar() {
     const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
@@ -575,19 +565,7 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, tipo, re
           <button onClick={onClose} disabled={enviando} aria-label="Fechar" title="Fechar" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F1F5F9]"><X size={16} className="text-[#64748B]" /></button>
         </div>
         <div className="p-6 space-y-4 overflow-y-auto">
-          {contatos.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto">
-              <span className="text-xs text-[#94A3B8]">Adicionar:</span>
-              {contatos.map((c, i) => (
-                <span key={`${c.email}-${i}`} className="inline-flex items-center rounded-full overflow-hidden bg-[#EEF2FF] text-[#4F7CFF]">
-                  <button type="button" onClick={() => adicionarContato('destinatarios', c.email)} className="text-xs pl-2 pr-1.5 py-1 hover:brightness-95">
-                    + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
-                  </button>
-                  <button type="button" onClick={() => adicionarContato('cc', c.email)} title="Adicionar em Cc" className="text-[10px] font-semibold px-1.5 py-1 border-l border-white/60 hover:brightness-95">Cc</button>
-                </span>
-              ))}
-            </div>
-          )}
+          <ContatosEmail destinatarios={destinatarios} cc={cc} onChange={(campo, v) => (campo === 'destinatarios' ? setDestinatarios : setCc)(v)} />
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
             <input className="field" inputMode="email" placeholder="cliente@exemplo.com, outro@exemplo.com" value={destinatarios} onChange={e => setDestinatarios(e.target.value)} />

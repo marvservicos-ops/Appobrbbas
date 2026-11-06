@@ -14,6 +14,7 @@ import { mensagemErro } from '@/lib/erros'
 import ModalNovaObra from '@/components/ModalNovaObra'
 import { StatusMaterialPicker } from '@/components/StatusMaterial'
 import { DistribuicaoMaterialBadges, ModalMovimentarMaterial, MovimentoMaterial, distribuicaoMaterial, statusBaseMaterial, fmtQtd } from '@/components/MovimentosMaterial'
+import { ContatosEmail } from '@/components/ContatosEmail'
 
 type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais' | 'equipe'
 
@@ -4721,7 +4722,6 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
   const [erro, setErro] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [remetente, setRemetente] = useState<{ nome: string; email: string }>({ nome: '', email: '' })
-  const [contatos, setContatos] = useState<{ nome: string; email: string; tipo: string | null }[]>([])
 
   useEffect(() => {
     const supabase = createClient()
@@ -4735,14 +4735,6 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
       setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? '')
       setRemetente({ nome: data.user?.user_metadata?.nome ?? '', email: data.user?.email ?? '' })
     })
-    supabase.from('clientes').select('nome, email, tipo').not('email', 'is', null).order('nome').then(({ data }) => {
-      const ordem: Record<string, number> = { Gestor: 0, Comprador: 1, Fiscal: 2 }
-      const lista = (data ?? [])
-        .filter(c => c.email)
-        .map(c => ({ nome: c.nome as string, email: c.email as string, tipo: (c.tipo as string) ?? null }))
-      lista.sort((a, b) => (ordem[a.tipo ?? ''] ?? 9) - (ordem[b.tipo ?? ''] ?? 9) || a.nome.localeCompare(b.nome))
-      setContatos(lista)
-    })
   }, [obraId])
 
   useEffect(() => {
@@ -4755,14 +4747,6 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
         : `Bom dia,\n\nSeguem em anexo os relatórios dos dias ${datas} da obra ${obraTitulo}.\n\nQualquer dúvida, estamos à disposição.`
     )
   }, [rdos, obraTitulo])
-
-  function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
-    const set = campo === 'destinatarios' ? destinatarios : cc
-    const setter = campo === 'destinatarios' ? setDestinatarios : setCc
-    const atuais = set.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
-    if (atuais.includes(email)) return
-    setter([...atuais, email].join(', '))
-  }
 
   async function enviar() {
     const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
@@ -4816,30 +4800,7 @@ function ModalEnviarRdo({ obraId, obraTitulo, rdos, onClose, onSent }: {
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto">
-          {contatos.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto">
-              <span className="text-xs text-[#94A3B8]">Adicionar:</span>
-              {contatos.map((c, i) => {
-                const cor = c.tipo === 'Fiscal'
-                  ? 'bg-amber-50 text-amber-700'
-                  : c.tipo === 'Comprador'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-[#EEF2FF] text-[#4F7CFF]'
-                return (
-                  <span key={`${c.email}-${i}`} className={`inline-flex items-center rounded-full overflow-hidden ${cor}`}>
-                    <button type="button" onClick={() => adicionarContato('destinatarios', c.email)}
-                      className="text-xs pl-2 pr-1.5 py-1 hover:brightness-95 transition-all">
-                      + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
-                    </button>
-                    <button type="button" onClick={() => adicionarContato('cc', c.email)} title="Adicionar em Cc"
-                      className="text-[10px] font-semibold px-1.5 py-1 border-l border-white/60 hover:brightness-95 transition-all">
-                      Cc
-                    </button>
-                  </span>
-                )
-              })}
-            </div>
-          )}
+          <ContatosEmail destinatarios={destinatarios} cc={cc} onChange={(campo, v) => (campo === 'destinatarios' ? setDestinatarios : setCc)(v)} />
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
             <input className="field" placeholder="cliente@exemplo.com, outro@exemplo.com"
@@ -4907,7 +4868,6 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
   const [erro, setErro] = useState('')
   const [assinaturaHtml, setAssinaturaHtml] = useState('')
   const [remetente, setRemetente] = useState<{ nome: string; email: string }>({ nome: '', email: '' })
-  const [contatos, setContatos] = useState<{ nome: string; email: string; tipo: string | null }[]>([])
 
   useEffect(() => {
     const supabase = createClient()
@@ -4921,14 +4881,6 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
       setAssinaturaHtml(data.user?.user_metadata?.assinatura_email ?? '')
       setRemetente({ nome: data.user?.user_metadata?.nome ?? '', email: data.user?.email ?? '' })
     })
-    supabase.from('clientes').select('nome, email, tipo').not('email', 'is', null).order('nome').then(({ data }) => {
-      const ordem: Record<string, number> = { Gestor: 0, Comprador: 1, Fiscal: 2 }
-      const lista = (data ?? [])
-        .filter(c => c.email)
-        .map(c => ({ nome: c.nome as string, email: c.email as string, tipo: (c.tipo as string) ?? null }))
-      lista.sort((a, b) => (ordem[a.tipo ?? ''] ?? 9) - (ordem[b.tipo ?? ''] ?? 9) || a.nome.localeCompare(b.nome))
-      setContatos(lista)
-    })
   }, [obraId])
 
   useEffect(() => {
@@ -4941,14 +4893,6 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
         : `Bom dia,\n\nSeguem em anexo os relatórios dos dias ${datas} da obra ${obraTitulo}.\n\nQualquer dúvida, estamos à disposição.`
     )
   }, [relatorios, obraTitulo])
-
-  function adicionarContato(campo: 'destinatarios' | 'cc', email: string) {
-    const set = campo === 'destinatarios' ? destinatarios : cc
-    const setter = campo === 'destinatarios' ? setDestinatarios : setCc
-    const atuais = set.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
-    if (atuais.includes(email)) return
-    setter([...atuais, email].join(', '))
-  }
 
   async function enviar() {
     const emails = destinatarios.split(/[,;\n]/).map(e => e.trim()).filter(Boolean)
@@ -5002,30 +4946,7 @@ function ModalEnviarRdoDrive({ obraId, obraTitulo, relatorios, onClose, onSent }
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto">
-          {contatos.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto">
-              <span className="text-xs text-[#94A3B8]">Adicionar:</span>
-              {contatos.map((c, i) => {
-                const cor = c.tipo === 'Fiscal'
-                  ? 'bg-amber-50 text-amber-700'
-                  : c.tipo === 'Comprador'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-[#EEF2FF] text-[#4F7CFF]'
-                return (
-                  <span key={`${c.email}-${i}`} className={`inline-flex items-center rounded-full overflow-hidden ${cor}`}>
-                    <button type="button" onClick={() => adicionarContato('destinatarios', c.email)}
-                      className="text-xs pl-2 pr-1.5 py-1 hover:brightness-95 transition-all">
-                      + {c.nome}{c.tipo ? ` (${c.tipo.toLowerCase()})` : ''}
-                    </button>
-                    <button type="button" onClick={() => adicionarContato('cc', c.email)} title="Adicionar em Cc"
-                      className="text-[10px] font-semibold px-1.5 py-1 border-l border-white/60 hover:brightness-95 transition-all">
-                      Cc
-                    </button>
-                  </span>
-                )
-              })}
-            </div>
-          )}
+          <ContatosEmail destinatarios={destinatarios} cc={cc} onChange={(campo, v) => (campo === 'destinatarios' ? setDestinatarios : setCc)(v)} />
           <div>
             <label className="block text-sm font-medium text-[#374151] mb-1.5">Destinatário(s) *</label>
             <input className="field" placeholder="cliente@exemplo.com, outro@exemplo.com"
