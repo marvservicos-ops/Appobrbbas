@@ -12,11 +12,12 @@ import { useAccess } from '@/lib/useAccess'
 import { hojeLocal, diasEntre } from '@/lib/datas'
 import { mensagemErro } from '@/lib/erros'
 import ModalNovaObra from '@/components/ModalNovaObra'
+import ObraDespesas from '@/components/ObraDespesas'
 import { StatusMaterialPicker } from '@/components/StatusMaterial'
 import { DistribuicaoMaterialBadges, ModalMovimentarMaterial, MovimentoMaterial, distribuicaoMaterial, statusBaseMaterial, fmtQtd } from '@/components/MovimentosMaterial'
 import { ContatosEmail } from '@/components/ContatosEmail'
 
-type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais' | 'equipe'
+type Tab = 'visao-geral' | 'documentos' | 'cronograma' | 'relatorios' | 'materiais' | 'despesas' | 'equipe'
 
 interface Funcionario {
   id: string
@@ -248,7 +249,7 @@ export default function ObraDetailPage() {
   // "equipe" (custo de mão de obra) só para admin — espera o perfil carregar antes de decidir.
   useEffect(() => {
     const aba = new URLSearchParams(window.location.search).get('aba') as Tab | null
-    if (aba && ['visao-geral', 'documentos', 'cronograma', 'relatorios', 'materiais'].includes(aba)) setTab(aba)
+    if (aba && ['visao-geral', 'documentos', 'cronograma', 'relatorios', 'materiais', 'despesas'].includes(aba)) setTab(aba)
   }, [])
   useEffect(() => {
     if (carregandoAcesso || !isAdmin) return
@@ -838,7 +839,7 @@ export default function ObraDetailPage() {
       {/* Tabs */}
       <div className="bg-white border-b border-[#E2E8F0] px-2 md:px-6 min-w-0">
         <div className="flex gap-0 overflow-x-auto overscroll-x-contain scrollbar-none">
-          {(['visao-geral', 'relatorios', 'materiais', ...(isAdmin ? ['equipe'] : []), 'documentos', 'cronograma'] as Tab[]).map(t => (
+          {(['visao-geral', 'relatorios', 'materiais', 'despesas', ...(isAdmin ? ['equipe'] : []), 'documentos', 'cronograma'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 md:px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${tab === t ? 'border-[#4F7CFF] text-[#4F7CFF]' : 'border-transparent text-[#64748B] hover:text-[#0F172A]'}`}>
               {t === 'visao-geral' ? 'Visão Geral'
@@ -846,6 +847,7 @@ export default function ObraDetailPage() {
                 : t === 'cronograma' ? 'Cronograma'
                 : t === 'relatorios' ? `Relatórios (${rdos.length + diarioRelatorios.length})`
                 : t === 'equipe' ? 'Equipe'
+                : t === 'despesas' ? 'Despesas'
                 : `Materiais (${materiais.length})`}
             </button>
           ))}
@@ -1563,6 +1565,8 @@ export default function ObraDetailPage() {
         )}
 
         {/* ===== EQUIPE ===== */}
+        {tab === 'despesas' && <ObraDespesas obraId={id} />}
+
         {tab === 'equipe' && isAdmin && (
           <AbaEquipe obraId={id} />
         )}

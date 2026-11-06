@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ObraMedicao } from '@/lib/types'
 import { parseData } from '@/lib/datas'
 import { semTabelaCartao } from '@/lib/cartao'
+import { custoDespesasObra } from '@/lib/despesasObra'
 
 type Num = number | string | null | undefined
 const n = (v: Num) => Number(v || 0)
@@ -181,13 +182,14 @@ export interface TotaisObra extends TotaisReceita {
   custoMateriais: number
   custoMaoDeObra: number
   custoCartao: number
+  custoDespesas: number
   custoTotal: number
 }
 
 // Lê tudo que entra nos totais. Devolve `error` se alguma leitura falhar,
 // para a tela não mostrar R$ 0 como se fosse o valor real.
 export async function carregarTotaisObra(sb: SupabaseClient, obraId: string): Promise<{ totais: TotaisObra | null; error: { message: string; code?: string } | null }> {
-  const [medRes, ocRes, finRes, adRes, regRes, matRes, alocRes, adicRes, cartaoRes] = await Promise.all([
+  const [medRes, ocRes, finRes, adRes, regRes, matRes, alocRes, adicRes, cartaoRes, despRes] = await Promise.all([
     sb.from('obra_medicoes').select('status, valor_previsto, valor_faturado, valor_recebido').eq('obra_id', obraId),
     sb.from('obra_ocs').select('valor_total').eq('obra_id', obraId),
     sb.from('obra_financeiro').select('valor_contrato').eq('obra_id', obraId).maybeSingle(),
@@ -197,9 +199,11 @@ export async function carregarTotaisObra(sb: SupabaseClient, obraId: string): Pr
     sb.from('funcionario_alocacoes').select('data, funcionario_id, percentual, noturno, tipo').eq('obra_id', obraId).in('tipo', ['obra', 'folga', 'escritorio']),
     sb.from('configuracoes_empresa').select('chave, valor').like('chave', 'adicional_%'),
     sb.from('cartao_lancamentos').select('valor').eq('obra_id', obraId).eq('destino', 'obra'),
+    sb.from('obra_despesas').select('valor').eq('obra_id', obraId),
   ])
   const erro = [medRes, ocRes, finRes, adRes, regRes, matRes, alocRes].find(r => r.error)?.error
     ?? (semTabelaCartao(cartaoRes.error) ? null : cartaoRes.error)
+    ?? (semTabelaCartao(despRes.error) ? null : despRes.error)
   if (erro) return { totais: null, error: erro }
 
   const alocs = (alocRes.data ?? []) as AlocacaoCusto[]
@@ -219,8 +223,9 @@ export async function carregarTotaisObra(sb: SupabaseClient, obraId: string): Pr
   const custoMateriais = custoMateriaisObra((matRes.data ?? []) as MaterialCusto[])
   const custoMaoDeObra = custoMaoDeObraObra(alocs, funcs, lerAdicionais(adicRes.data)).reduce((s, e) => s + e.custo_total, 0)
   const custoCartao = custoCartaoObra(cartaoRes.data ?? [])
+  const custoDespesas = custoDespesasObra(despRes.data ?? [])
   return {
-    totais: { ...receita, custoEstoque, custoMateriais, custoMaoDeObra, custoCartao, custoTotal: custoEstoque + custoMateriais + custoMaoDeObra + custoCartao },
+    totais: { ...receita, custoEstoque, custoMateriais, custoMaoDeObra, custoCartao, custoDespesas, custoTotal: custoEstoque + custoMateriais + custoMaoDeObra + custoCartao + custoDespesas },
     error: null,
   }
 }

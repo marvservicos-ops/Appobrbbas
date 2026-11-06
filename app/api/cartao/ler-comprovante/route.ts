@@ -22,7 +22,8 @@ Retorne APENAS um JSON válido, sem markdown, sem explicações, nesta estrutura
 const IMAGEM = /^image\/(png|jpe?g|webp|heic|heif)$/
 
 export async function POST(req: NextRequest) {
-  const auth = await exigirUsuarioAtivo({ admin: true })
+  // Qualquer usuário ativo: também lê o comprovante das despesas da obra
+  const auth = await exigirUsuarioAtivo()
   if (!auth.ok) return auth.resposta
 
   try {
