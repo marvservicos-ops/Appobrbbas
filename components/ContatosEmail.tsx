@@ -1,7 +1,7 @@
 'use client'
 
 // Atalhos de contatos para os modais de envio de e-mail (RDO, relatórios da
-// obra e da manutenção). Agrupa em Equipe MARV (funcionários com e-mail),
+// obra e da manutenção). Agrupa em Equipe MARV (usuários ativos do app),
 // Gestores, Fiscais, Compradores e Outros. Cada pessoa tem "Para" e "Cc";
 // clicar de novo tira o e-mail do campo.
 
@@ -38,8 +38,8 @@ export function ContatosEmail({ destinatarios, cc, onChange }: {
     const sb = createClient()
     Promise.all([
       sb.from('clientes').select('nome, email, tipo, empresa:empresas(apelido, razao_social)').not('email', 'is', null).order('nome'),
-      sb.from('funcionarios').select('nome, email, cargo, funcao').eq('ativo', true).not('email', 'is', null).order('nome'),
-    ]).then(([cli, fun]) => {
+      fetch('/api/usuarios/contatos').then(r => (r.ok ? r.json() : { usuarios: [] })).catch(() => ({ usuarios: [] })) as Promise<{ usuarios?: { nome: string | null; email: string; cargo: string | null }[] }>,
+    ]).then(([cli, usu]) => {
       const lista: Contato[] = []
       for (const c of cli.data ?? []) {
         if (!c.email) continue
@@ -51,9 +51,9 @@ export function ContatosEmail({ destinatarios, cc, onChange }: {
           detalhe: emp?.apelido || emp?.razao_social || null,
         })
       }
-      for (const f of fun.data ?? []) {
-        if (!f.email) continue
-        lista.push({ nome: f.nome as string, email: (f.email as string).trim(), grupo: 'marv', detalhe: (f.cargo as string) || (f.funcao as string) || null })
+      for (const u of usu.usuarios ?? []) {
+        if (!u.email) continue
+        lista.push({ nome: u.nome || u.email.split('@')[0], email: u.email.trim(), grupo: 'marv', detalhe: u.cargo || null })
       }
       setContatos(lista)
     })
