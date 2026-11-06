@@ -222,16 +222,18 @@ function EditorLiberacao() {
   }
 
   // ── Funcionários ──
+  // Marcar na lista já inclui na solicitação; desmarcar tira.
   const idsNaLista = new Set(f.funcionarios.map(x => x.funcionario_id).filter(Boolean))
-  const funcsFiltrados = buscaFunc.trim()
-    ? funcsCad.filter(x => !idsNaLista.has(x.id) && x.nome.toLowerCase().includes(buscaFunc.trim().toLowerCase())).slice(0, 8)
-    : []
-  function addFuncionario(fc: FuncOpt) {
+  const funcsFiltrados = funcsCad.filter(x => x.nome.toLowerCase().includes(buscaFunc.trim().toLowerCase()))
+  function alternarFuncionario(fc: FuncOpt) {
+    if (idsNaLista.has(fc.id)) {
+      set({ funcionarios: f.funcionarios.filter(x => x.funcionario_id !== fc.id) })
+      return
+    }
     set({ funcionarios: [...f.funcionarios, { chave: novaChave(), funcionario_id: fc.id, nome: fc.nome, cpf: fc.cpf ?? '', funcao: fc.funcao || fc.cargo || '' }] })
-    setBuscaFunc('')
   }
   const addFuncionarioAvulso = () =>
-    set({ funcionarios: [...f.funcionarios, { chave: novaChave(), funcionario_id: null, nome: buscaFunc.trim(), cpf: '', funcao: '' }] })
+    set({ funcionarios: [...f.funcionarios, { chave: novaChave(), funcionario_id: null, nome: '', cpf: '', funcao: '' }] })
   const editFunc = (chave: string, patch: Partial<LiberacaoFuncionario>) =>
     set({ funcionarios: f.funcionarios.map(x => x.chave === chave ? { ...x, ...patch } : x) })
   const removerFunc = (chave: string) => set({ funcionarios: f.funcionarios.filter(x => x.chave !== chave) })
@@ -440,24 +442,28 @@ function EditorLiberacao() {
 
         {/* 3. Funcionários */}
         <div className="card space-y-3">
-          <h2 className="font-syne font-semibold text-[#0F172A] text-sm">3. Funcionários <span className="text-[#64748B] font-normal">({f.funcionarios.length})</span></h2>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-            <input className="field pl-8" value={buscaFunc} onChange={e => setBuscaFunc(e.target.value)} placeholder="Buscar funcionário no cadastro para incluir"
-              onKeyDown={e => { if (e.key === 'Enter' && funcsFiltrados[0]) { e.preventDefault(); addFuncionario(funcsFiltrados[0]) } }} />
-            {buscaFunc.trim() && (
-              <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-[#E2E8F0] rounded-xl shadow-lg overflow-hidden">
-                {funcsFiltrados.map(x => (
-                  <button key={x.id} onClick={() => addFuncionario(x)} className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left hover:bg-[#F8FAFC]">
-                    <span className="flex-1 truncate text-[#0F172A]">{x.nome}</span>
-                    <span className="text-xs text-[#94A3B8] truncate">{x.funcao || x.cargo || 'sem função'} · {x.cpf || 'sem CPF'}</span>
-                  </button>
-                ))}
-                <button onClick={() => { addFuncionarioAvulso(); setBuscaFunc('') }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-[#4F7CFF] hover:bg-[#F8FAFC] border-t border-[#F1F5F9]">
-                  <UserPlus size={14} /> Incluir “{buscaFunc.trim()}” fora do cadastro
-                </button>
-              </div>
-            )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-syne font-semibold text-[#0F172A] text-sm">3. Funcionários <span className="text-[#64748B] font-normal">({f.funcionarios.length})</span></h2>
+            <button onClick={addFuncionarioAvulso} className="btn-secondary text-xs px-3 py-1.5 min-h-0">
+              <UserPlus size={14} /> Pessoa fora do cadastro
+            </button>
+          </div>
+          <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
+            <p className="text-xs font-semibold text-[#64748B]">Marque quem vai na liberação</p>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+              <input className="field pl-8 text-sm" value={buscaFunc} onChange={e => setBuscaFunc(e.target.value)} placeholder="Buscar por nome…" />
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-0.5 bg-white border border-[#E2E8F0] rounded-lg p-1.5">
+              {funcsFiltrados.map(x => (
+                <label key={x.id} className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded cursor-pointer hover:bg-[#F8FAFC] ${idsNaLista.has(x.id) ? 'text-[#0F172A] font-medium' : 'text-[#374151]'}`}>
+                  <input type="checkbox" checked={idsNaLista.has(x.id)} onChange={() => alternarFuncionario(x)} className="w-4 h-4 accent-[#4F7CFF] shrink-0" />
+                  <span className="flex-1 min-w-0 truncate">{x.nome}{(x.funcao || x.cargo) ? <span className="font-normal text-[#64748B]"> — {x.funcao || x.cargo}</span> : null}</span>
+                  {!x.cpf && <span className="text-[11px] text-[#B45309] shrink-0">sem CPF</span>}
+                </label>
+              ))}
+              {funcsFiltrados.length === 0 && <p className="text-xs text-[#94A3B8] px-1.5 py-1">{funcsCad.length ? 'Ninguém com esse nome.' : 'Nenhum funcionário ativo cadastrado.'}</p>}
+            </div>
           </div>
 
           {f.funcionarios.length > 0 && (
