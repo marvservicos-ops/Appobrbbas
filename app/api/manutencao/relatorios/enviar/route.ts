@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase/service'
 import { baixarArquivoDrive } from '@/lib/diarioObra'
+import { comprimirPdf, NIVEIS_COMPRESSAO } from '@/lib/comprimirPdf'
 import { buscarMessageIdReal } from '@/lib/emailThread'
 import { exigirUsuarioAtivo, escaparHtml, limparHtmlBasico } from '@/lib/apiAuth'
 import { remetenteDaSessao } from '@/lib/remetente'
@@ -13,7 +14,11 @@ const MAX_POR_ENVIO = 10
 // novembro responde o de outubro, o monitoramento responde o monitoramento etc.
 const chaveThread = (tipoId: string) => `rel:${tipoId}`
 
-export const maxDuration = 30
+// Acima disso o PDF é comprimido antes de anexar (o base64 aumenta ~33% e
+// muitos servidores de e-mail recusam mensagens acima de 25 MB)
+const LIMITE_ANEXOS_BYTES = 18 * 1024 * 1024
+
+export const maxDuration = 60
 
 // Envia ao cliente relatórios de UM tipo do contrato (PDFs importados do Diário de Obra para o Drive)
 export async function POST(req: NextRequest) {
@@ -57,19 +62,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Relatório(s) sem PDF no Drive: ${semArquivo.map(r => `#${r.numero}`).join(', ')}` }, { status: 400 })
   }
 
-  let attachments
+  const nomeBase = String(tipo.nome || 'Relatorio')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-')
+  let pdfs: { filename: string; buffer: Buffer }[]
   try {
-    attachments = await Promise.all(relatorios.map(async r => {
+    pdfs = await Promise.all(relatorios.map(async r => {
       const buffer = await baixarArquivoDrive(r.drive_file_id as string)
-      const nome = String(tipo.nome || 'Relatorio')
-        .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-')
       const data = r.data ? String(r.data) : String(r.numero ?? r.id.slice(0, 8))
-      return { filename: `${nome}_${data}.pdf`, content: buffer.toString('base64') }
+      return { filename: `${nomeBase}_${data}.pdf`, buffer }
     }))
   } catch (err) {
     console.error('[manutencao/relatorios/enviar] falha ao baixar PDF do Drive', err)
     return NextResponse.json({ error: 'Não foi possível baixar o PDF do Google Drive. Tente de novo.' }, { status: 500 })
   }
+
+  // PDFs pesados (fotos) são comprimidos até caber no limite de anexo
+  const avisos: string[] = []
+  const mb = (b: number) => `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
+  const total = (lista: { buffer: Buffer }[]) => lista.reduce((s, p) => s + p.buffer.length, 0)
+  const totalOriginal = total(pdfs)
+  if (totalOriginal > LIMITE_ANEXOS_BYTES) {
+    let melhor = pdfs
+    for (const nivel of NIVEIS_COMPRESSAO) {
+      const tentativa = await Promise.all(pdfs.map(async p => {
+        try {
+          const menor = await comprimirPdf(p.buffer, nivel)
+          return menor.length < p.buffer.length ? { ...p, buffer: menor } : p
+        } catch (err) {
+          console.error('[manutencao/relatorios/enviar] falha ao comprimir PDF', p.filename, err)
+          return p
+        }
+      }))
+      if (total(tentativa) < total(melhor)) melhor = tentativa
+      if (total(melhor) <= LIMITE_ANEXOS_BYTES) break
+    }
+    if (total(melhor) > LIMITE_ANEXOS_BYTES) {
+      return NextResponse.json({
+        error: `O PDF tem ${mb(totalOriginal)} e, mesmo comprimido, ficou com ${mb(total(melhor))} — acima do limite de ${mb(LIMITE_ANEXOS_BYTES)} para anexo de e-mail.${pdfs.length > 1 ? ' Tente enviar um relatório por vez.' : ''}`,
+      }, { status: 413 })
+    }
+    pdfs = melhor
+    avisos.push(`O PDF tinha ${mb(totalOriginal)} e foi comprimido para ${mb(total(pdfs))} antes do envio (fotos com resolução menor).`)
+  }
+  const attachments = pdfs.map(p => ({ filename: p.filename, content: p.buffer.toString('base64') }))
 
   const { data: thread } = await supabase
     .from('relatorio_email_threads')
@@ -106,7 +141,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[manutencao/relatorios/enviar] falha no Resend', error)
-    return NextResponse.json({ error: 'Não foi possível enviar o e-mail. Confira os endereços e tente de novo.' }, { status: 500 })
+    return NextResponse.json({ error: `Não foi possível enviar o e-mail: ${error.message ?? 'erro desconhecido'}` }, { status: 500 })
   }
 
   let messageId: string | null = thread?.ultimo_message_id ?? null
@@ -115,7 +150,6 @@ export async function POST(req: NextRequest) {
     if (resultado.messageId) messageId = resultado.messageId
   }
   // Daqui pra baixo o e-mail JÁ saiu: falhas viram aviso, não erro (reenviar duplicaria o e-mail).
-  const avisos: string[] = []
   const { error: threadErr } = await supabase.from('relatorio_email_threads').upsert({
     contrato_id: contratoId,
     obra_id: null,
