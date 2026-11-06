@@ -42,7 +42,15 @@ export function devidoNoMes(tipo: Pick<ContratoRelatorioTipo, 'periodicidade' | 
   return dif >= 0 && dif % passo === 0
 }
 
-const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+/** Primeiro e último dia da competência, em dd/mm/aaaa — ex.: '2026-10' → ['01/10/2026', '31/10/2026'] */
+export function periodoCompetencia(competencia: string): [string, string] {
+  const [a, m] = competencia.split('-').map(Number)
+  const ultimo = new Date(a, m, 0).getDate()
+  const mm = String(m).padStart(2, '0')
+  return [`01/${mm}/${a}`, `${String(ultimo).padStart(2, '0')}/${mm}/${a}`]
+}
+
+const MESES_CURTOS =['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
 // 'curto' → "out/26" · 'longo' → "outubro de 2026"
 export function nomeCompetencia(competencia: string, formato: 'curto' | 'longo' = 'curto'): string {

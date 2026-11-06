@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DiarioObraRelatorio } from '@/lib/types'
 import { mensagemErro } from '@/lib/erros'
 import { formatarData, mesLocal } from '@/lib/datas'
-import { ContratoRelatorioTipo, Periodicidade, PERIODICIDADES, devidoNoMes, nomeCompetencia, somarMeses } from '@/lib/manutencaoRelatorios'
+import { ContratoRelatorioTipo, Periodicidade, PERIODICIDADES, devidoNoMes, nomeCompetencia, periodoCompetencia, somarMeses } from '@/lib/manutencaoRelatorios'
 import { ContatosEmail } from '@/components/ContatosEmail'
 
 const MESES_NA_GRADE = 6
@@ -520,11 +520,12 @@ function ModalEnviarRelatorios({ contratoId, contratoNome, competencia, tipo, re
   }, [contratoId, tipo.id])
 
   useEffect(() => {
-    const datas = [...relatorios].sort((a, b) => (a.data ?? '').localeCompare(b.data ?? '')).map(r => formatarData(r.data)).filter(Boolean)
-    const quando = relatorios.length === 1 ? `do dia ${datas[0]}` : `de ${nomeCompetencia(competencia, 'longo')} (${datas.join(', ')})`
+    // O relatório de manutenção cobre o mês inteiro da competência: do dia 1º ao último dia
+    const [ini, fim] = periodoCompetencia(competencia)
+    const periodo = `referente ao período de ${ini} a ${fim}`
     setMensagem(relatorios.length === 1
-      ? `Bom dia,\n\nSegue em anexo o relatório ${tipo.nome} ${quando}.\n\nQualquer dúvida, estamos à disposição.`
-      : `Bom dia,\n\nSeguem em anexo os relatórios ${tipo.nome} ${quando}.\n\nQualquer dúvida, estamos à disposição.`)
+      ? `Bom dia,\n\nSegue em anexo o relatório ${tipo.nome} ${periodo}.\n\nQualquer dúvida, estamos à disposição.`
+      : `Bom dia,\n\nSeguem em anexo os relatórios ${tipo.nome} ${periodo.replace('referente', 'referentes')}.\n\nQualquer dúvida, estamos à disposição.`)
   }, [relatorios, competencia, tipo.nome])
 
   async function enviar() {
