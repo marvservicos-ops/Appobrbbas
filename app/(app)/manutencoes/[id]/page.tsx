@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin, Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle, Undo2, FileText } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Thermometer, User, DollarSign, Users, Wrench, X, ExternalLink, Upload, CheckCircle2, XCircle, ChevronDown, ChevronRight, MapPin, Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle, Undo2, FileText, Receipt } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ContratoManutencao, ManutencaoAditivo, ManutencaoNF, ManutencaoFuncionario, Equipamento, ManutencaoEstoqueProduto, ManutencaoEstoqueRegistro, EstoqueProduto } from '@/lib/types'
 import Link from 'next/link'
@@ -13,9 +13,10 @@ import { hojeLocal, formatarData } from '@/lib/datas'
 import { ajustarSaldo } from '@/lib/estoque/saldo'
 import ModalContrato from '../ModalContrato'
 import AbaRelatorios from './AbaRelatorios'
+import ObraDespesas from '@/components/ObraDespesas'
 
-type Tab = 'relatorios' | 'financeiro' | 'equipe' | 'equipamentos' | 'estoque'
-const TABS: Tab[] = ['relatorios', 'financeiro', 'equipe', 'equipamentos', 'estoque']
+type Tab = 'relatorios' | 'financeiro' | 'despesas' | 'equipe' | 'equipamentos' | 'estoque'
+const TABS: Tab[] = ['relatorios', 'financeiro', 'despesas', 'equipe', 'equipamentos', 'estoque']
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function fmtDate(d?: string | null) { return formatarData(d) || '—' }
@@ -1240,6 +1241,7 @@ export default function ManutencaoDetalhe() {
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'relatorios', label: 'Relatórios', icon: <FileText size={15} /> },
     { key: 'financeiro', label: 'Financeiro', icon: <DollarSign size={15} /> },
+    { key: 'despesas', label: 'Despesas', icon: <Receipt size={15} /> },
     { key: 'equipe', label: 'Equipe', icon: <Users size={15} /> },
     { key: 'equipamentos', label: 'Equipamentos', icon: <Wrench size={15} /> },
     { key: 'estoque', label: 'Estoque', icon: <Package size={15} /> },
@@ -1306,6 +1308,7 @@ export default function ManutencaoDetalhe() {
             contratoNome={(contrato.empresa as any)?.apelido ?? (contrato.empresa as any)?.razao_social ?? 'Contrato'} />
         )}
         {tab === 'financeiro' && <AbaFinanceiro contratoId={id} valorMensal={contrato.valor_mensal} />}
+        {tab === 'despesas' && <ObraDespesas contratoId={id} />}
         {tab === 'equipe' && <AbaEquipe contratoId={id} />}
         {tab === 'equipamentos' && <AbaEquipamentos contratoId={id} />}
         {tab === 'estoque' && <AbaEstoque contratoId={id} onCriticosChange={setCriticosEstoque} />}

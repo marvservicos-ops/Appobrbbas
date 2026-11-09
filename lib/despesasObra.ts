@@ -19,7 +19,8 @@ export const rotuloForma = (v: string) => FORMAS_PAGAMENTO.find(f => f.valor ===
 
 export interface DespesaObra {
   id: string
-  obra_id: string
+  obra_id: string | null
+  contrato_manutencao_id?: string | null
   data: string
   categoria: string
   descricao: string | null

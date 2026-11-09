@@ -1,8 +1,9 @@
 'use client'
 
-// Despesas diversas da obra (estacionamento, pedágio, combustível...).
-// Aba aberta a todo usuário: o funcionário lança do celular, com foto do
-// comprovante. O total entra no Centro de Custos da obra (Financeiro).
+// Despesas diversas (estacionamento, pedágio, combustível...) de uma obra
+// ou de um contrato de manutenção. Aba aberta a todo usuário: o funcionário
+// lança do celular, com foto do comprovante. Na obra, o total entra no
+// Centro de Custos (Financeiro).
 
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CreditCard, Eye, FileText, Loader2, Paperclip, Pencil, Plus, Receipt, Sparkles, Trash2, X } from 'lucide-react'
@@ -27,7 +28,19 @@ async function abrirComprovante(path: string) {
   else window.location.href = data.signedUrl
 }
 
-export default function ObraDespesas({ obraId }: { obraId: string }) {
+// Despesa é de uma obra OU de um contrato de manutenção
+type Alvo = { obraId: string; contratoId?: never } | { contratoId: string; obraId?: never }
+
+// Coluna, id e prefixo dos arquivos de cada tipo de alvo
+function dadosAlvo(a: Alvo) {
+  return a.obraId
+    ? { coluna: 'obra_id', id: a.obraId, pasta: a.obraId }
+    : { coluna: 'contrato_manutencao_id', id: a.contratoId!, pasta: `manutencao/${a.contratoId}` }
+}
+
+export default function ObraDespesas(alvo: Alvo) {
+  const { coluna, id: alvoId } = dadosAlvo(alvo)
+  const ehObra = Boolean(alvo.obraId)
   const [despesas, setDespesas] = useState<DespesaObra[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState('')
@@ -38,16 +51,17 @@ export default function ObraDespesas({ obraId }: { obraId: string }) {
   async function carregar() {
     setErro('')
     const { data, error } = await createClient().from('obra_despesas').select('*')
-      .eq('obra_id', obraId).order('data', { ascending: false }).order('created_at', { ascending: false })
+      .eq(coluna, alvoId).order('data', { ascending: false }).order('created_at', { ascending: false })
     if (error) {
-      if (semTabela(error)) setFaltaTabela(true)
+      // Tabela (ou a coluna da manutenção) ainda não criada: falta a migração
+      if (semTabela(error) || error.code === '42703') setFaltaTabela(true)
       else setErro(mensagemErro(error, 'Não foi possível carregar as despesas'))
     } else {
       setDespesas((data ?? []) as DespesaObra[])
     }
     setLoading(false)
   }
-  useEffect(() => { carregar() }, [obraId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { carregar() }, [alvoId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function excluir(d: DespesaObra) {
     if (!confirm(`Excluir a despesa "${d.descricao || d.categoria}" de ${moeda(d.valor)}?`)) return
@@ -69,7 +83,7 @@ export default function ObraDespesas({ obraId }: { obraId: string }) {
     <div>
       <div className="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h2 className="font-syne text-xl font-bold text-[#0F172A]">Despesas da Obra</h2>
+          <h2 className="font-syne text-xl font-bold text-[#0F172A]">{ehObra ? 'Despesas da Obra' : 'Despesas da Manutenção'}</h2>
           <p className="text-sm text-[#64748B] mt-1">Estacionamento, pedágio, combustível, alimentação e outros gastos do dia a dia</p>
         </div>
         {!faltaTabela && (
@@ -85,7 +99,7 @@ export default function ObraDespesas({ obraId }: { obraId: string }) {
         <div className="card text-center py-10">
           <AlertTriangle size={22} className="mx-auto text-amber-500 mb-2" />
           <p className="text-sm text-[#374151]">As despesas da obra ainda não foram ativadas no banco.</p>
-          <p className="text-xs text-[#94A3B8] mt-1">Peça ao administrador para rodar a migração <code>2026_11_06_obra_despesas.sql</code>.</p>
+          <p className="text-xs text-[#94A3B8] mt-1">Peça ao administrador para rodar a migração <code>{ehObra ? '2026_11_06_obra_despesas.sql' : '2026_11_09_despesas_manutencao.sql'}</code>.</p>
         </div>
       ) : erro ? (
         <div className="card text-center py-10">
@@ -103,7 +117,7 @@ export default function ObraDespesas({ obraId }: { obraId: string }) {
           {despesas.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
               <div className="card p-4 border-l-4 border-l-rose-400 col-span-2 sm:col-span-1">
-                <p className="text-xs text-[#64748B] font-medium mb-1">Total {mes === 'todos' ? 'da obra' : 'do mês'}</p>
+                <p className="text-xs text-[#64748B] font-medium mb-1">Total {mes === 'todos' ? (ehObra ? 'da obra' : 'do contrato') : 'do mês'}</p>
                 <p className="font-syne font-bold text-lg text-[#0F172A]">{moeda(total)}</p>
                 <p className="text-xs text-[#94A3B8] mt-0.5">{visiveis.length} lançamento{visiveis.length === 1 ? '' : 's'}</p>
               </div>
@@ -136,7 +150,7 @@ export default function ObraDespesas({ obraId }: { obraId: string }) {
           {visiveis.length === 0 ? (
             <div className="card text-center py-12">
               <Receipt size={26} className="mx-auto text-[#CBD5E1] mb-2" />
-              <p className="text-sm text-[#64748B]">Nenhuma despesa lançada nesta obra.</p>
+              <p className="text-sm text-[#64748B]">Nenhuma despesa lançada {ehObra ? 'nesta obra' : 'neste contrato'}.</p>
             </div>
           ) : (
             <div className="card p-0 divide-y divide-[#F1F5F9] overflow-hidden">
@@ -170,15 +184,15 @@ export default function ObraDespesas({ obraId }: { obraId: string }) {
       )}
 
       {editando && (
-        <ModalDespesa obraId={obraId} despesa={editando === 'nova' ? null : editando}
+        <ModalDespesa alvo={alvo} despesa={editando === 'nova' ? null : editando}
           onClose={() => setEditando(null)} onSaved={() => { setEditando(null); carregar() }} />
       )}
     </div>
   )
 }
 
-function ModalDespesa({ obraId, despesa, onClose, onSaved }: {
-  obraId: string; despesa: DespesaObra | null; onClose: () => void; onSaved: () => void
+function ModalDespesa({ alvo, despesa, onClose, onSaved }: {
+  alvo: Alvo; despesa: DespesaObra | null; onClose: () => void; onSaved: () => void
 }) {
   const d = despesa
   const { profile } = useAccess()
@@ -230,13 +244,13 @@ function ModalDespesa({ obraId, despesa, onClose, onSaved }: {
     try {
       if (arquivo) {
         const preparado = await prepararImagem(arquivo)
-        novoPath = `${obraId}/${crypto.randomUUID()}-${sanitizarNomeArquivo(preparado.name)}`
+        novoPath = `${dadosAlvo(alvo).pasta}/${crypto.randomUUID()}-${sanitizarNomeArquivo(preparado.name)}`
         const { error } = await sb.storage.from(BUCKET_DESPESAS).upload(novoPath, preparado, { contentType: preparado.type || undefined })
         if (error) throw error
       }
       const manterAntigo = !arquivo && !tirarComprovante
       const payload = {
-        obra_id: obraId,
+        [dadosAlvo(alvo).coluna]: dadosAlvo(alvo).id,
         data,
         categoria,
         descricao: descricao.trim() || null,
